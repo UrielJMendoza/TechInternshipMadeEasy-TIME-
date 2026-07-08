@@ -21,7 +21,7 @@ const SOURCES: Array<[string, () => Promise<NormalizedJob[]>]> = [
   ["vanshb03", fetchVansh],
 ];
 
-export async function runIngest(): Promise<IngestResult> {
+export async function runIngest(secret: string): Promise<IngestResult> {
   const settled = await Promise.allSettled(SOURCES.map(([, fn]) => fn()));
 
   const fetched: Record<string, number | string> = {};
@@ -43,9 +43,6 @@ export async function runIngest(): Promise<IngestResult> {
   const deduped = dedupeJobs(jobs);
 
   const { supabase } = await import("../supabase");
-  const secret = process.env.CRON_SECRET;
-  if (!secret) throw new Error("CRON_SECRET is not set");
-
   const { data, error } = await supabase().rpc("ingest_upsert", {
     payload: deduped,
     secret,

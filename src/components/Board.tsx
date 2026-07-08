@@ -313,6 +313,11 @@ function JobRow({ job, now }: { job: Internship; now: number }) {
           <span className="truncate text-xs text-muted" title={job.location}>
             {job.location || "—"}
           </span>
+          {job.sponsorship && (
+            <span className="hidden whitespace-nowrap text-[10px] text-faint lg:inline">
+              {job.sponsorship.includes("citizen") ? "🇺🇸 citizens only" : "🛂 no sponsorship"}
+            </span>
+          )}
         </div>
 
         <div className="col-start-2 row-start-2 flex items-center gap-3 justify-self-end sm:col-start-3 sm:row-start-1">

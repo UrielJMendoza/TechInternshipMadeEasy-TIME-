@@ -1,10 +1,17 @@
 import type { Metadata } from "next";
 import "./globals.css";
 
+const description =
+  "Live board of Summer/Fall 2027 tech internships and new grad roles, auto-updated from maintained GitHub lists.";
+
 export const metadata: Metadata = {
   title: "TIME — Tech Internships Made Easy",
-  description:
-    "Live board of Summer/Fall 2027 tech internships and new grad roles, auto-updated from maintained GitHub lists.",
+  description,
+  openGraph: {
+    title: "TIME — Tech Internships Made Easy",
+    description,
+    type: "website",
+  },
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

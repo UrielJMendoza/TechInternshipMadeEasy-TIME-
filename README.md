@@ -1,22 +1,30 @@
 # TIME · Tech Internships Made Easy
 
 A live, searchable board of **2027 tech internships and new grad roles**, auto-updated
-from maintained GitHub lists. Built with Next.js (App Router), Supabase and Tailwind,
-deployed on Vercel.
+from maintained GitHub lists. Built with Next.js (App Router), Supabase and Tailwind.
 
 ## How it works
 
 ```
 GitHub source lists ──▶ ingestion (fetch → parse → normalize → dedupe)
-                              │  upsert via secret-gated Postgres RPC
-                              ▼
-                    Supabase `internships` table
-                              │  public read (RLS)
-                              ▼
-                  Next.js board (tabs · search · filters · sort)
-                              +
-                  daily Resend email digest of newly-seen roles
+      every 2h               │  upsert via secret-gated Postgres RPC
+ (Supabase pg_cron ──▶       ▼
+  'ingest' edge fn)   Supabase `internships` table
+                             │  public read (RLS)
+                             ▼
+                 Next.js board (tabs · search · filters · sort)
+                             +
+                 daily Resend email digest of newly-seen roles
 ```
+
+Two ingestion paths run the **same parser code**:
+
+- **Supabase-side (always on):** a pg_cron job (`ingest-listings`, `15 */2 * * *`)
+  invokes the `ingest` edge function every 2 hours. This keeps data fresh with no
+  other infrastructure. The edge function source is generated from `src/lib/ingest`
+  — if you change the parsers, redeploy it.
+- **Vercel-side (optional):** `vercel.json` schedules `/api/ingest` daily
+  (Hobby-plan cron granularity). Requires a `CRON_SECRET` env var on Vercel.
 
 ### Data sources
 
@@ -30,6 +38,18 @@ Rows are deduped across sources by normalized `company + title + location`.
 Roles that disappear from every source are marked inactive (not deleted), so the
 board only shows live postings.
 
+## Deploying the site (one-time)
+
+1. Go to [vercel.com/new](https://vercel.com/new) and import this GitHub repo.
+   No configuration is required — the site works immediately (the Supabase URL and
+   publishable key are public-by-design fallbacks in `src/lib/supabase.ts`).
+2. *(Optional, enables Vercel crons)* In Project → Settings → Environment Variables,
+   add `CRON_SECRET` = the value stored in Supabase `app_meta` (`cron_secret` key).
+3. *(Optional, enables the email digest)* Create an API key at
+   [resend.com](https://resend.com) and add `RESEND_API_KEY` and `DIGEST_TO`
+   (recipient email). `DIGEST_FROM` defaults to `onboarding@resend.dev`;
+   set it after verifying your own domain in Resend.
+
 ## Development
 
 ```bash
@@ -38,30 +58,29 @@ cp .env.example .env.local   # fill in values
 npm run dev
 ```
 
-### Environment variables
-
-See [.env.example](.env.example). `CRON_SECRET` must match the value stored in the
-`app_meta` table (`cron_secret` key) in Supabase — writes go through `security definer`
-RPCs (`ingest_upsert`, `digest_take`) gated on that secret, so no service-role key is
-ever deployed.
-
 ### Ingestion
 
 ```bash
 npm run ingest        # one-off: fetch all sources and upsert into Supabase
 ```
 
-In production it runs on a schedule (no action needed):
+Trigger the deployed routes manually:
 
-- **Vercel Cron** (`vercel.json`): daily ingest at 12:00 UTC, daily digest at 12:30 UTC.
-- **Supabase pg_cron**: hits `/api/ingest` every 2 hours for fresher data than the
-  Hobby-plan daily cron allows.
+```bash
+curl "https://<deployment>/api/ingest?key=$CRON_SECRET"
+curl "https://<deployment>/api/digest?key=$CRON_SECRET"
+```
 
-Trigger manually: `curl "https://<deployment>/api/ingest?key=$CRON_SECRET"`
+### Security model
+
+The browser and the Next.js server only ever hold the *publishable* Supabase key,
+which RLS limits to reading listings. All writes go through `security definer`
+Postgres functions (`ingest_upsert`, `digest_take`) that check a secret stored in
+the `app_meta` table — the Supabase service-role key never leaves Supabase.
 
 ### Email digest
 
 `/api/digest` emails a plain-text summary of roles first seen since the previous
-digest, via [Resend](https://resend.com). Set `RESEND_API_KEY`, `DIGEST_TO` and
-(once you've verified a domain in Resend) `DIGEST_FROM`. Without a key the route
+digest (via [Resend](https://resend.com)) and advances the watermark atomically.
+Scheduled daily at 12:30 UTC by `vercel.json`. Without `RESEND_API_KEY` the route
 no-ops gracefully.

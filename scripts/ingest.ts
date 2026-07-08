@@ -15,6 +15,8 @@ try {
 }
 
 import("../src/lib/ingest/run").then(async ({ runIngest }) => {
-  const result = await runIngest();
+  const secret = process.env.CRON_SECRET;
+  if (!secret) throw new Error("CRON_SECRET is not set");
+  const result = await runIngest(secret);
   console.log(JSON.stringify(result, null, 2));
 });

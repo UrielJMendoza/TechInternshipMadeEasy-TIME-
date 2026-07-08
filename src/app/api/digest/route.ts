@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
-import { authorized } from "@/lib/auth";
+import { isUnauthorized, requestSecret } from "@/lib/auth";
 import { CATEGORY_LABELS, type Category } from "@/lib/types";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +17,8 @@ interface DigestJob {
 }
 
 async function handle(req: Request) {
-  if (!authorized(req)) {
+  const secret = requestSecret(req);
+  if (!secret) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
@@ -32,11 +33,10 @@ async function handle(req: Request) {
 
   // digest_take atomically returns rows first seen since the last digest and
   // advances the watermark, so consecutive runs never re-send the same roles.
-  const { data, error } = await supabase().rpc("digest_take", {
-    secret: process.env.CRON_SECRET,
-  });
+  const { data, error } = await supabase().rpc("digest_take", { secret });
   if (error) {
-    return NextResponse.json({ ok: false, error: error.message }, { status: 500 });
+    const status = isUnauthorized(error.message) ? 401 : 500;
+    return NextResponse.json({ ok: false, error: error.message }, { status });
   }
 
   const jobs = (data.jobs ?? []) as DigestJob[];

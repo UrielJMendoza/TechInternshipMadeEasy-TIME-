@@ -161,14 +161,14 @@ export function Board({
             role="tab"
             aria-selected={tab === key}
             onClick={() => setTab(key)}
-            className={`-mb-px rounded-t-md border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
               tab === key
-                ? "border-accent text-fg"
+                ? "border-fg text-fg"
                 : "border-transparent text-muted hover:text-fg"
             }`}
           >
             {label}
-            <span className={`ml-2 font-mono text-xs ${tab === key ? "text-accent" : "text-faint"}`}>
+            <span className={`ml-2 font-mono text-xs ${tab === key ? "text-fg" : "text-faint"}`}>
               {count}
             </span>
           </button>
@@ -184,13 +184,13 @@ export function Board({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search company or role…"
             aria-label="Search company or role"
-            className="h-9 w-full max-w-xs rounded-md border border-border bg-surface px-3 text-sm outline-none placeholder:text-faint focus:border-accent"
+            className="h-9 w-full max-w-xs rounded-md border border-border bg-surface px-3 text-sm outline-none placeholder:text-faint focus:border-border-strong"
           />
           <select
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             aria-label="Filter by location"
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm text-muted focus:border-accent"
+            className="h-9 rounded-md border border-border bg-surface px-2 text-sm text-muted focus:border-border-strong"
           >
             <option value="">All locations</option>
             <option value="Remote">Remote</option>
@@ -204,7 +204,7 @@ export function Board({
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
             aria-label="Sort"
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm text-muted focus:border-accent"
+            className="h-9 rounded-md border border-border bg-surface px-2 text-sm text-muted focus:border-border-strong"
           >
             {SORTS.map(([key, label]) => (
               <option key={key} value={key}>
@@ -232,7 +232,7 @@ export function Board({
               aria-pressed={cats.has(c)}
               className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
                 cats.has(c)
-                  ? "border-accent bg-accent-soft text-accent"
+                  ? "border-border-strong bg-raised text-fg"
                   : "border-border bg-surface text-muted hover:border-border-strong hover:text-fg"
               }`}
             >
@@ -289,7 +289,7 @@ function JobRow({ job, now }: { job: Internship; now: number }) {
         href={job.link}
         target="_blank"
         rel="noopener noreferrer"
-        className="group grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-4 py-3 transition-colors hover:bg-accent-soft/40 sm:grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_auto_auto]"
+        className="group grid grid-cols-[1fr_auto] items-center gap-x-4 gap-y-1 px-4 py-3 transition-colors hover:bg-raised sm:grid-cols-[minmax(0,2.2fr)_minmax(0,1.2fr)_auto_auto]"
       >
         <div className="min-w-0">
           <div className="flex min-w-0 items-center gap-2">
@@ -327,7 +327,7 @@ function JobRow({ job, now }: { job: Internship; now: number }) {
           </span>
         </div>
 
-        <span className="col-start-2 row-start-1 justify-self-end rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted transition-colors group-hover:border-accent group-hover:bg-accent group-hover:text-accent-fg sm:col-start-4">
+        <span className="col-start-2 row-start-1 justify-self-end rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted transition-colors group-hover:border-fg group-hover:bg-fg group-hover:text-bg sm:col-start-4">
           Apply
         </span>
       </a>

@@ -28,9 +28,15 @@ Two ingestion paths run the **same parser code**:
 
 | Source | Format | Feeds |
 |---|---|---|
+| [SimplifyJobs/Summer2026-Internships](https://github.com/SimplifyJobs/Summer2026-Internships) + [New-Grad-Positions](https://github.com/SimplifyJobs/New-Grad-Positions) | JSON DB (`.github/scripts/listings.json`) | Internships + New Grad |
 | [zshah101/Automated-List-Of-Summer-2027-and-Fall-2026-Tech-Internships](https://github.com/zshah101/Automated-List-Of-Summer-2027-and-Fall-2026-Tech-Internships) | JSON API (`docs/api/jobs.json`) | Internships |
 | [vanshb03/Summer2027-Internships](https://github.com/vanshb03/Summer2027-Internships) | README markdown table | Internships |
 | [speedyapply/2027-SWE-College-Jobs](https://github.com/speedyapply/2027-SWE-College-Jobs) | README + `NEW_GRAD_USA.md` tables | Internships + New Grad |
+
+The SimplifyJobs feeds carry the whole listing history (~15k rows each, most
+inactive); the parser keeps only `active` + `is_visible` rows, and — for
+internships — those whose term hasn't already passed, so stale cycles fall off
+on their own without a hard-coded season allowlist.
 
 ### Deduplication
 

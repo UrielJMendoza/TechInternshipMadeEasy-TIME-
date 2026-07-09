@@ -53,6 +53,7 @@ export const CATEGORY_LABELS: Record<Category, string> = {
 };
 
 export const SOURCE_LABELS: Record<string, string> = {
+  simplify: "SimplifyJobs",
   zshah101: "zshah101/Automated-List",
   vanshb03: "vanshb03/Summer2027-Internships",
   speedyapply: "speedyapply/2027-SWE-College-Jobs",

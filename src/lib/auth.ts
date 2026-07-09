@@ -3,9 +3,9 @@
  * Cron sends when a CRON_SECRET env var is configured), a ?key= query param
  * (used by pg_cron and manual curl), or the CRON_SECRET env var itself.
  *
- * The value is never validated here — it's forwarded to the ingest_upsert /
- * digest_take Postgres functions, which compare it against the secret stored
- * in the app_meta table. Postgres is the single source of truth.
+ * The value is never validated here — it's forwarded to the ingest_upsert
+ * Postgres function, which compares it against the secret stored in the
+ * app_meta table. Postgres is the single source of truth.
  */
 export function requestSecret(req: Request): string | null {
   const bearer = req.headers.get("authorization");

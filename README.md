@@ -13,8 +13,6 @@ GitHub source lists ──▶ ingestion (fetch → parse → normalize → dedup
                              │  public read (RLS)
                              ▼
                  Next.js board (tabs · search · filters · sort)
-                             +
-                 daily Resend email digest of newly-seen roles
 ```
 
 Two ingestion paths run the **same parser code**:
@@ -34,7 +32,18 @@ Two ingestion paths run the **same parser code**:
 | [vanshb03/Summer2027-Internships](https://github.com/vanshb03/Summer2027-Internships) | README markdown table | Internships |
 | [speedyapply/2027-SWE-College-Jobs](https://github.com/speedyapply/2027-SWE-College-Jobs) | README + `NEW_GRAD_USA.md` tables | Internships + New Grad |
 
-Rows are deduped across sources by normalized `company + title + location`.
+### Deduplication
+
+The same job appears across sources with cosmetic differences, so dedupe runs in
+two passes (`src/lib/ingest/normalize.ts`):
+
+1. **Apply URL** — identical link (after stripping tracking params) is always the
+   same job.
+2. **Fuzzy key** — `company|title|location` where the company drops corporate
+   suffixes ("Varda Space" → "varda"), the title drops season/year noise
+   ("(Fall 2026)"), and the location reduces to the first city with state/country
+   tokens removed ("San Mateo, California, United States" → "san-mateo").
+
 Roles that disappear from every source are marked inactive (not deleted), so the
 board only shows live postings.
 
@@ -43,12 +52,9 @@ board only shows live postings.
 1. Go to [vercel.com/new](https://vercel.com/new) and import this GitHub repo.
    No configuration is required — the site works immediately (the Supabase URL and
    publishable key are public-by-design fallbacks in `src/lib/supabase.ts`).
-2. *(Optional, enables Vercel crons)* In Project → Settings → Environment Variables,
-   add `CRON_SECRET` = the value stored in Supabase `app_meta` (`cron_secret` key).
-3. *(Optional, enables the email digest)* Create an API key at
-   [resend.com](https://resend.com) and add `RESEND_API_KEY` and `DIGEST_TO`
-   (recipient email). `DIGEST_FROM` defaults to `onboarding@resend.dev`;
-   set it after verifying your own domain in Resend.
+2. *(Optional, enables the daily Vercel backup cron)* In Project → Settings →
+   Environment Variables, add `CRON_SECRET` = the value stored in Supabase
+   `app_meta` (`cron_secret` key).
 
 ## Development
 
@@ -64,23 +70,15 @@ npm run dev
 npm run ingest        # one-off: fetch all sources and upsert into Supabase
 ```
 
-Trigger the deployed routes manually:
+Trigger the deployed route manually:
 
 ```bash
 curl "https://<deployment>/api/ingest?key=$CRON_SECRET"
-curl "https://<deployment>/api/digest?key=$CRON_SECRET"
 ```
 
 ### Security model
 
 The browser and the Next.js server only ever hold the *publishable* Supabase key,
-which RLS limits to reading listings. All writes go through `security definer`
-Postgres functions (`ingest_upsert`, `digest_take`) that check a secret stored in
-the `app_meta` table — the Supabase service-role key never leaves Supabase.
-
-### Email digest
-
-`/api/digest` emails a plain-text summary of roles first seen since the previous
-digest (via [Resend](https://resend.com)) and advances the watermark atomically.
-Scheduled daily at 12:30 UTC by `vercel.json`. Without `RESEND_API_KEY` the route
-no-ops gracefully.
+which RLS limits to reading listings. All writes go through a `security definer`
+Postgres function (`ingest_upsert`) that checks a secret stored in the `app_meta`
+table — the Supabase service-role key never leaves Supabase.

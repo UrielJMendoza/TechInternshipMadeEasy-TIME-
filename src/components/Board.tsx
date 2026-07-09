@@ -136,20 +136,23 @@ export function Board({
       {/* Header */}
       <header className="flex flex-wrap items-baseline justify-between gap-2">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">
-            TIME <span className="font-normal text-muted">· Tech Internships Made Easy</span>
+          <h1 className="text-2xl font-extrabold tracking-tight">
+            TIME<span className="text-accent">.</span>
           </h1>
           <p className="mt-1 text-sm text-muted">
-            Live board of 2027 tech internships &amp; new grad roles, pulled from maintained GitHub lists.
+            Live 2027 tech internships &amp; new grad roles — updated every 2 hours.
           </p>
         </div>
-        <p className="font-mono text-xs text-faint">
-          {jobs.length} open roles · {freshCount} new in 48h
+        <p className="text-xs font-medium text-faint">
+          {jobs.length} open roles · <span className="text-new">{freshCount} new in 48h</span>
         </p>
       </header>
 
-      {/* Tabs */}
-      <div className="mt-5 flex gap-1 border-b border-border" role="tablist">
+      {/* Tabs — segmented control */}
+      <div
+        className="mt-6 inline-flex rounded-full border border-border bg-surface p-1"
+        role="tablist"
+      >
         {(
           [
             ["internship", "Internships", internCount],
@@ -161,14 +164,12 @@ export function Board({
             role="tab"
             aria-selected={tab === key}
             onClick={() => setTab(key)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium transition-colors ${
-              tab === key
-                ? "border-fg text-fg"
-                : "border-transparent text-muted hover:text-fg"
+            className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
+              tab === key ? "bg-fg text-bg" : "text-muted hover:text-fg"
             }`}
           >
             {label}
-            <span className={`ml-2 font-mono text-xs ${tab === key ? "text-fg" : "text-faint"}`}>
+            <span className={`ml-1.5 text-xs font-medium ${tab === key ? "text-bg/60" : "text-faint"}`}>
               {count}
             </span>
           </button>
@@ -184,13 +185,13 @@ export function Board({
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search company or role…"
             aria-label="Search company or role"
-            className="h-9 w-full max-w-xs rounded-md border border-border bg-surface px-3 text-sm outline-none placeholder:text-faint focus:border-border-strong"
+            className="h-9 w-full max-w-xs rounded-lg border border-border bg-surface px-3 text-sm outline-none placeholder:text-faint focus:border-accent"
           />
           <select
             value={location}
             onChange={(e) => setLocation(e.target.value)}
             aria-label="Filter by location"
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm text-muted focus:border-border-strong"
+            className="h-9 rounded-lg border border-border bg-surface px-2 text-sm text-muted focus:border-accent"
           >
             <option value="">All locations</option>
             <option value="Remote">Remote</option>
@@ -204,7 +205,7 @@ export function Board({
             value={sort}
             onChange={(e) => setSort(e.target.value as SortKey)}
             aria-label="Sort"
-            className="h-9 rounded-md border border-border bg-surface px-2 text-sm text-muted focus:border-border-strong"
+            className="h-9 rounded-lg border border-border bg-surface px-2 text-sm text-muted focus:border-accent"
           >
             {SORTS.map(([key, label]) => (
               <option key={key} value={key}>
@@ -215,9 +216,9 @@ export function Board({
           <button
             onClick={() => setFreshOnly((v) => !v)}
             aria-pressed={freshOnly}
-            className={`h-9 rounded-md border px-3 text-sm font-medium transition-colors ${
+            className={`h-9 rounded-lg border px-3 text-sm font-semibold transition-colors ${
               freshOnly
-                ? "border-new bg-new-soft text-new"
+                ? "border-new/50 bg-new-soft text-new"
                 : "border-border bg-surface text-muted hover:text-fg"
             }`}
           >
@@ -230,9 +231,9 @@ export function Board({
               key={c}
               onClick={() => toggleCat(c)}
               aria-pressed={cats.has(c)}
-              className={`rounded-full border px-2.5 py-1 text-xs font-medium transition-colors ${
+              className={`rounded-full border px-3 py-1 text-xs font-semibold transition-colors ${
                 cats.has(c)
-                  ? "border-border-strong bg-raised text-fg"
+                  ? "border-accent bg-accent text-white"
                   : "border-border bg-surface text-muted hover:border-border-strong hover:text-fg"
               }`}
             >
@@ -256,14 +257,14 @@ export function Board({
       </div>
 
       {/* Result count */}
-      <p className="mt-4 font-mono text-xs text-faint">
+      <p className="mt-4 text-xs font-medium text-faint">
         {filtered.length === tabJobs.length
           ? `${tabJobs.length} roles`
           : `${filtered.length} of ${tabJobs.length} roles`}
       </p>
 
       {/* List */}
-      <ul className="mt-2 divide-y divide-border overflow-hidden rounded-lg border border-border bg-surface">
+      <ul className="mt-2 divide-y divide-border overflow-hidden rounded-2xl border border-border bg-surface">
         {filtered.map((job) => (
           <JobRow key={job.id} job={job} now={now} />
         ))}
@@ -295,11 +296,11 @@ function JobRow({ job, now }: { job: Internship; now: number }) {
           <div className="flex min-w-0 items-center gap-2">
             <span className="truncate text-sm font-semibold">{job.company}</span>
             {fresh && (
-              <span className="rounded-full bg-new-soft px-1.5 py-px text-[10px] font-bold tracking-wide text-new">
+              <span className="rounded-full bg-new-soft px-2 py-px text-[10px] font-bold tracking-wide text-new">
                 NEW
               </span>
             )}
-            {job.season && <span className="hidden text-[11px] text-faint md:inline">{job.season}</span>}
+            {job.season && <span className="hidden text-[11px] font-medium text-faint md:inline">{job.season}</span>}
           </div>
           <div className="mt-0.5 flex min-w-0 items-center gap-2">
             <span className="truncate text-sm text-muted" title={job.title}>
@@ -314,20 +315,20 @@ function JobRow({ job, now }: { job: Internship; now: number }) {
             {job.location || "—"}
           </span>
           {job.sponsorship && (
-            <span className="hidden whitespace-nowrap text-[10px] text-faint lg:inline">
-              {job.sponsorship.includes("citizen") ? "🇺🇸 citizens only" : "🛂 no sponsorship"}
+            <span className="hidden whitespace-nowrap text-[10px] font-medium text-faint lg:inline">
+              {job.sponsorship.includes("citizen") ? "Citizens only" : "No sponsorship"}
             </span>
           )}
         </div>
 
         <div className="col-start-2 row-start-2 flex items-center gap-3 justify-self-end sm:col-start-3 sm:row-start-1">
-          {job.salary && <span className="font-mono text-xs text-muted">{job.salary}</span>}
-          <span className="w-14 text-right font-mono text-xs text-faint" title={job.posted_date ?? undefined}>
+          {job.salary && <span className="text-xs font-semibold text-fg/80">{job.salary}</span>}
+          <span className="w-14 text-right text-xs font-medium text-faint" title={job.posted_date ?? undefined}>
             {relative(job, now)}
           </span>
         </div>
 
-        <span className="col-start-2 row-start-1 justify-self-end rounded-md border border-border px-2.5 py-1 text-xs font-medium text-muted transition-colors group-hover:border-fg group-hover:bg-fg group-hover:text-bg sm:col-start-4">
+        <span className="col-start-2 row-start-1 justify-self-end rounded-full border border-border px-3 py-1 text-xs font-semibold text-muted transition-colors group-hover:border-accent group-hover:bg-accent group-hover:text-white sm:col-start-4">
           Apply
         </span>
       </a>

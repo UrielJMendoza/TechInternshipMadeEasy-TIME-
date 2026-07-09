@@ -1,17 +1,19 @@
 @import "tailwindcss";
+@import "@fontsource-variable/hanken-grotesk";
 
-/* Single dark theme — near-black, hairline borders, white interaction states. */
+/* Pure-black theme with iOS-style vivid accents. */
 :root {
-  --bg: #0a0a0a;
-  --surface: #0f0f0f;
-  --raised: #161616;
-  --fg: #ededed;
-  --muted: #9b9b9b;
-  --faint: #5f5f5f;
-  --border: #1e1e1e;
-  --border-strong: #383838;
-  --new: #4ade80;
-  --new-soft: rgba(74, 222, 128, 0.09);
+  --bg: #000000;
+  --surface: #141416;
+  --raised: #1f1f23;
+  --fg: #f5f5f7;
+  --muted: #98989d;
+  --faint: #636366;
+  --border: #2a2a2e;
+  --border-strong: #3f3f46;
+  --accent: #0a84ff;
+  --new: #30d158;
+  --new-soft: rgba(48, 209, 88, 0.14);
 }
 
 @theme inline {
@@ -23,10 +25,12 @@
   --color-faint: var(--faint);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
+  --color-accent: var(--accent);
   --color-new: var(--new);
   --color-new-soft: var(--new-soft);
-  --font-sans: var(--font-geist-sans), ui-sans-serif, system-ui, sans-serif;
-  --font-mono: var(--font-geist-mono), ui-monospace, SFMono-Regular, monospace;
+  --font-sans: "Hanken Grotesk Variable", -apple-system, BlinkMacSystemFont,
+    "SF Pro Text", "Segoe UI", sans-serif;
+  --font-mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
 }
 
 html {
@@ -39,20 +43,21 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  font-feature-settings: "tnum";
 }
 
 ::selection {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(10, 132, 255, 0.4);
 }
 
-/* Category tags — muted color-coded text, hairline capsule */
+/* Category tags — vivid iOS-palette capsules */
 .cat {
-  @apply inline-flex items-center rounded px-1.5 py-0.5 font-mono text-[10px] uppercase tracking-wider whitespace-nowrap;
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap;
 }
-.cat-software { background: rgba(96, 165, 250, 0.09); color: #93b4f4; }
-.cat-cloud { background: rgba(34, 211, 238, 0.08); color: #6cd2e4; }
-.cat-data-ml { background: rgba(167, 139, 250, 0.09); color: #b6a5f0; }
-.cat-quant { background: rgba(251, 191, 36, 0.08); color: #dcb35c; }
-.cat-security { background: rgba(248, 113, 113, 0.09); color: #e59a94; }
-.cat-hardware { background: rgba(52, 211, 153, 0.08); color: #71c9a8; }
-.cat-other { background: rgba(163, 163, 163, 0.08); color: #a3a3a3; }
+.cat-software { background: rgba(10, 132, 255, 0.18); color: #64aeff; }
+.cat-cloud { background: rgba(100, 210, 255, 0.15); color: #70d7ff; }
+.cat-data-ml { background: rgba(191, 90, 242, 0.18); color: #d99bff; }
+.cat-quant { background: rgba(255, 214, 10, 0.14); color: #ffd60a; }
+.cat-security { background: rgba(255, 69, 58, 0.16); color: #ff8c85; }
+.cat-hardware { background: rgba(48, 209, 88, 0.15); color: #5ddd7f; }
+.cat-other { background: rgba(142, 142, 147, 0.16); color: #aeaeb2; }

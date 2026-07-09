@@ -10,12 +10,11 @@
     "ingest": "tsx scripts/ingest.ts"
   },
   "dependencies": {
+    "@fontsource-variable/hanken-grotesk": "^5.2.8",
     "@supabase/supabase-js": "^2.110.1",
-    "geist": "^1.7.2",
     "next": "^16.2.10",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "resend": "^6.17.2"
+    "react-dom": "^19.2.7"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.2",

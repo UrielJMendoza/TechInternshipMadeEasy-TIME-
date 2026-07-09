@@ -1,5 +1,6 @@
 import type { NormalizedJob } from "../types";
 import { applyPostFilters, dedupeJobs } from "./normalize";
+import { fetchSimplify } from "./sources/simplify";
 import { fetchSpeedy } from "./sources/speedy";
 import { fetchVansh } from "./sources/vansh";
 import { fetchZshah } from "./sources/zshah";
@@ -14,8 +15,9 @@ export interface IngestResult {
 }
 
 // Order matters: dedupeJobs keeps the first occurrence, so richer sources
-// (zshah has real posted dates + categories) win over sparser ones.
+// (simplify and zshah have real posted dates + categories) win over sparser ones.
 const SOURCES: Array<[string, () => Promise<NormalizedJob[]>]> = [
+  ["simplify", fetchSimplify],
   ["zshah101", fetchZshah],
   ["speedyapply", fetchSpeedy],
   ["vanshb03", fetchVansh],

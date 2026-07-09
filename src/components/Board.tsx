@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Category, Internship, RoleType } from "@/lib/types";
 import { CATEGORY_LABELS } from "@/lib/types";
+import { CompanyLogo } from "./CompanyLogo";
 
 const CATEGORIES: Category[] = ["software", "cloud", "data-ml", "quant", "security", "hardware", "other"];
 const HOT_DAYS = 3;
@@ -10,6 +11,8 @@ const NEW_DAYS = 14;
 
 type SortKey = "featured" | "newest" | "company" | "salary";
 type Freshness = "all" | "hot" | "new";
+type Collection = "all" | "saved" | "applied";
+type ViewMode = "card" | "table";
 
 const SORTS: Array<[SortKey, string]> = [
   ["featured", "Featured"],
@@ -17,6 +20,11 @@ const SORTS: Array<[SortKey, string]> = [
   ["company", "Company A–Z"],
   ["salary", "Top salary"],
 ];
+
+// Shared column template so every row lines up into vertical columns on sm+,
+// and header labels (table view) align with the data beneath them.
+const GRID =
+  "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 sm:grid-cols-[auto_minmax(0,2.1fr)_6.5rem_minmax(0,1.25fr)_5.5rem_3.25rem_auto] sm:gap-x-4 sm:items-center";
 
 function postedTime(job: Internship): number {
   return job.posted_date
@@ -56,22 +64,66 @@ function annualSalary(s: string | null): number {
   return unit === "hr" ? n * 2080 : unit === "mo" ? n * 12 : n;
 }
 
-// Deterministic avatar color per company, drawn from the iOS dark palette.
-const AVATAR_COLORS = [
-  "10, 132, 255", // blue
-  "100, 210, 255", // teal
-  "191, 90, 242", // purple
-  "255, 214, 10", // yellow
-  "255, 159, 10", // orange
-  "48, 209, 88", // green
-  "255, 55, 95", // pink
-  "172, 142, 104", // brown
-];
+// ---------------------------------------------------------------------------
+// localStorage-backed state. Saved/applied roles are keyed by apply link (a
+// stable identity that survives re-ingestion, unlike the DB row id).
 
-function avatarColor(company: string): string {
-  let h = 0;
-  for (let i = 0; i < company.length; i++) h = (h * 31 + company.charCodeAt(i)) | 0;
-  return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
+function usePersistentSet(key: string): [Set<string>, (id: string) => void, boolean] {
+  const [set, setSet] = useState<Set<string>>(new Set());
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(key);
+      if (raw) setSet(new Set(JSON.parse(raw) as string[]));
+    } catch {
+      /* corrupt or unavailable — start empty */
+    }
+    setReady(true);
+  }, [key]);
+
+  const toggle = useCallback(
+    (id: string) => {
+      setSet((prev) => {
+        const next = new Set(prev);
+        if (next.has(id)) next.delete(id);
+        else next.add(id);
+        try {
+          localStorage.setItem(key, JSON.stringify([...next]));
+        } catch {
+          /* quota/unavailable — keep in-memory */
+        }
+        return next;
+      });
+    },
+    [key],
+  );
+
+  return [set, toggle, ready];
+}
+
+function usePersistentValue<T extends string>(key: string, fallback: T): [T, (v: T) => void] {
+  const [value, setValue] = useState<T>(fallback);
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(key) as T | null;
+      if (raw) setValue(raw);
+    } catch {
+      /* ignore */
+    }
+  }, [key]);
+  const set = useCallback(
+    (v: T) => {
+      setValue(v);
+      try {
+        localStorage.setItem(key, v);
+      } catch {
+        /* ignore */
+      }
+    },
+    [key],
+  );
+  return [value, set];
 }
 
 export function Board({
@@ -91,7 +143,11 @@ export function Board({
   const [cats, setCats] = useState<Set<Category>>(new Set());
   const [location, setLocation] = useState("");
   const [freshness, setFreshness] = useState<Freshness>("all");
+  const [collection, setCollection] = useState<Collection>("all");
   const [sort, setSort] = useState<SortKey>("featured");
+  const [view, setView] = usePersistentValue<ViewMode>("timley:view", "card");
+  const [saved, toggleSaved] = usePersistentSet("timley:saved");
+  const [applied, toggleApplied] = usePersistentSet("timley:applied");
   const searchRef = useRef<HTMLInputElement>(null);
 
   // Shareable tab links: /?tab=new-grad
@@ -146,6 +202,8 @@ export function Board({
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
     const list = tabJobs.filter((j) => {
+      if (collection === "saved" && !saved.has(j.link)) return false;
+      if (collection === "applied" && !applied.has(j.link)) return false;
       if (q && !j.title.toLowerCase().includes(q) && !j.company.toLowerCase().includes(q)) return false;
       if (cats.size > 0 && !cats.has(j.category)) return false;
       if (location === "Remote") {
@@ -181,11 +239,17 @@ export function Board({
         break;
     }
     return list;
-  }, [tabJobs, query, cats, location, freshness, sort, now]);
+  }, [tabJobs, query, cats, location, freshness, collection, saved, applied, sort, now]);
 
   const internCount = jobs.filter((j) => j.role_type === "internship").length;
   const gradCount = jobs.length - internCount;
-  const hasFilters = cats.size > 0 || location !== "" || query !== "" || freshness !== "all";
+  const savedInTab = useMemo(() => tabJobs.filter((j) => saved.has(j.link)).length, [tabJobs, saved]);
+  const appliedInTab = useMemo(
+    () => tabJobs.filter((j) => applied.has(j.link)).length,
+    [tabJobs, applied],
+  );
+  const hasFilters =
+    cats.size > 0 || location !== "" || query !== "" || freshness !== "all" || collection !== "all";
 
   const toggleCat = (c: Category) => {
     setCats((prev) => {
@@ -195,6 +259,8 @@ export function Board({
       return next;
     });
   };
+
+  const dense = view === "table";
 
   return (
     <div>
@@ -242,32 +308,56 @@ export function Board({
             ))}
           </div>
 
-          {/* Freshness */}
-          <div className="inline-flex rounded-full border border-border bg-surface p-1">
-            {(
-              [
-                ["all", "All", null],
-                ["hot", `Hot ${hotCount}`, "hot"],
-                ["new", `New ${newCount}`, "new"],
-              ] as Array<[Freshness, string, string | null]>
-            ).map(([key, label, tone]) => (
-              <button
-                key={key}
-                aria-pressed={freshness === key}
-                onClick={() => setFreshness(key)}
-                className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
-                  freshness === key
-                    ? tone === "hot"
-                      ? "bg-hot-soft text-hot"
-                      : tone === "new"
-                        ? "bg-new-soft text-new"
-                        : "bg-raised text-fg"
-                    : "text-muted hover:text-fg"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
+          <div className="flex items-center gap-2">
+            {/* Freshness */}
+            <div className="inline-flex rounded-full border border-border bg-surface p-1">
+              {(
+                [
+                  ["all", "All", null],
+                  ["hot", `Hot ${hotCount}`, "hot"],
+                  ["new", `New ${newCount}`, "new"],
+                ] as Array<[Freshness, string, string | null]>
+              ).map(([key, label, tone]) => (
+                <button
+                  key={key}
+                  aria-pressed={freshness === key}
+                  onClick={() => setFreshness(key)}
+                  className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                    freshness === key
+                      ? tone === "hot"
+                        ? "bg-hot-soft text-hot"
+                        : tone === "new"
+                          ? "bg-new-soft text-new"
+                          : "bg-raised text-fg"
+                      : "text-muted hover:text-fg"
+                  }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            {/* View density */}
+            <div className="inline-flex rounded-full border border-border bg-surface p-1" role="group" aria-label="View density">
+              {(
+                [
+                  ["card", "Card view", <CardIcon key="c" />],
+                  ["table", "Table view", <TableIcon key="t" />],
+                ] as Array<[ViewMode, string, React.ReactNode]>
+              ).map(([key, label, icon]) => (
+                <button
+                  key={key}
+                  aria-label={label}
+                  aria-pressed={view === key}
+                  onClick={() => setView(key)}
+                  className={`rounded-full p-1.5 transition-colors ${
+                    view === key ? "bg-raised text-fg" : "text-faint hover:text-fg"
+                  }`}
+                >
+                  {icon}
+                </button>
+              ))}
+            </div>
           </div>
         </div>
 
@@ -307,6 +397,29 @@ export function Board({
               </option>
             ))}
           </select>
+
+          {/* Collections */}
+          <div className="inline-flex rounded-xl border border-border bg-surface p-1">
+            {(
+              [
+                ["all", "All"],
+                ["saved", `Saved ${savedInTab || ""}`.trim()],
+                ["applied", `Applied ${appliedInTab || ""}`.trim()],
+              ] as Array<[Collection, string]>
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                aria-pressed={collection === key}
+                onClick={() => setCollection(key)}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+                  collection === key ? "bg-raised text-fg" : "text-muted hover:text-fg"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
           <div className="flex flex-wrap gap-2">
             {CATEGORIES.map((c) => (
               <button
@@ -329,6 +442,7 @@ export function Board({
                   setLocation("");
                   setQuery("");
                   setFreshness("all");
+                  setCollection("all");
                 }}
                 className="px-2 py-1 text-xs font-medium text-faint underline underline-offset-2 hover:text-muted"
               >
@@ -346,18 +460,46 @@ export function Board({
           : `${filtered.length} of ${tabJobs.length} roles`}
       </p>
 
+      {/* Column headers — only in the dense table view */}
+      {dense && filtered.length > 0 && (
+        <div
+          className={`${GRID} mt-3 hidden px-5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-faint sm:grid`}
+        >
+          <span />
+          <span>Company / Role</span>
+          <span>Category</span>
+          <span>Location</span>
+          <span>Comp</span>
+          <span className="text-right">Age</span>
+          <span />
+        </div>
+      )}
+
       {/* List */}
-      <ul className="mt-3 space-y-2.5">
+      <ul className={dense ? "mt-1 space-y-1" : "mt-3 space-y-2.5"}>
         {filtered.map((job) => (
-          <JobRow key={job.id} job={job} now={now} />
+          <JobRow
+            key={job.id}
+            job={job}
+            now={now}
+            dense={dense}
+            saved={saved.has(job.link)}
+            applied={applied.has(job.link)}
+            onToggleSaved={() => toggleSaved(job.link)}
+            onToggleApplied={() => toggleApplied(job.link)}
+          />
         ))}
         {filtered.length === 0 && (
           <li className="rounded-2xl border border-border bg-surface px-4 py-16 text-center text-sm text-muted">
             {loadError
               ? "Couldn't load listings — try refreshing in a minute."
-              : jobs.length === 0
-                ? "No listings yet — the first ingestion run hasn't landed."
-                : "Nothing matches those filters."}
+              : collection === "saved"
+                ? "No saved roles yet — tap the ☆ on any role to save it."
+                : collection === "applied"
+                  ? "Nothing marked applied yet — tap the ✓ once you apply."
+                  : jobs.length === 0
+                    ? "No listings yet — the first ingestion run hasn't landed."
+                    : "Nothing matches those filters."}
           </li>
         )}
       </ul>
@@ -365,69 +507,212 @@ export function Board({
   );
 }
 
-function JobRow({ job, now }: { job: Internship; now: number }) {
+function JobRow({
+  job,
+  now,
+  dense,
+  saved,
+  applied,
+  onToggleSaved,
+  onToggleApplied,
+}: {
+  job: Internship;
+  now: number;
+  dense: boolean;
+  saved: boolean;
+  applied: boolean;
+  onToggleSaved: () => void;
+  onToggleApplied: () => void;
+}) {
   const days = daysAgo(job, now);
-  const rgb = avatarColor(job.company);
+  const logoSize = dense ? 28 : 40;
+
   return (
     <li>
-      <a
-        href={job.link}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="group grid grid-cols-[auto_1fr_auto] items-center gap-x-4 gap-y-1.5 rounded-2xl border border-border bg-surface px-4 py-4 transition-colors hover:border-border-strong hover:bg-raised sm:grid-cols-[auto_minmax(0,2.1fr)_minmax(0,1.3fr)_auto_auto] sm:px-5"
+      <div
+        className={`group relative ${GRID} rounded-2xl border border-border bg-surface transition-[border-color,box-shadow,background-color] hover:border-white/25 hover:bg-surface/70 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.06)] ${
+          dense ? "px-3 py-2 sm:px-5" : "px-4 py-4 sm:px-5"
+        } ${applied ? "opacity-60" : ""}`}
       >
-        <span
-          aria-hidden
-          className="flex size-10 items-center justify-center rounded-xl text-base font-bold"
-          style={{ background: `rgba(${rgb}, 0.15)`, color: `rgb(${rgb})` }}
-        >
-          {job.company.charAt(0).toUpperCase()}
+        {/* Stretched click target — opens the listing. Sits beneath the
+            content; the save/apply buttons opt back into pointer events. */}
+        <a
+          href={job.link}
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label={`${job.title} at ${job.company} — open listing`}
+          className="absolute inset-0 z-0 rounded-2xl"
+        />
+
+        {/* Logo */}
+        <span className="pointer-events-none relative z-10 row-span-2 sm:row-span-1">
+          <CompanyLogo company={job.company} size={logoSize} />
         </span>
 
-        <div className="min-w-0">
+        {/* Company + role */}
+        <div className="pointer-events-none relative z-10 min-w-0">
           <div className="flex min-w-0 items-center gap-2">
-            <span className="truncate text-[15px] font-semibold">{job.company}</span>
-            {days <= HOT_DAYS ? (
-              <span className="rounded-full bg-hot-soft px-2 py-px text-[10px] font-bold tracking-wide text-hot">
-                HOT
-              </span>
-            ) : days <= NEW_DAYS ? (
-              <span className="rounded-full bg-new-soft px-2 py-px text-[10px] font-bold tracking-wide text-new">
-                NEW
-              </span>
-            ) : null}
-            {job.season && (
+            <span className={`truncate font-semibold ${dense ? "text-[13px]" : "text-[15px]"}`}>
+              {job.company}
+            </span>
+            <FreshnessBadge days={days} />
+            {job.season && !dense && (
               <span className="hidden text-[11px] font-medium text-faint md:inline">{job.season}</span>
             )}
           </div>
-          <div className="mt-1 truncate text-sm text-muted" title={job.title}>
+          <div className={`mt-0.5 truncate text-muted ${dense ? "text-xs" : "text-sm"}`} title={job.title}>
             {job.title}
           </div>
         </div>
 
-        <div className="col-start-2 row-start-2 flex min-w-0 items-center gap-2 sm:col-start-3 sm:row-start-1">
+        {/* Category */}
+        <div className="pointer-events-none relative z-10 col-start-2 row-start-2 flex items-center sm:col-start-3 sm:row-start-1">
           <span className={`cat cat-${job.category}`}>{CATEGORY_LABELS[job.category]}</span>
-          <span className="truncate text-xs text-muted" title={job.location}>
+        </div>
+
+        {/* Location */}
+        <div className="pointer-events-none relative z-10 col-start-2 row-start-2 flex min-w-0 items-center sm:col-start-4 sm:row-start-1">
+          <span className="hidden truncate text-xs text-muted sm:inline" title={job.location}>
             {job.location || "—"}
           </span>
+        </div>
+
+        {/* Comp / rules */}
+        <div className="pointer-events-none relative z-10 hidden min-w-0 flex-col items-start justify-center sm:col-start-5 sm:row-start-1 sm:flex">
+          {job.salary && <span className="truncate text-xs font-semibold text-fg/80">{job.salary}</span>}
           {job.sponsorship && (
-            <span className="hidden whitespace-nowrap text-[10px] font-medium text-faint lg:inline">
-              {job.sponsorship.includes("citizen") ? "Citizens only" : "No sponsorship"}
+            <span className="truncate text-[10px] font-medium text-faint">
+              {job.sponsorship.includes("citizen")
+                ? "Citizens only"
+                : job.sponsorship.includes("offers")
+                  ? "Sponsors visa"
+                  : "No sponsorship"}
             </span>
           )}
         </div>
 
-        <div className="col-start-3 row-start-2 flex items-center gap-3 justify-self-end sm:col-start-4 sm:row-start-1">
-          {job.salary && <span className="text-xs font-semibold text-fg/80">{job.salary}</span>}
-          <span className="w-14 text-right text-xs font-medium text-faint" title={job.posted_date ?? undefined}>
+        {/* Age */}
+        <div className="pointer-events-none relative z-10 col-start-3 row-start-2 flex items-center justify-end sm:col-start-6 sm:row-start-1">
+          <span className="text-right text-xs font-medium text-faint" title={job.posted_date ?? undefined}>
             {relative(job, now)}
           </span>
         </div>
 
-        <span className="col-start-3 row-start-1 justify-self-end rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold text-muted transition-colors group-hover:border-accent group-hover:bg-accent group-hover:text-white sm:col-start-5">
-          Apply
-        </span>
-      </a>
+        {/* Actions */}
+        <div className="pointer-events-none relative z-10 col-start-3 row-start-1 flex items-center justify-end gap-1 justify-self-end sm:col-start-7">
+          <IconButton
+            label={saved ? "Remove from saved" : "Save role"}
+            active={saved}
+            onClick={onToggleSaved}
+          >
+            <StarIcon filled={saved} />
+          </IconButton>
+          <IconButton
+            label={applied ? "Mark not applied" : "Mark as applied"}
+            active={applied}
+            activeClass="text-new"
+            onClick={onToggleApplied}
+          >
+            <CheckIcon />
+          </IconButton>
+          {!dense && (
+            <span className="ml-1 hidden rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold text-muted transition-colors group-hover:border-accent group-hover:bg-accent group-hover:text-white sm:inline">
+              Apply
+            </span>
+          )}
+        </div>
+      </div>
     </li>
+  );
+}
+
+function FreshnessBadge({ days }: { days: number }) {
+  if (days <= HOT_DAYS) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wide text-hot">
+        <span className="size-1.5 animate-pulse rounded-full bg-hot" />
+        HOT
+      </span>
+    );
+  }
+  if (days <= NEW_DAYS) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wide text-new">
+        <span className="size-1.5 rounded-full bg-new" />
+        NEW
+      </span>
+    );
+  }
+  return null;
+}
+
+function IconButton({
+  label,
+  active,
+  activeClass = "text-hot",
+  onClick,
+  children,
+}: {
+  label: string;
+  active: boolean;
+  activeClass?: string;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-pressed={active}
+      title={label}
+      onClick={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        onClick();
+      }}
+      className={`pointer-events-auto flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-raised ${
+        active ? activeClass : "text-faint hover:text-fg"
+      }`}
+    >
+      {children}
+    </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Inline icons (no dependency).
+
+function StarIcon({ filled }: { filled: boolean }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+    </svg>
+  );
+}
+
+function CheckIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <polyline points="20 6 9 17 4 12" />
+    </svg>
+  );
+}
+
+function CardIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <rect x="3" y="4" width="18" height="7" rx="2" />
+      <rect x="3" y="14" width="18" height="6" rx="2" />
+    </svg>
+  );
+}
+
+function TableIcon() {
+  return (
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </svg>
   );
 }

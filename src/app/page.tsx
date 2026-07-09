@@ -60,6 +60,10 @@ export default async function Home() {
       <footer className="mt-14 border-t border-border pt-5 pb-10 text-xs leading-relaxed text-faint">
         <p>
           timley.dev — sourced from{" "}
+          <a className="underline underline-offset-2 hover:text-muted" href="https://github.com/SimplifyJobs/Summer2026-Internships" target="_blank" rel="noopener noreferrer">
+            SimplifyJobs
+          </a>
+          ,{" "}
           <a className="underline underline-offset-2 hover:text-muted" href="https://github.com/zshah101/Automated-List-Of-Summer-2027-and-Fall-2026-Tech-Internships" target="_blank" rel="noopener noreferrer">
             zshah101/Automated-List
           </a>
@@ -71,7 +75,7 @@ export default async function Home() {
           <a className="underline underline-offset-2 hover:text-muted" href="https://github.com/speedyapply/2027-SWE-College-Jobs" target="_blank" rel="noopener noreferrer">
             speedyapply/2027-SWE-College-Jobs
           </a>
-          . Star those repos — they do the heavy lifting. USA roles only, postings older than 4 months age out automatically.
+          . Star those repos — they do the heavy lifting. Company logos via Clearbit. USA roles only, postings older than 4 months age out automatically. Saved &amp; applied roles are stored only in your browser.
         </p>
       </footer>
     </main>

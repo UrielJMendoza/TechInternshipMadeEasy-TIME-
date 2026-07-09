@@ -9,6 +9,9 @@ const PAGE = 1000; // PostgREST caps responses at 1000 rows; page through
 async function fetchJobs(): Promise<Internship[]> {
   const db = supabase();
   const rows: Internship[] = [];
+  // Ingestion already drops stale postings, but sources can disagree on a
+  // job's age — never show anything the board considers older than 120 days.
+  const cutoff = new Date(Date.now() - 120 * 86_400_000).toISOString().slice(0, 10);
   for (let from = 0; ; from += PAGE) {
     const { data, error } = await db
       .from("internships")
@@ -16,6 +19,7 @@ async function fetchJobs(): Promise<Internship[]> {
         "id,title,company,location,category,role_type,season,salary,link,source,sponsorship,posted_date,first_seen_at",
       )
       .eq("is_active", true)
+      .or(`posted_date.is.null,posted_date.gte.${cutoff}`)
       .order("first_seen_at", { ascending: false })
       .order("id", { ascending: true })
       .range(from, from + PAGE - 1);

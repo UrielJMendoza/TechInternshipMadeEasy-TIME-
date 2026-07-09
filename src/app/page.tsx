@@ -26,33 +26,48 @@ async function fetchJobs(): Promise<Internship[]> {
   return rows;
 }
 
+async function fetchUpdatedAt(): Promise<string | null> {
+  const { data } = await supabase()
+    .from("internships")
+    .select("last_seen_at")
+    .order("last_seen_at", { ascending: false })
+    .limit(1);
+  return data?.[0]?.last_seen_at ?? null;
+}
+
 export default async function Home() {
   let jobs: Internship[] = [];
+  let updatedAt: string | null = null;
   let loadError = false;
   try {
-    jobs = await fetchJobs();
+    [jobs, updatedAt] = await Promise.all([fetchJobs(), fetchUpdatedAt()]);
   } catch {
     loadError = true;
   }
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-6 sm:px-6">
-      <Board jobs={jobs} loadError={loadError} generatedAt={new Date().toISOString()} />
-      <footer className="mt-10 border-t border-border pt-4 pb-8 text-xs text-faint">
+    <main className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
+      <Board
+        jobs={jobs}
+        loadError={loadError}
+        generatedAt={new Date().toISOString()}
+        updatedAt={updatedAt}
+      />
+      <footer className="mt-14 border-t border-border pt-5 pb-10 text-xs leading-relaxed text-faint">
         <p>
-          Sourced from{" "}
-          <a className="underline hover:text-muted" href="https://github.com/zshah101/Automated-List-Of-Summer-2027-and-Fall-2026-Tech-Internships" target="_blank" rel="noopener noreferrer">
+          timley.dev — sourced from{" "}
+          <a className="underline underline-offset-2 hover:text-muted" href="https://github.com/zshah101/Automated-List-Of-Summer-2027-and-Fall-2026-Tech-Internships" target="_blank" rel="noopener noreferrer">
             zshah101/Automated-List
           </a>
           ,{" "}
-          <a className="underline hover:text-muted" href="https://github.com/vanshb03/Summer2027-Internships" target="_blank" rel="noopener noreferrer">
+          <a className="underline underline-offset-2 hover:text-muted" href="https://github.com/vanshb03/Summer2027-Internships" target="_blank" rel="noopener noreferrer">
             vanshb03/Summer2027-Internships
           </a>{" "}
           and{" "}
-          <a className="underline hover:text-muted" href="https://github.com/speedyapply/2027-SWE-College-Jobs" target="_blank" rel="noopener noreferrer">
+          <a className="underline underline-offset-2 hover:text-muted" href="https://github.com/speedyapply/2027-SWE-College-Jobs" target="_blank" rel="noopener noreferrer">
             speedyapply/2027-SWE-College-Jobs
           </a>
-          . Refreshes automatically every 2 hours. Star those repos — they do the heavy lifting.
+          . Star those repos — they do the heavy lifting. USA roles only, postings older than 4 months age out automatically.
         </p>
       </footer>
     </main>

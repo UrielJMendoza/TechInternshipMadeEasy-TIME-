@@ -44,8 +44,9 @@ two passes (`src/lib/ingest/normalize.ts`):
    ("(Fall 2026)"), and the location reduces to the first city with state/country
    tokens removed ("San Mateo, California, United States" → "san-mateo").
 
-Roles that disappear from every source are marked inactive (not deleted), so the
-board only shows live postings.
+Roles that disappear from every source are marked inactive, so the board only
+shows live postings. Two more filters run at ingest time: **USA locations only**,
+and **postings older than 120 days are dropped** (and age out of the DB).
 
 ## Deploying the site (one-time)
 

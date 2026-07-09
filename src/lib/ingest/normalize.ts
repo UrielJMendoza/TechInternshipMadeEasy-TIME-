@@ -194,6 +194,73 @@ export function dedupeJobs(jobs: NormalizedJob[]): NormalizedJob[] {
   return out;
 }
 
+// ---------------------------------------------------------------------------
+// Post-parse filters: the board only lists USA roles posted in the last ~4
+// months. Rows filtered out here also age out of the DB automatically — the
+// upsert deactivates anything absent from the batch.
+
+export const MAX_AGE_DAYS = 120;
+
+const NON_US_MARKERS = [
+  "canada", "british columbia", "ontario", "quebec", "toronto", "vancouver",
+  "montreal", "calgary", "waterloo", "ottawa", "united kingdom", "london",
+  "dublin", "ireland", "germany", "berlin", "munich", "amsterdam",
+  "netherlands", "paris", "france", "madrid", "barcelona", "spain", "milan",
+  "italy", "zurich", "switzerland", "stockholm", "sweden", "oslo", "warsaw",
+  "poland", "prague", "vienna", "bucharest", "budapest", "lisbon", "portugal",
+  "tel aviv", "israel", "india", "bangalore", "bengaluru", "hyderabad",
+  "chennai", "mumbai", "pune", "gurgaon", "gurugram", "noida", "singapore",
+  "tokyo", "japan", "seoul", "korea", "beijing", "shanghai", "shenzhen",
+  "hangzhou", "china", "hong kong", "taipei", "taiwan", "sydney", "australia",
+  "auckland", "zealand", "mexico", "brazil", "sao paulo", "buenos aires",
+  "argentina", "bogota", "colombia", "santiago", "chile", "lima", "peru",
+  "dubai", "abu dhabi", "uae", "riyadh", "saudi", "cairo", "egypt", "lagos",
+  "nigeria", "nairobi", "kenya", "cape town", "johannesburg",
+];
+
+const US_TOKENS = new Set([
+  "us", "usa", "america", "remote",
+  "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id", "il",
+  "in", "ia", "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms", "mo", "mt",
+  "ne", "nv", "nh", "nj", "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa", "ri",
+  "sc", "sd", "tn", "tx", "ut", "vt", "va", "wa", "wv", "wi", "wy", "dc",
+  "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
+  "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
+  "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine",
+  "maryland", "massachusetts", "michigan", "minnesota", "mississippi",
+  "missouri", "montana", "nebraska", "nevada", "hampshire", "jersey",
+  "york", "carolina", "dakota", "ohio", "oklahoma", "oregon", "pennsylvania",
+  "tennessee", "texas", "utah", "vermont", "virginia", "washington",
+  "wisconsin", "wyoming",
+]);
+
+function isUSA(location: string): boolean {
+  const loc = location
+    .toLowerCase()
+    .replace(/[^a-z]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!loc) return true; // no location info — keep, sources are US-centric
+  const tokens = loc.split(" ");
+  const usSignal =
+    tokens.some((t) => US_TOKENS.has(t)) || loc.includes("united states");
+  const nonUS = NON_US_MARKERS.some((m) => ` ${loc} `.includes(` ${m} `));
+  // "Boston, MA; Toronto, ON" keeps (has a US location); "London, UK" drops.
+  return usSignal || !nonUS;
+}
+
+function isRecent(posted: string | null, now: number): boolean {
+  if (!posted) return true; // no date — let first_seen aging handle it
+  const t = new Date(`${posted}T00:00:00Z`).getTime();
+  return now - t <= MAX_AGE_DAYS * 86_400_000;
+}
+
+/** USA-only, posted within the last MAX_AGE_DAYS. */
+export function applyPostFilters(jobs: NormalizedJob[]): NormalizedJob[] {
+  const now = Date.now();
+  return jobs.filter((j) => isRecent(j.posted_date, now) && isUSA(j.location));
+}
+
 export async function fetchText(url: string): Promise<string> {
   const res = await fetch(url, {
     headers: { "User-Agent": "internship-tracker (github.com/UrielJMendoza)" },

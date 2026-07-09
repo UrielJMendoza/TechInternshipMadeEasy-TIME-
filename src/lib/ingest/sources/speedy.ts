@@ -8,11 +8,12 @@ const FILES: Array<{ path: string; role_type: RoleType }> = [
   { path: "NEW_GRAD_USA.md", role_type: "new_grad" }, // 2027 USA new grad
 ];
 
-/** Age column is "Nd" (days since posted). */
+/** Age column is "Nd" today; tolerate w/mo/y variants if the format shifts. */
 function postedFromAge(age: string, now: Date): string | null {
-  const m = age.trim().match(/^(\d+)d$/);
+  const m = age.trim().match(/^(\d+)\s*(d|w|mo|y)$/);
   if (!m) return null;
-  const d = new Date(now.getTime() - Number(m[1]) * 86_400_000);
+  const days = Number(m[1]) * { d: 1, w: 7, mo: 30, y: 365 }[m[2] as "d" | "w" | "mo" | "y"];
+  const d = new Date(now.getTime() - days * 86_400_000);
   return d.toISOString().slice(0, 10);
 }
 

@@ -1,16 +1,25 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
 
+const title = "Timley — live tech internship & new grad tracker";
 const description =
-  "Live board of Summer/Fall 2027 tech internships and new grad roles, auto-updated from maintained GitHub lists.";
+  "Every 2027 US tech internship and new grad role in one place — deduped, tagged, and refreshed every 2 hours from maintained GitHub lists.";
 
 export const metadata: Metadata = {
-  title: "TIME — Tech Internships Made Easy",
+  metadataBase: new URL("https://timley.dev"),
+  title,
   description,
   openGraph: {
-    title: "TIME — Tech Internships Made Easy",
+    title,
     description,
+    url: "https://timley.dev",
+    siteName: "Timley",
     type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title,
+    description,
   },
 };
 

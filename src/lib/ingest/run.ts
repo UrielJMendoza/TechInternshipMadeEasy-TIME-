@@ -1,5 +1,5 @@
 import type { NormalizedJob } from "../types";
-import { dedupeJobs } from "./normalize";
+import { applyPostFilters, dedupeJobs } from "./normalize";
 import { fetchSpeedy } from "./sources/speedy";
 import { fetchVansh } from "./sources/vansh";
 import { fetchZshah } from "./sources/zshah";
@@ -40,7 +40,7 @@ export async function runIngest(secret: string): Promise<IngestResult> {
     throw new Error(`all sources failed: ${JSON.stringify(fetched)}`);
   }
 
-  const deduped = dedupeJobs(jobs);
+  const deduped = dedupeJobs(applyPostFilters(jobs));
 
   const { supabase } = await import("../supabase");
   const { data, error } = await supabase().rpc("ingest_upsert", {

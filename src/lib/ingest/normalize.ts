@@ -318,6 +318,8 @@ const US_CITY_NAMES = [
   "orlando",
 ];
 
+const KNOWN_NON_US_CITY_NAMES = ["buenos aires"];
+
 function isUSA(location: string): boolean {
   const loc = location
     .toLowerCase()
@@ -325,6 +327,7 @@ function isUSA(location: string): boolean {
     .replace(/\s+/g, " ")
     .trim();
   if (!loc) return true; // no location info — keep, sources are US-centric
+  if (KNOWN_NON_US_CITY_NAMES.some((city) => loc.includes(city))) return false;
   const tokens = loc.split(" ");
   const usSignal =
     tokens.some((t) => US_TOKENS.has(t)) || loc.includes("united states");

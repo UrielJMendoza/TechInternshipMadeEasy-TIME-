@@ -5,7 +5,15 @@ import type { Category, Internship, RoleType } from "@/lib/types";
 import { CATEGORY_LABELS } from "@/lib/types";
 import { CompanyLogo } from "./CompanyLogo";
 
-const CATEGORIES: Category[] = ["software", "cloud", "data-ml", "quant", "security", "hardware", "other"];
+const ALL_CATEGORIES: Category[] = [
+  "software",
+  "cloud",
+  "data-ml",
+  "quant",
+  "security",
+  "hardware",
+  "other",
+];
 const HOT_DAYS = 3;
 const NEW_DAYS = 14;
 
@@ -13,6 +21,122 @@ type SortKey = "featured" | "newest" | "company" | "salary";
 type Freshness = "all" | "hot" | "new";
 type Collection = "all" | "saved" | "applied";
 type ViewMode = "card" | "table";
+type MajorId = "all" | "computer-science" | "engineering" | "business";
+type JobMatcher = (job: Internship) => boolean;
+
+interface Niche {
+  id: string;
+  label: string;
+  matches: JobMatcher;
+}
+
+interface Major {
+  id: MajorId;
+  label: string;
+  matches: JobMatcher;
+  niches: Niche[];
+}
+
+const matchesCategories =
+  (categories: readonly Category[]): JobMatcher =>
+  (job) =>
+    categories.includes(job.category);
+
+const ENGINEERING_TITLE = /\b(mechanical|electrical|electronics?|civil|aerospace|manufacturing|industrial|materials|robotics)\b/i;
+const ELECTRICAL_TITLE = /\b(electrical|electronics?|ee)\b/i;
+const MECHANICAL_TITLE = /\b(mechanical|mechanic)\b/i;
+const CIVIL_TITLE = /\bcivil\b/i;
+const SITE_RELIABILITY_TITLE = /\b(site reliability|sre)\b/i;
+const BUSINESS_TITLE = /\b(product management|product manager|business|finance|financial|marketing|sales|operations?|supply chain|consulting|accounting|procurement)\b/i;
+const PRODUCT_TITLE = /\b(product management|product manager|product marketing|product strategy)\b/i;
+const OPERATIONS_TITLE = /\b(operations?|supply chain|procurement)\b/i;
+const FINANCE_TITLE = /\b(finance|financial|accounting)\b/i;
+const CONSULTING_TITLE = /\b(consulting|consultant)\b/i;
+
+const MAJORS: Major[] = [
+  {
+    id: "all",
+    label: "All majors",
+    matches: matchesCategories(ALL_CATEGORIES),
+    niches: [{ id: "all", label: "All roles", matches: () => true }],
+  },
+  {
+    id: "computer-science",
+    label: "Computer Science",
+    matches: matchesCategories(["software", "cloud", "data-ml", "quant", "security"]),
+    niches: [
+      { id: "all", label: "All CS roles", matches: () => true },
+      {
+        id: "software-engineering",
+        label: "Software Engineering",
+        matches: matchesCategories(["software"]),
+      },
+      {
+        id: "cloud-infra",
+        label: "Cloud / Infra",
+        matches: matchesCategories(["cloud"]),
+      },
+      {
+        id: "site-reliability",
+        label: "Site Reliability",
+        matches: (job) =>
+          job.category === "cloud" && SITE_RELIABILITY_TITLE.test(job.title),
+      },
+      { id: "security", label: "Security", matches: matchesCategories(["security"]) },
+      { id: "data-ml", label: "Data / ML", matches: matchesCategories(["data-ml"]) },
+      { id: "quant", label: "Quant", matches: matchesCategories(["quant"]) },
+    ],
+  },
+  {
+    id: "engineering",
+    label: "Engineering",
+    matches: (job) =>
+      job.category === "hardware" || ENGINEERING_TITLE.test(job.title),
+    niches: [
+      { id: "all", label: "All engineering", matches: () => true },
+      {
+        id: "hardware-firmware",
+        label: "Hardware / Firmware",
+        matches: matchesCategories(["hardware"]),
+      },
+      {
+        id: "electrical",
+        label: "Electrical",
+        matches: (job) => ELECTRICAL_TITLE.test(job.title),
+      },
+      {
+        id: "mechanical",
+        label: "Mechanical",
+        matches: (job) => MECHANICAL_TITLE.test(job.title),
+      },
+      { id: "civil", label: "Civil", matches: (job) => CIVIL_TITLE.test(job.title) },
+    ],
+  },
+  {
+    id: "business",
+    label: "Business",
+    matches: (job) => BUSINESS_TITLE.test(job.title),
+    niches: [
+      { id: "all", label: "All business", matches: () => true },
+      { id: "product", label: "Product", matches: (job) => PRODUCT_TITLE.test(job.title) },
+      {
+        id: "operations",
+        label: "Operations",
+        matches: (job) => OPERATIONS_TITLE.test(job.title),
+      },
+      { id: "finance", label: "Finance", matches: (job) => FINANCE_TITLE.test(job.title) },
+      {
+        id: "consulting",
+        label: "Consulting",
+        matches: (job) => CONSULTING_TITLE.test(job.title),
+      },
+    ],
+  },
+];
+
+const MAJORS_BY_ID = Object.fromEntries(
+  MAJORS.map((major) => [major.id, major]),
+) as Record<MajorId, Major>;
 
 const SORTS: Array<[SortKey, string]> = [
   ["featured", "Featured"],
@@ -140,7 +264,8 @@ export function Board({
   const now = useMemo(() => new Date(generatedAt).getTime(), [generatedAt]);
   const [tab, setTab] = useState<RoleType>("internship");
   const [query, setQuery] = useState("");
-  const [cats, setCats] = useState<Set<Category>>(new Set());
+  const [major, setMajor] = useState<MajorId>("all");
+  const [niche, setNiche] = useState("all");
   const [location, setLocation] = useState("");
   const [freshness, setFreshness] = useState<Freshness>("all");
   const [collection, setCollection] = useState<Collection>("all");
@@ -175,7 +300,25 @@ export function Board({
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const tabJobs = useMemo(() => jobs.filter((j) => j.role_type === tab), [jobs, tab]);
+  const tabJobs = useMemo(
+    () => jobs.filter((job) => job.role_type === tab),
+    [jobs, tab],
+  );
+  const activeMajor = MAJORS_BY_ID[major];
+  const activeNiche =
+    activeMajor.niches.find((option) => option.id === niche) ?? activeMajor.niches[0];
+  const nicheCounts = useMemo(
+    () =>
+      new Map(
+        activeMajor.niches.map((option) => [
+          option.id,
+          tabJobs.filter(
+            (job) => activeMajor.matches(job) && option.matches(job),
+          ).length,
+        ]),
+      ),
+    [activeMajor, tabJobs],
+  );
   const hotCount = useMemo(
     () => tabJobs.filter((j) => daysAgo(j, now) <= HOT_DAYS).length,
     [tabJobs, now],
@@ -190,7 +333,7 @@ export function Board({
     for (const j of tabJobs) {
       for (const part of j.location.split(";")) {
         const loc = part.trim();
-        if (loc) counts.set(loc, (counts.get(loc) ?? 0) + 1);
+        if (loc && loc !== "Remote") counts.set(loc, (counts.get(loc) ?? 0) + 1);
       }
     }
     return [...counts.entries()]
@@ -205,7 +348,7 @@ export function Board({
       if (collection === "saved" && !saved.has(j.link)) return false;
       if (collection === "applied" && !applied.has(j.link)) return false;
       if (q && !j.title.toLowerCase().includes(q) && !j.company.toLowerCase().includes(q)) return false;
-      if (cats.size > 0 && !cats.has(j.category)) return false;
+      if (!activeMajor.matches(j) || !activeNiche.matches(j)) return false;
       if (location === "Remote") {
         if (!/remote/i.test(j.location)) return false;
       } else if (location && !j.location.includes(location)) {
@@ -239,7 +382,19 @@ export function Board({
         break;
     }
     return list;
-  }, [tabJobs, query, cats, location, freshness, collection, saved, applied, sort, now]);
+  }, [
+    tabJobs,
+    query,
+    activeMajor,
+    activeNiche,
+    location,
+    freshness,
+    collection,
+    saved,
+    applied,
+    sort,
+    now,
+  ]);
 
   const internCount = jobs.filter((j) => j.role_type === "internship").length;
   const gradCount = jobs.length - internCount;
@@ -249,15 +404,16 @@ export function Board({
     [tabJobs, applied],
   );
   const hasFilters =
-    cats.size > 0 || location !== "" || query !== "" || freshness !== "all" || collection !== "all";
+    major !== "all" ||
+    niche !== "all" ||
+    location !== "" ||
+    query !== "" ||
+    freshness !== "all" ||
+    collection !== "all";
 
-  const toggleCat = (c: Category) => {
-    setCats((prev) => {
-      const next = new Set(prev);
-      if (next.has(c)) next.delete(c);
-      else next.add(c);
-      return next;
-    });
+  const selectMajor = (nextMajor: MajorId) => {
+    setMajor(nextMajor);
+    setNiche("all");
   };
 
   const dense = view === "table";
@@ -419,37 +575,83 @@ export function Board({
               </button>
             ))}
           </div>
+        </div>
 
-          <div className="flex flex-wrap gap-2">
-            {CATEGORIES.map((c) => (
+        <div className="mt-5 border-b border-border/70">
+          <div
+            className="-mb-px flex min-w-max items-center gap-1 overflow-x-auto pb-px"
+            role="tablist"
+            aria-label="Browse internships by major"
+          >
+            {MAJORS.map((option) => (
               <button
-                key={c}
-                onClick={() => toggleCat(c)}
-                aria-pressed={cats.has(c)}
-                className={`rounded-full border px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  cats.has(c)
-                    ? "border-accent bg-accent text-white"
-                    : "border-border bg-surface text-muted hover:border-border-strong hover:text-fg"
+                key={option.id}
+                type="button"
+                role="tab"
+                aria-selected={major === option.id}
+                onClick={() => selectMajor(option.id)}
+                className={`rounded-t-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow] duration-150 ${
+                  major === option.id
+                    ? "bg-[linear-gradient(135deg,rgba(255,255,255,0.1),rgba(231,201,139,0.1))] text-champagne shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 ring-champagne/20 backdrop-blur-md"
+                    : "text-muted hover:bg-white/[0.04] hover:text-fg"
                 }`}
               >
-                {CATEGORY_LABELS[c]}
+                {option.label}
               </button>
             ))}
-            {hasFilters && (
-              <button
-                onClick={() => {
-                  setCats(new Set());
-                  setLocation("");
-                  setQuery("");
-                  setFreshness("all");
-                  setCollection("all");
-                }}
-                className="px-2 py-1 text-xs font-medium text-faint underline underline-offset-2 hover:text-muted"
-              >
-                Clear
-              </button>
-            )}
           </div>
+        </div>
+
+        <div className="mt-3 flex min-w-0 items-center gap-2">
+          <div
+            className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1"
+            role="group"
+            aria-label={`${activeMajor.label} niches`}
+          >
+            {activeMajor.niches.map((option) => {
+              const available = (nicheCounts.get(option.id) ?? 0) > 0;
+              const selected = niche === option.id;
+              const unavailableMessage = `${option.label} has no live roles yet`;
+
+              return (
+                <button
+                  key={option.id}
+                  type="button"
+                  aria-pressed={selected}
+                  aria-label={available ? option.label : unavailableMessage}
+                  disabled={!available}
+                  title={available ? option.label : unavailableMessage}
+                  onClick={() => setNiche(option.id)}
+                  className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-[color,background-color,border-color] duration-150 ${
+                    selected
+                      ? "border-border-strong bg-raised text-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
+                      : available
+                        ? "border-border bg-surface text-muted hover:border-border-strong hover:text-fg"
+                        : "cursor-not-allowed border-border/60 bg-surface/60 text-faint/70"
+                  }`}
+                >
+                  {option.label}
+                </button>
+              );
+            })}
+          </div>
+
+          {hasFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setMajor("all");
+                setNiche("all");
+                setLocation("");
+                setQuery("");
+                setFreshness("all");
+                setCollection("all");
+              }}
+              className="shrink-0 px-2 py-1 text-xs font-medium text-faint underline underline-offset-2 hover:text-muted"
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 

@@ -12,6 +12,7 @@
   --border: #2a2a2e;
   --border-strong: #3f3f46;
   --accent: #0a84ff;
+  --champagne: #e7c98b;
   --new: #30d158;
   --new-soft: rgba(48, 209, 88, 0.14);
   --hot: #ff9f0a;
@@ -28,6 +29,7 @@
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-accent: var(--accent);
+  --color-champagne: var(--champagne);
   --color-new: var(--new);
   --color-new-soft: var(--new-soft);
   --color-hot: var(--hot);

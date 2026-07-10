@@ -36,7 +36,7 @@ const CATEGORY_RULES: Array<[Category, RegExp]> = [
   ],
   [
     "civil",
-    /\bcivil\b|\bstructural\b|\bgeotechnical\b|\bconstruction (engineering|management)\b|\btransportation engineering\b/i,
+    /\bcivil (engineer|engineering)\b|\bstructural\b|\bgeotechnical\b|\bconstruction (engineering|management)\b|\btransportation engineering\b/i,
   ],
   [
     "mechanical",

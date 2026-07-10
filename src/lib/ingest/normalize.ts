@@ -201,23 +201,6 @@ export function dedupeJobs(jobs: NormalizedJob[]): NormalizedJob[] {
 
 export const MAX_AGE_DAYS = 120;
 
-const NON_US_MARKERS = [
-  "canada", "british columbia", "ontario", "quebec", "toronto", "vancouver",
-  "montreal", "calgary", "waterloo", "ottawa", "united kingdom", "london",
-  "dublin", "ireland", "germany", "berlin", "munich", "amsterdam",
-  "netherlands", "paris", "france", "madrid", "barcelona", "spain", "milan",
-  "italy", "zurich", "switzerland", "stockholm", "sweden", "oslo", "warsaw",
-  "poland", "prague", "vienna", "bucharest", "budapest", "lisbon", "portugal",
-  "tel aviv", "israel", "india", "bangalore", "bengaluru", "hyderabad",
-  "chennai", "mumbai", "pune", "gurgaon", "gurugram", "noida", "singapore",
-  "tokyo", "japan", "seoul", "korea", "beijing", "shanghai", "shenzhen",
-  "hangzhou", "china", "hong kong", "taipei", "taiwan", "sydney", "australia",
-  "auckland", "zealand", "mexico", "brazil", "sao paulo", "buenos aires",
-  "argentina", "bogota", "colombia", "santiago", "chile", "lima", "peru",
-  "dubai", "abu dhabi", "uae", "riyadh", "saudi", "cairo", "egypt", "lagos",
-  "nigeria", "nairobi", "kenya", "cape town", "johannesburg",
-];
-
 const US_TOKENS = new Set([
   "us", "usa", "america", "remote",
   "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id", "il",
@@ -244,9 +227,9 @@ function isUSA(location: string): boolean {
   const tokens = loc.split(" ");
   const usSignal =
     tokens.some((t) => US_TOKENS.has(t)) || loc.includes("united states");
-  const nonUS = NON_US_MARKERS.some((m) => ` ${loc} `.includes(` ${m} `));
-  // "Boston, MA; Toronto, ON" keeps (has a US location); "London, UK" drops.
-  return usSignal || !nonUS;
+  // Keep remote listings from the USA-focused sources, but require a US signal
+  // for physical locations so unknown international places cannot slip through.
+  return usSignal || loc.includes("remote");
 }
 
 function isRecent(posted: string | null, now: number): boolean {

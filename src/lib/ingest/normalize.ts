@@ -275,6 +275,49 @@ const US_TOKENS = new Set([
   "wisconsin", "wyoming",
 ]);
 
+const US_CITY_NAMES = [
+  "nyc",
+  "new york",
+  "chicago",
+  "boston",
+  "austin",
+  "seattle",
+  "dallas",
+  "houston",
+  "atlanta",
+  "miami",
+  "denver",
+  "phoenix",
+  "detroit",
+  "pittsburgh",
+  "philadelphia",
+  "san francisco",
+  "san jose",
+  "los angeles",
+  "san diego",
+  "long beach",
+  "mountain view",
+  "palo alto",
+  "bellevue",
+  "redmond",
+  "cambridge",
+  "minneapolis",
+  "nashville",
+  "charlotte",
+  "raleigh",
+  "baltimore",
+  "portland",
+  "salt lake city",
+  "columbus",
+  "cincinnati",
+  "indianapolis",
+  "milwaukee",
+  "madison",
+  "cleveland",
+  "tampa",
+  "orlando",
+];
+
 function isUSA(location: string): boolean {
   const loc = location
     .toLowerCase()
@@ -287,7 +330,7 @@ function isUSA(location: string): boolean {
     tokens.some((t) => US_TOKENS.has(t)) || loc.includes("united states");
   // Keep remote listings from the USA-focused sources, but require a US signal
   // for physical locations so unknown international places cannot slip through.
-  return usSignal || loc.includes("remote");
+  return usSignal || US_CITY_NAMES.some((city) => loc.includes(city)) || loc.includes("remote");
 }
 
 function isRecent(posted: string | null, now: number): boolean {

@@ -10,19 +10,63 @@ export function cleanText(s: string): string {
 }
 
 const CATEGORY_RULES: Array<[Category, RegExp]> = [
-  ["quant", /\bquant(itative)?\b|\btrad(er|ing)\b/i],
-  ["security", /\bsecurity\b|\bcyber|\bappsec\b|\binfosec\b|penetration test/i],
+  ["quant", /\bquant(itative)?\b|\btrad(er|ing)\b|market mak(er|ing)/i],
+  [
+    "finance",
+    /\bfinance\b|\bfinancial\b|investment bank(ing)?|asset management|wealth management|private equity|venture capital|\bequity research\b|\btreasury\b/i,
+  ],
+  ["consulting", /\bconsult(ing|ant)\b|advisory\b|strategy intern/i],
+  ["accounting", /\baccount(ing|ant)\b|\baudit(or|ing)?\b|\btax\b/i],
+  [
+    "supply-chain",
+    /\bsupply chain\b|\blogistics\b|\bprocurement\b|\bsourcing\b|\bdistribution\b/i,
+  ],
+  [
+    "operations",
+    /\boperations?\b|\bbusiness operations?\b|\bprocess improvement\b|\bproject management\b/i,
+  ],
+  [
+    "product",
+    /\bproduct (management|manager|strategy|operations?|marketing)\b|\bassociate product\b/i,
+  ],
+  ["marketing", /\bmarketing\b|\bbrand\b|\bgrowth\b|\bcommunications?\b|\bpublic relations?\b/i],
+  [
+    "aerospace",
+    /\baerospace\b|\baeronautical\b|\bavionics\b|\bpropulsion\b|\bflight systems?\b|\bspacecraft\b/i,
+  ],
+  [
+    "civil",
+    /\bcivil\b|\bstructural\b|\bgeotechnical\b|\bconstruction (engineering|management)\b|\btransportation engineering\b/i,
+  ],
+  [
+    "mechanical",
+    /\bmechanical\b|\bhvac\b|\bthermal\b|\bfluid systems?\b|\bmechanic(?:s|al)?\b/i,
+  ],
+  [
+    "electrical",
+    /\belectrical\b|\belectronics?\b|\bpower systems?\b|\bcontrols? engineer\b|\bembedded systems?\b/i,
+  ],
+  [
+    "manufacturing",
+    /\bmanufactur(ing|ability|e)\b|\bproduction engineer\b|\bquality engineer\b|\bprocess engineer\b/i,
+  ],
+  ["industrial", /\bindustrial\b|\bsystems engineering\b|\boperations research\b/i],
+  ["materials", /\bmaterials?\b|\bmetallurgy\b|\bpolymer\b|\belectrochemistry\b/i],
+  [
+    "hardware",
+    /\bhardware\b|\bfirmware\b|\bfpga\b|\basic\b|\bsilicon\b|\bchip\b|\bsemiconductor\b|\brf\b engineer/i,
+  ],
+  [
+    "security",
+    /\bsecurity\b|\bcyber\b|\bappsec\b|\binfosec\b|penetration test/i,
+  ],
   [
     "cloud",
-    /\bcloud\b|\bdevops\b|\bsre\b|site reliability|\binfrastructure\b|\bplatform engineer|\bkubernetes\b|\baws\b|\bazure\b|\bgcp\b/i,
+    /\bcloud\b|\bdevops\b|\bsre\b|site reliability|\binfrastructure\b|\bplatform engineer\b|\bkubernetes\b|\baws\b|\bazure\b|\bgcp\b/i,
   ],
   [
     "data-ml",
-    /machine learning|\bml\b|\bai\b|artificial intelligence|data scien|deep learning|computer vision|\bnlp\b|research (scientist|engineer|intern)|\bdata engineer|data analyst|analytics/i,
-  ],
-  [
-    "hardware",
-    /\bhardware\b|\bfirmware\b|\bfpga\b|\basic\b|\bsilicon\b|\bchip\b|\brf\b engineer|electrical engineer/i,
+    /machine learning|\bml\b|\bai\b|artificial intelligence|data scien|deep learning|computer vision|\bnlp\b|research (scientist|engineer|intern)|\bdata engineer\b|data analyst|analytics/i,
   ],
   [
     "software",
@@ -33,13 +77,27 @@ const CATEGORY_RULES: Array<[Category, RegExp]> = [
 /** Map a source-provided category label to ours, if recognizable. */
 function fromSourceCategory(raw: string | null | undefined): Category | null {
   if (!raw) return null;
-  const c = raw.toLowerCase();
-  if (c.includes("software")) return "software";
-  if (c.includes("cloud") || c.includes("infra")) return "cloud";
-  if (c.includes("ml") || c.includes("ai") || c.includes("data")) return "data-ml";
-  if (c.includes("quant")) return "quant";
-  if (c.includes("security")) return "security";
-  if (c.includes("hardware")) return "hardware";
+  const category = raw.toLowerCase();
+  if (category.includes("quant") || category.includes("trading")) return "quant";
+  if (category.includes("finance") || category.includes("banking")) return "finance";
+  if (category.includes("consult")) return "consulting";
+  if (category.includes("account") || category.includes("audit")) return "accounting";
+  if (category.includes("supply chain") || category.includes("logistics")) return "supply-chain";
+  if (category.includes("operations")) return "operations";
+  if (category.includes("product")) return "product";
+  if (category.includes("marketing")) return "marketing";
+  if (category.includes("aerospace") || category.includes("aviation")) return "aerospace";
+  if (category.includes("civil") || category.includes("structural")) return "civil";
+  if (category.includes("mechanical")) return "mechanical";
+  if (category.includes("electrical") || category.includes("electronics")) return "electrical";
+  if (category.includes("manufactur")) return "manufacturing";
+  if (category.includes("industrial") || category.includes("systems")) return "industrial";
+  if (category.includes("material")) return "materials";
+  if (category.includes("hardware") || category.includes("firmware") || category.includes("computer engineering")) return "hardware";
+  if (category.includes("security") || category.includes("cyber")) return "security";
+  if (category.includes("cloud") || category.includes("infra") || category.includes("devops")) return "cloud";
+  if (category.includes("ml") || category.includes("ai") || category.includes("data")) return "data-ml";
+  if (category.includes("software") || category.includes("developer")) return "software";
   return null;
 }
 

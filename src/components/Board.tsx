@@ -575,6 +575,7 @@ export function Board({
               </button>
             ))}
           </div>
+        </div>
 
         <div className="mt-5 border-b border-border/70">
           <div
@@ -651,7 +652,6 @@ export function Board({
               Clear
             </button>
           )}
-        </div>
         </div>
       </div>
 

@@ -7,6 +7,20 @@ export type Category =
   | "quant"
   | "security"
   | "hardware"
+  | "mechanical"
+  | "electrical"
+  | "civil"
+  | "aerospace"
+  | "manufacturing"
+  | "industrial"
+  | "materials"
+  | "finance"
+  | "consulting"
+  | "accounting"
+  | "operations"
+  | "product"
+  | "marketing"
+  | "supply-chain"
   | "other";
 
 export interface NormalizedJob {
@@ -49,6 +63,20 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   quant: "Quant",
   security: "Security",
   hardware: "Hardware",
+  mechanical: "Mechanical",
+  electrical: "Electrical",
+  civil: "Civil",
+  aerospace: "Aerospace",
+  manufacturing: "Manufacturing",
+  industrial: "Industrial",
+  materials: "Materials",
+  finance: "Finance",
+  consulting: "Consulting",
+  accounting: "Accounting",
+  operations: "Operations",
+  product: "Product",
+  marketing: "Marketing",
+  "supply-chain": "Supply Chain",
   other: "Other",
 };
 
@@ -57,4 +85,6 @@ export const SOURCE_LABELS: Record<string, string> = {
   zshah101: "zshah101/Automated-List",
   vanshb03: "vanshb03/Summer2027-Internships",
   speedyapply: "speedyapply/2027-SWE-College-Jobs",
+  zapplyjobs: "zapplyjobs/Internships-2027",
+  northwesternfintech: "Northwestern Fintech / Quant",
 };

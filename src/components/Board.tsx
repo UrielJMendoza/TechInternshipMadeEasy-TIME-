@@ -57,7 +57,7 @@ const MAJORS: Major[] = [
   {
     id: "all",
     label: "All majors",
-    matches: () => true,
+    matches: matchesCategories(ALL_CATEGORIES),
     niches: [{ id: "all", label: "All roles", matches: () => true }],
   },
   {

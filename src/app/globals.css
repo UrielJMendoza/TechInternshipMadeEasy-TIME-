@@ -66,4 +66,12 @@ body {
 .cat-quant { background: rgba(255, 214, 10, 0.14); color: #ffd60a; }
 .cat-security { background: rgba(255, 69, 58, 0.16); color: #ff8c85; }
 .cat-hardware { background: rgba(48, 209, 88, 0.15); color: #5ddd7f; }
+.cat-mechanical, .cat-manufacturing { background: rgba(255, 159, 10, 0.16); color: #ffb340; }
+.cat-electrical, .cat-industrial { background: rgba(100, 210, 255, 0.15); color: #70d7ff; }
+.cat-civil, .cat-materials { background: rgba(94, 92, 230, 0.18); color: #aaa9ff; }
+.cat-aerospace { background: rgba(191, 90, 242, 0.18); color: #d99bff; }
+.cat-finance, .cat-accounting { background: rgba(255, 214, 10, 0.14); color: #ffd60a; }
+.cat-consulting, .cat-product { background: rgba(10, 132, 255, 0.18); color: #64aeff; }
+.cat-operations, .cat-supply-chain { background: rgba(48, 209, 88, 0.15); color: #5ddd7f; }
+.cat-marketing { background: rgba(255, 69, 58, 0.16); color: #ff8c85; }
 .cat-other { background: rgba(142, 142, 147, 0.16); color: #aeaeb2; }

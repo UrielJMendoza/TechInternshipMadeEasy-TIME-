@@ -30,6 +30,8 @@ Two ingestion paths run the **same parser code**:
 |---|---|---|
 | [SimplifyJobs/Summer2026-Internships](https://github.com/SimplifyJobs/Summer2026-Internships) + [New-Grad-Positions](https://github.com/SimplifyJobs/New-Grad-Positions) | JSON DB (`.github/scripts/listings.json`) | Internships + New Grad |
 | [zshah101/Automated-List-Of-Summer-2027-and-Fall-2026-Tech-Internships](https://github.com/zshah101/Automated-List-Of-Summer-2027-and-Fall-2026-Tech-Internships) | JSON API (`docs/api/jobs.json`) | Internships |
+| [zapplyjobs/Internships-2027](https://github.com/zapplyjobs/Internships-2027) | Maintained README tables | Engineering, business, tech, and more |
+| [northwesternfintech/2027QuantInternships](https://github.com/northwesternfintech/2027QuantInternships) | Auto-generated README tables | Quant, finance, software, and hardware internships |
 | [vanshb03/Summer2027-Internships](https://github.com/vanshb03/Summer2027-Internships) | README markdown table | Internships |
 | [speedyapply/2027-SWE-College-Jobs](https://github.com/speedyapply/2027-SWE-College-Jobs) | README + `NEW_GRAD_USA.md` tables | Internships + New Grad |
 
@@ -50,9 +52,7 @@ two passes (`src/lib/ingest/normalize.ts`):
    ("(Fall 2026)"), and the location reduces to the first city with state/country
    tokens removed ("San Mateo, California, United States" → "san-mateo").
 
-Roles that disappear from every source are marked inactive, so the board only
-shows live postings. Two more filters run at ingest time: **USA locations only**,
-and **postings older than 120 days are dropped** (and age out of the DB).
+A source can deactivate listings only after it returns a successful, complete snapshot. A failed source leaves its prior listings active, and every run is recorded in Supabase `ingest_source_runs` with fetched counts, accepted counts, error state, and timestamp. This makes broken or stale upstream feeds visible without risking a mass deletion. Two more filters run at ingest time: **USA locations only**, and **postings older than 120 days are dropped**.
 
 ## Deploying the site (one-time)
 

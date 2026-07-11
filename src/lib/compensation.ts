@@ -1,0 +1,67 @@
+import type { Category, Internship, RoleType } from "@/lib/types";
+
+type PayRangeByRole = Record<RoleType, readonly [number, number]>;
+
+const ESTIMATED_PAY_RANGES: Record<Category, PayRangeByRole> = {
+  software: { internship: [28, 48], new_grad: [95, 145] },
+  cloud: { internship: [30, 50], new_grad: [100, 150] },
+  "data-ml": { internship: [30, 52], new_grad: [100, 155] },
+  quant: { internship: [45, 80], new_grad: [125, 210] },
+  security: { internship: [27, 46], new_grad: [90, 140] },
+  hardware: { internship: [27, 45], new_grad: [88, 135] },
+  mechanical: { internship: [23, 36], new_grad: [72, 105] },
+  electrical: { internship: [24, 40], new_grad: [78, 118] },
+  civil: { internship: [21, 32], new_grad: [65, 95] },
+  aerospace: { internship: [24, 40], new_grad: [78, 120] },
+  manufacturing: { internship: [22, 34], new_grad: [68, 100] },
+  industrial: { internship: [22, 35], new_grad: [70, 105] },
+  materials: { internship: [22, 36], new_grad: [70, 108] },
+  finance: { internship: [24, 42], new_grad: [70, 115] },
+  consulting: { internship: [25, 42], new_grad: [75, 120] },
+  accounting: { internship: [20, 32], new_grad: [60, 90] },
+  operations: { internship: [20, 33], new_grad: [62, 95] },
+  product: { internship: [25, 45], new_grad: [85, 130] },
+  marketing: { internship: [18, 30], new_grad: [55, 85] },
+  "supply-chain": { internship: [20, 32], new_grad: [62, 92] },
+  other: { internship: [20, 35], new_grad: [65, 105] },
+};
+
+export interface Compensation {
+  label: string;
+  estimated: boolean;
+  title: string;
+}
+
+export function compensationFor(job: Internship): Compensation {
+  const reported = job.salary?.trim();
+  if (reported) {
+    return {
+      label: reported,
+      estimated: false,
+      title: "Compensation reported by the source listing",
+    };
+  }
+
+  const [low, high] = ESTIMATED_PAY_RANGES[job.category][job.role_type];
+  return {
+    label:
+      job.role_type === "internship"
+        ? `Est. $${low}\u2013${high}/hr`
+        : `Est. $${low}\u2013${high}k/yr`,
+    estimated: true,
+    title:
+      "Broad estimated US range for this role category; actual compensation varies by company and location",
+  };
+}
+
+/** "$62/hr" | "$201k/yr" -> approximate annual USD, for sorting only. */
+export function annualSalary(salary: string | null): number {
+  if (!salary) return 0;
+  const match = salary
+    .replace(/,/g, "")
+    .match(/\$?\s*(\d+(?:\.\d+)?)\s*(k)?\s*\/\s*(hr|yr|mo)/i);
+  if (!match) return 0;
+  const amount = Number(match[1]) * (match[2] ? 1000 : 1);
+  const unit = match[3].toLowerCase();
+  return unit === "hr" ? amount * 2080 : unit === "mo" ? amount * 12 : amount;
+}

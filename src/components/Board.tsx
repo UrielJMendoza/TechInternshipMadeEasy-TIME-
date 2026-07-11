@@ -1,347 +1,60 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { Category, Internship, RoleType } from "@/lib/types";
-import { CATEGORY_LABELS } from "@/lib/types";
-import { CompanyLogo } from "./CompanyLogo";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  APPLICATION_STAGE_LABELS,
+  APPLICATION_STAGES,
+  getApplicationStage,
+  type ApplicationStage,
+} from "@/lib/applicationTracking";
+import {
+  activeFilterCount,
+  type BoardFilters,
+  type Collection,
+  type MajorId,
+  type SortKey,
+  type ViewMode,
+} from "@/lib/boardFilterState";
+import { SORT_OPTIONS } from "@/lib/boardOptions";
+import {
+  filterAndSortJobs,
+} from "@/lib/jobFilters";
+import {
+  PHYSICAL_LOCATION_FACETS,
+  buildLocationFacetOptions,
+  countRemoteJobs,
+  type PhysicalLocationFacetId,
+} from "@/lib/jobLocations";
+import { MAJORS, MAJORS_BY_ID } from "@/lib/jobTaxonomy";
+import {
+  HOT_DAYS,
+  NEW_DAYS,
+  daysAgo,
+  relativeTimestamp,
+} from "@/lib/jobTime";
+import type { Internship, RoleType } from "@/lib/types";
+import { useApplicationTracking } from "@/hooks/useApplicationTracking";
+import { useBoardFilters } from "@/hooks/useBoardFilters";
+import {
+  usePersistentSet,
+  usePersistentString,
+} from "@/hooks/useLocalStorageState";
+import {
+  FilterChip,
+  LocationFilterMenu,
+  QuickToggle,
+  StageFilterMenu,
+} from "@/components/BoardFilterControls";
+import { JobCard, JOB_GRID } from "@/components/JobCard";
+import { MobileFilterSheet } from "@/components/MobileFilterSheet";
 
-const ALL_CATEGORIES: Category[] = [
-  "software",
-  "cloud",
-  "data-ml",
-  "quant",
-  "security",
-  "hardware",
-  "mechanical",
-  "electrical",
-  "civil",
-  "aerospace",
-  "manufacturing",
-  "industrial",
-  "materials",
-  "finance",
-  "consulting",
-  "accounting",
-  "operations",
-  "product",
-  "marketing",
-  "supply-chain",
-  "other",
-];
-const ENGINEERING_CATEGORIES: Category[] = [
-  "hardware",
-  "mechanical",
-  "electrical",
-  "civil",
-  "aerospace",
-  "manufacturing",
-  "industrial",
-  "materials",
-];
-const BUSINESS_CATEGORIES: Category[] = [
-  "finance",
-  "consulting",
-  "accounting",
-  "operations",
-  "product",
-  "marketing",
-  "supply-chain",
-];
-const HOT_DAYS = 3;
-const NEW_DAYS = 14;
+const PAGE_SIZE = 30;
+const LOCATION_LABELS = new Map<PhysicalLocationFacetId, string>(
+  PHYSICAL_LOCATION_FACETS.map((location) => [location.id, location.label]),
+);
 
-type SortKey = "featured" | "newest" | "company" | "salary";
-type Freshness = "all" | "hot" | "new";
-type Collection = "all" | "saved" | "applied";
-type ViewMode = "card" | "table";
-type MajorId = "all" | "computer-science" | "engineering" | "business";
-type JobMatcher = (job: Internship) => boolean;
-
-interface Niche {
-  id: string;
-  label: string;
-  matches: JobMatcher;
-}
-
-interface Major {
-  id: MajorId;
-  label: string;
-  matches: JobMatcher;
-  niches: Niche[];
-}
-
-const matchesCategories =
-  (categories: readonly Category[]): JobMatcher =>
-  (job) =>
-    categories.includes(job.category);
-
-const matchesCategoryOrTitle =
-  (categories: readonly Category[], pattern: RegExp): JobMatcher =>
-  (job) =>
-    categories.includes(job.category) || pattern.test(job.title);
-
-const ENGINEERING_TITLE =
-  /\b(mechanical|electrical|electronics?|civil|structural|aerospace|aeronautical|manufacturing|industrial|materials|robotics|chemical|biomedical|construction|quality engineering|systems engineering)\b/i;
-const HARDWARE_TITLE = /\b(hardware|firmware|embedded|fpga|asic|silicon|semiconductor|chip)\b/i;
-const ELECTRICAL_TITLE = /\b(electrical|electronics?|power systems?|controls?|embedded systems?)\b/i;
-const MECHANICAL_TITLE = /\b(mechanical|mechanic|hvac|thermal|fluid systems?)\b/i;
-const CIVIL_TITLE = /\b(civil|structural|geotechnical|construction|transportation engineering)\b/i;
-const AEROSPACE_TITLE = /\b(aerospace|aeronautical|avionics|propulsion|flight systems?|spacecraft)\b/i;
-const MANUFACTURING_TITLE = /\b(manufactur(ing|ability|e)|production engineer|quality engineer|process engineer)\b/i;
-const INDUSTRIAL_TITLE = /\b(industrial|systems engineering|operations research)\b/i;
-const MATERIALS_TITLE = /\b(materials?|metallurgy|polymer|electrochemistry)\b/i;
-const SITE_RELIABILITY_TITLE = /\b(site reliability|sre)\b/i;
-const BUSINESS_TITLE =
-  /\b(product management|product manager|product marketing|product strategy|business|finance|financial|marketing|sales|operations?|supply chain|logistics|procurement|consulting|consultant|accounting|audit|investment banking|asset management|wealth management|private equity|venture capital)\b/i;
-const PRODUCT_TITLE = /\b(product management|product manager|product marketing|product strategy|product operations?)\b/i;
-const OPERATIONS_TITLE = /\b(operations?|process improvement|project management)\b/i;
-const FINANCE_TITLE = /\b(finance|financial|investment banking|asset management|wealth management|private equity|venture capital|quant(itative)?|trading)\b/i;
-const CONSULTING_TITLE = /\b(consulting|consultant|advisory|strategy intern)\b/i;
-const ACCOUNTING_TITLE = /\b(accounting|accountant|audit(?:or|ing)?|tax)\b/i;
-const MARKETING_TITLE = /\b(marketing|brand|growth|communications?|public relations?)\b/i;
-const SUPPLY_CHAIN_TITLE = /\b(supply chain|logistics|procurement|sourcing|distribution)\b/i;
-
-const MAJORS: Major[] = [
-  {
-    id: "all",
-    label: "All majors",
-    matches: matchesCategories(ALL_CATEGORIES),
-    niches: [{ id: "all", label: "All roles", matches: () => true }],
-  },
-  {
-    id: "computer-science",
-    label: "Computer Science",
-    matches: matchesCategories(["software", "cloud", "data-ml", "quant", "security"]),
-    niches: [
-      { id: "all", label: "All CS roles", matches: () => true },
-      {
-        id: "software-engineering",
-        label: "Software Engineering",
-        matches: matchesCategories(["software"]),
-      },
-      {
-        id: "cloud-infra",
-        label: "Cloud / Infra",
-        matches: matchesCategories(["cloud"]),
-      },
-      {
-        id: "site-reliability",
-        label: "Site Reliability",
-        matches: (job) =>
-          job.category === "cloud" && SITE_RELIABILITY_TITLE.test(job.title),
-      },
-      { id: "security", label: "Security", matches: matchesCategories(["security"]) },
-      { id: "data-ml", label: "Data / ML", matches: matchesCategories(["data-ml"]) },
-      { id: "quant", label: "Quant", matches: matchesCategories(["quant"]) },
-    ],
-  },
-  {
-    id: "engineering",
-    label: "Engineering",
-    matches: matchesCategoryOrTitle(ENGINEERING_CATEGORIES, ENGINEERING_TITLE),
-    niches: [
-      { id: "all", label: "All engineering", matches: () => true },
-      {
-        id: "hardware-firmware",
-        label: "Hardware / Firmware",
-        matches: matchesCategoryOrTitle(["hardware"], HARDWARE_TITLE),
-      },
-      {
-        id: "electrical",
-        label: "Electrical",
-        matches: matchesCategoryOrTitle(["electrical"], ELECTRICAL_TITLE),
-      },
-      {
-        id: "mechanical",
-        label: "Mechanical",
-        matches: matchesCategoryOrTitle(["mechanical"], MECHANICAL_TITLE),
-      },
-      {
-        id: "civil",
-        label: "Civil",
-        matches: matchesCategoryOrTitle(["civil"], CIVIL_TITLE),
-      },
-      {
-        id: "aerospace",
-        label: "Aerospace",
-        matches: matchesCategoryOrTitle(["aerospace"], AEROSPACE_TITLE),
-      },
-      {
-        id: "manufacturing",
-        label: "Manufacturing",
-        matches: matchesCategoryOrTitle(["manufacturing"], MANUFACTURING_TITLE),
-      },
-      {
-        id: "industrial",
-        label: "Industrial",
-        matches: matchesCategoryOrTitle(["industrial"], INDUSTRIAL_TITLE),
-      },
-      {
-        id: "materials",
-        label: "Materials",
-        matches: matchesCategoryOrTitle(["materials"], MATERIALS_TITLE),
-      },
-    ],
-  },
-  {
-    id: "business",
-    label: "Business",
-    matches: matchesCategoryOrTitle([...BUSINESS_CATEGORIES, "quant"], BUSINESS_TITLE),
-    niches: [
-      { id: "all", label: "All business", matches: () => true },
-      {
-        id: "finance",
-        label: "Finance",
-        matches: matchesCategoryOrTitle(["finance", "quant"], FINANCE_TITLE),
-      },
-      {
-        id: "consulting",
-        label: "Consulting",
-        matches: matchesCategoryOrTitle(["consulting"], CONSULTING_TITLE),
-      },
-      {
-        id: "accounting",
-        label: "Accounting",
-        matches: matchesCategoryOrTitle(["accounting"], ACCOUNTING_TITLE),
-      },
-      {
-        id: "operations",
-        label: "Operations",
-        matches: matchesCategoryOrTitle(["operations"], OPERATIONS_TITLE),
-      },
-      {
-        id: "product",
-        label: "Product",
-        matches: matchesCategoryOrTitle(["product"], PRODUCT_TITLE),
-      },
-      {
-        id: "marketing",
-        label: "Marketing",
-        matches: matchesCategoryOrTitle(["marketing"], MARKETING_TITLE),
-      },
-      {
-        id: "supply-chain",
-        label: "Supply Chain",
-        matches: matchesCategoryOrTitle(["supply-chain"], SUPPLY_CHAIN_TITLE),
-      },
-    ],
-  },
-];
-
-const MAJORS_BY_ID = Object.fromEntries(
-  MAJORS.map((major) => [major.id, major]),
-) as Record<MajorId, Major>;
-
-const SORTS: Array<[SortKey, string]> = [
-  ["featured", "Featured"],
-  ["newest", "Newest"],
-  ["company", "Company A–Z"],
-  ["salary", "Top salary"],
-];
-
-// Shared column template so every row lines up into vertical columns on sm+,
-// and header labels (table view) align with the data beneath them.
-const GRID =
-  "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 sm:grid-cols-[auto_minmax(0,2.1fr)_6.5rem_minmax(0,1.25fr)_5.5rem_3.25rem_auto] sm:gap-x-4 sm:items-center";
-
-function postedTime(job: Internship): number {
-  return job.posted_date
-    ? new Date(`${job.posted_date}T00:00:00Z`).getTime()
-    : new Date(job.first_seen_at).getTime();
-}
-
-function daysAgo(job: Internship, now: number): number {
-  return Math.max(0, Math.floor((now - postedTime(job)) / 86_400_000));
-}
-
-function relative(job: Internship, now: number): string {
-  const days = daysAgo(job, now);
-  if (days === 0) return "today";
-  if (days === 1) return "1d ago";
-  if (days < 14) return `${days}d ago`;
-  if (days < 60) return `${Math.floor(days / 7)}w ago`;
-  return `${Math.floor(days / 30)}mo ago`;
-}
-
-function relativeTimestamp(iso: string, now: number): string {
-  const mins = Math.max(0, Math.round((now - new Date(iso).getTime()) / 60_000));
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hours = Math.round(mins / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.round(hours / 24)}d ago`;
-}
-
-/** "$62/hr" | "$201k/yr" -> approximate annual USD, for sorting only. */
-function annualSalary(s: string | null): number {
-  if (!s) return 0;
-  const m = s.replace(/,/g, "").match(/\$?\s*(\d+(?:\.\d+)?)\s*(k)?\s*\/\s*(hr|yr|mo)/i);
-  if (!m) return 0;
-  const n = Number(m[1]) * (m[2] ? 1000 : 1);
-  const unit = m[3].toLowerCase();
-  return unit === "hr" ? n * 2080 : unit === "mo" ? n * 12 : n;
-}
-
-// ---------------------------------------------------------------------------
-// localStorage-backed state. Saved/applied roles are keyed by apply link (a
-// stable identity that survives re-ingestion, unlike the DB row id).
-
-function usePersistentSet(key: string): [Set<string>, (id: string) => void, boolean] {
-  const [set, setSet] = useState<Set<string>>(new Set());
-  const [ready, setReady] = useState(false);
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(key);
-      if (raw) setSet(new Set(JSON.parse(raw) as string[]));
-    } catch {
-      /* corrupt or unavailable — start empty */
-    }
-    setReady(true);
-  }, [key]);
-
-  const toggle = useCallback(
-    (id: string) => {
-      setSet((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        try {
-          localStorage.setItem(key, JSON.stringify([...next]));
-        } catch {
-          /* quota/unavailable — keep in-memory */
-        }
-        return next;
-      });
-    },
-    [key],
-  );
-
-  return [set, toggle, ready];
-}
-
-function usePersistentValue<T extends string>(key: string, fallback: T): [T, (v: T) => void] {
-  const [value, setValue] = useState<T>(fallback);
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(key) as T | null;
-      if (raw) setValue(raw);
-    } catch {
-      /* ignore */
-    }
-  }, [key]);
-  const set = useCallback(
-    (v: T) => {
-      setValue(v);
-      try {
-        localStorage.setItem(key, v);
-      } catch {
-        /* ignore */
-      }
-    },
-    [key],
-  );
-  return [value, set];
+function isViewMode(value: string): value is ViewMode {
+  return value === "card" || value === "table";
 }
 
 export function Board({
@@ -356,43 +69,63 @@ export function Board({
   updatedAt: string | null;
 }) {
   const now = useMemo(() => new Date(generatedAt).getTime(), [generatedAt]);
-  const [tab, setTab] = useState<RoleType>("internship");
-  const [query, setQuery] = useState("");
-  const [major, setMajor] = useState<MajorId>("all");
-  const [niche, setNiche] = useState("all");
-  const [location, setLocation] = useState("");
-  const [freshness, setFreshness] = useState<Freshness>("all");
-  const [collection, setCollection] = useState<Collection>("all");
-  const [sort, setSort] = useState<SortKey>("featured");
-  const [view, setView] = usePersistentValue<ViewMode>("timley:view", "card");
+  const { filters, ready: filtersReady, updateFilters, clearFilters } =
+    useBoardFilters();
+  const [view, setView] = usePersistentString<ViewMode>(
+    "timley:view",
+    "card",
+    isViewMode,
+  );
   const [saved, toggleSaved] = usePersistentSet("timley:saved");
-  const [applied, toggleApplied] = usePersistentSet("timley:applied");
-  const searchRef = useRef<HTMLInputElement>(null);
+  const { records, updateStage } = useApplicationTracking();
+  const [pagination, setPagination] = useState({
+    key: "",
+    count: PAGE_SIZE,
+  });
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [stageAnnouncement, setStageAnnouncement] = useState("");
+  const mobileSearchRef = useRef<HTMLInputElement>(null);
+  const desktopSearchRef = useRef<HTMLInputElement>(null);
 
-  // Shareable tab links: /?tab=new-grad
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get("tab") === "new-grad") {
-      setTab("new_grad");
-    }
-  }, []);
-  const switchTab = (next: RoleType) => {
-    setTab(next);
-    const url = next === "new_grad" ? "?tab=new-grad" : window.location.pathname;
-    window.history.replaceState(null, "", url);
-  };
+  const {
+    tab,
+    query,
+    major,
+    niche,
+    locationIds,
+    locationOrder,
+    freshness,
+    collection,
+    sort,
+    stages,
+    remoteOnly,
+    visaSponsorship,
+  } = filters;
 
-  // "/" focuses search from anywhere
   useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const el = document.activeElement;
-      if (e.key === "/" && el?.tagName !== "INPUT" && el?.tagName !== "SELECT") {
-        e.preventDefault();
-        searchRef.current?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = document.activeElement;
+      const isTyping =
+        target instanceof HTMLInputElement ||
+        target instanceof HTMLTextAreaElement ||
+        target instanceof HTMLSelectElement ||
+        target?.getAttribute("contenteditable") === "true";
+      if (event.key === "/" && !isTyping) {
+        event.preventDefault();
+        const visibleSearch = [mobileSearchRef.current, desktopSearchRef.current]
+          .find((input) => input && input.getClientRects().length > 0);
+        visibleSearch?.focus();
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
   }, []);
+
+  useEffect(() => {
+    if (!stageAnnouncement) return;
+    const timeout = window.setTimeout(() => setStageAnnouncement(""), 2200);
+    return () => window.clearTimeout(timeout);
+  }, [stageAnnouncement]);
 
   const tabJobs = useMemo(
     () => jobs.filter((job) => job.role_type === tab),
@@ -400,7 +133,16 @@ export function Board({
   );
   const activeMajor = MAJORS_BY_ID[major];
   const activeNiche =
-    activeMajor.niches.find((option) => option.id === niche) ?? activeMajor.niches[0];
+    activeMajor.niches.find((option) => option.id === niche) ??
+    activeMajor.niches[0];
+
+  useEffect(() => {
+    if (!filtersReady) return;
+    if (!activeMajor.niches.some((option) => option.id === niche)) {
+      updateFilters({ niche: "all" }, "replace");
+    }
+  }, [activeMajor, filtersReady, niche, updateFilters]);
+
   const nicheCounts = useMemo(
     () =>
       new Map(
@@ -414,114 +156,137 @@ export function Board({
     [activeMajor, tabJobs],
   );
   const hotCount = useMemo(
-    () => tabJobs.filter((j) => daysAgo(j, now) <= HOT_DAYS).length,
-    [tabJobs, now],
+    () => tabJobs.filter((job) => daysAgo(job, now) <= HOT_DAYS).length,
+    [now, tabJobs],
   );
   const newCount = useMemo(
-    () => tabJobs.filter((j) => daysAgo(j, now) <= NEW_DAYS).length,
-    [tabJobs, now],
+    () => tabJobs.filter((job) => daysAgo(job, now) <= NEW_DAYS).length,
+    [now, tabJobs],
   );
-
-  const locations = useMemo(() => {
-    const counts = new Map<string, number>();
-    for (const j of tabJobs) {
-      for (const part of j.location.split(";")) {
-        const loc = part.trim();
-        if (loc && loc !== "Remote") counts.set(loc, (counts.get(loc) ?? 0) + 1);
-      }
-    }
-    return [...counts.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 20)
-      .map(([loc]) => loc);
-  }, [tabJobs]);
+  const remoteCount = useMemo(() => countRemoteJobs(tabJobs), [tabJobs]);
+  const locationOptions = useMemo(
+    () => buildLocationFacetOptions(tabJobs, locationOrder),
+    [locationOrder, tabJobs],
+  );
+  const stageCounts = useMemo(
+    () =>
+      Object.fromEntries(
+        APPLICATION_STAGES.map((stage) => [
+          stage,
+          tabJobs.filter(
+            (job) => getApplicationStage(records, job.link) === stage,
+          ).length,
+        ]),
+      ) as Record<ApplicationStage, number>,
+    [records, tabJobs],
+  );
 
   const filtered = useMemo(() => {
-    const q = query.trim().toLowerCase();
-    const list = tabJobs.filter((j) => {
-      if (collection === "saved" && !saved.has(j.link)) return false;
-      if (collection === "applied" && !applied.has(j.link)) return false;
-      if (q && !j.title.toLowerCase().includes(q) && !j.company.toLowerCase().includes(q)) return false;
-      if (!activeMajor.matches(j) || !activeNiche.matches(j)) return false;
-      if (location === "Remote") {
-        if (!/remote/i.test(j.location)) return false;
-      } else if (location && !j.location.includes(location)) {
-        return false;
-      }
-      if (freshness === "hot" && daysAgo(j, now) > HOT_DAYS) return false;
-      if (freshness === "new" && daysAgo(j, now) > NEW_DAYS) return false;
-      return true;
+    return filterAndSortJobs(tabJobs, {
+      query,
+      locationIds,
+      remoteOnly,
+      visaSponsorship,
+      stages,
+      freshness,
+      collection,
+      sort,
+      saved,
+      applications: records,
+      now,
+      matchesMajor: activeMajor.matches,
+      matchesNiche: activeNiche.matches,
     });
-
-    const byNewest = (a: Internship, b: Internship) =>
-      postedTime(b) - postedTime(a) || a.company.localeCompare(b.company);
-    switch (sort) {
-      case "featured":
-        // SWE + cloud float to the top, everything else stays visible below —
-        // a default lens, not a filter.
-        list.sort((a, b) => {
-          const fa = a.category === "software" || a.category === "cloud" ? 0 : 1;
-          const fb = b.category === "software" || b.category === "cloud" ? 0 : 1;
-          return fa - fb || byNewest(a, b);
-        });
-        break;
-      case "newest":
-        list.sort(byNewest);
-        break;
-      case "company":
-        list.sort((a, b) => a.company.localeCompare(b.company) || byNewest(a, b));
-        break;
-      case "salary":
-        list.sort((a, b) => annualSalary(b.salary) - annualSalary(a.salary) || byNewest(a, b));
-        break;
-    }
-    return list;
   }, [
-    tabJobs,
-    query,
     activeMajor,
     activeNiche,
-    location,
-    freshness,
     collection,
-    saved,
-    applied,
-    sort,
+    freshness,
+    locationIds,
     now,
+    query,
+    records,
+    remoteOnly,
+    saved,
+    sort,
+    stages,
+    tabJobs,
+    visaSponsorship,
   ]);
 
-  const internCount = jobs.filter((j) => j.role_type === "internship").length;
-  const gradCount = jobs.length - internCount;
-  const savedInTab = useMemo(() => tabJobs.filter((j) => saved.has(j.link)).length, [tabJobs, saved]);
-  const appliedInTab = useMemo(
-    () => tabJobs.filter((j) => applied.has(j.link)).length,
-    [tabJobs, applied],
+  const paginationKey = useMemo(
+    () => filtered.map((job) => job.id).join("\u001f"),
+    [filtered],
   );
-  const hasFilters =
-    major !== "all" ||
-    niche !== "all" ||
-    location !== "" ||
-    query !== "" ||
-    freshness !== "all" ||
-    collection !== "all";
+  const visibleCount =
+    pagination.key === paginationKey ? pagination.count : PAGE_SIZE;
+  const visibleJobs = filtered.slice(0, visibleCount);
+  const remainingCount = Math.max(0, filtered.length - visibleJobs.length);
+  const nextPageCount = Math.min(PAGE_SIZE, remainingCount);
+  const internCount = jobs.filter(
+    (job) => job.role_type === "internship",
+  ).length;
+  const gradCount = jobs.length - internCount;
+  const savedInTab = tabJobs.filter((job) => saved.has(job.link)).length;
+  const filterCount = activeFilterCount(filters);
+  const dense = view === "table";
 
-  const selectMajor = (nextMajor: MajorId) => {
-    setMajor(nextMajor);
-    setNiche("all");
+  const update = (
+    changes: Partial<BoardFilters>,
+    mode: "push" | "replace" = "push",
+  ) => updateFilters(changes, mode);
+
+  const switchTab = (nextTab: RoleType) => update({ tab: nextTab });
+  const selectMajor = (nextMajor: MajorId) =>
+    update({ major: nextMajor, niche: "all" });
+  const toggleLocation = (id: PhysicalLocationFacetId) =>
+    update({
+      locationIds: locationIds.includes(id)
+        ? locationIds.filter((selected) => selected !== id)
+        : [...locationIds, id],
+    });
+  const toggleStageFilter = (stage: ApplicationStage) =>
+    update({
+      stages: stages.includes(stage)
+        ? stages.filter((selected) => selected !== stage)
+        : [...stages, stage],
+    });
+  const setRemoteOnly = (next: boolean) =>
+    update({ remoteOnly: next, locationIds: next ? [] : locationIds });
+
+  const onRoleTabKeyDown = (
+    event: React.KeyboardEvent<HTMLButtonElement>,
+    current: RoleType,
+  ) => {
+    if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+    event.preventDefault();
+    const next = current === "internship" ? "new_grad" : "internship";
+    switchTab(next);
+    window.requestAnimationFrame(() =>
+      document.getElementById(`role-tab-${next}`)?.focus(),
+    );
   };
 
-  const dense = view === "table";
+  const optionLabels = new Map(
+    locationOptions.map((option) => [option.id, option.label]),
+  );
+  const selectedLocationLabels = locationIds.map(
+    (id) =>
+      optionLabels.get(id) ??
+      LOCATION_LABELS.get(id) ??
+      id.replace(/^place:/, "").replace(/-/g, " "),
+  );
 
   return (
     <div>
-      {/* Header */}
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-3xl font-extrabold tracking-tight">
             timley<span className="text-accent">.</span>
           </h1>
           <p className="mt-1.5 text-[15px] text-muted">
-            Every 2027 tech internship &amp; new grad role in the US — live, deduped, refreshed every 2 hours.
+            Every 2027 tech internship &amp; new grad role in the US — live,
+            deduped, refreshed every 2 hours.
           </p>
         </div>
         <p className="text-[13px] font-medium text-faint">
@@ -530,11 +295,17 @@ export function Board({
         </p>
       </header>
 
-      {/* Toolbar — sticky while scrolling the list */}
-      <div className="sticky top-0 z-10 -mx-4 mt-8 border-b border-border/60 bg-bg/85 px-4 pt-3 pb-4 backdrop-blur-md sm:-mx-6 sm:px-6">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          {/* Tabs — segmented control */}
-          <div className="inline-flex rounded-full border border-border bg-surface p-1" role="tablist">
+      <div
+        data-sticky-toolbar
+        data-testid="job-toolbar"
+        className="sticky top-0 z-50 isolate -mx-4 mt-8 border-b border-border/60 bg-bg px-4 pt-3 pb-3 shadow-[0_14px_28px_rgba(0,0,0,0.82)] sm:-mx-6 sm:px-6"
+      >
+        <div className="flex items-center justify-between gap-2">
+          <div
+            className="inline-flex min-w-0 rounded-full border border-border bg-surface p-1"
+            role="tablist"
+            aria-label="Role type"
+          >
             {(
               [
                 ["internship", "Internships", internCount],
@@ -542,37 +313,46 @@ export function Board({
               ] as Array<[RoleType, string, number]>
             ).map(([key, label, count]) => (
               <button
+                id={`role-tab-${key}`}
                 key={key}
+                type="button"
                 role="tab"
+                tabIndex={tab === key ? 0 : -1}
                 aria-selected={tab === key}
+                aria-controls="job-results"
+                onKeyDown={(event) => onRoleTabKeyDown(event, key)}
                 onClick={() => switchTab(key)}
-                className={`rounded-full px-4 py-1.5 text-sm font-semibold transition-colors ${
+                className={`rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-accent sm:px-4 ${
                   tab === key ? "bg-fg text-bg" : "text-muted hover:text-fg"
                 }`}
               >
                 {label}
-                <span className={`ml-1.5 text-xs font-medium ${tab === key ? "text-bg/60" : "text-faint"}`}>
+                <span
+                  className={`ml-1.5 text-xs font-medium ${
+                    tab === key ? "text-bg/60" : "text-faint"
+                  }`}
+                >
                   {count}
                 </span>
               </button>
             ))}
           </div>
 
-          <div className="flex items-center gap-2">
-            {/* Freshness */}
-            <div className="inline-flex rounded-full border border-border bg-surface p-1">
+          <div className="flex shrink-0 items-center gap-2">
+            <div className="hidden rounded-full border border-border bg-surface p-1 lg:inline-flex">
               {(
                 [
                   ["all", "All", null],
                   ["hot", `Hot ${hotCount}`, "hot"],
                   ["new", `New ${newCount}`, "new"],
-                ] as Array<[Freshness, string, string | null]>
+                ] as const
               ).map(([key, label, tone]) => (
                 <button
                   key={key}
+                  type="button"
                   aria-pressed={freshness === key}
-                  onClick={() => setFreshness(key)}
-                  className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors ${
+                  onClick={() => update({ freshness: key })}
+                  className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
                     freshness === key
                       ? tone === "hot"
                         ? "bg-hot-soft text-hot"
@@ -586,105 +366,145 @@ export function Board({
                 </button>
               ))}
             </div>
-
-            {/* View density */}
-            <div className="inline-flex rounded-full border border-border bg-surface p-1" role="group" aria-label="View density">
-              {(
-                [
-                  ["card", "Card view", <CardIcon key="c" />],
-                  ["table", "Table view", <TableIcon key="t" />],
-                ] as Array<[ViewMode, string, React.ReactNode]>
-              ).map(([key, label, icon]) => (
-                <button
-                  key={key}
-                  aria-label={label}
-                  aria-pressed={view === key}
-                  onClick={() => setView(key)}
-                  className={`rounded-full p-1.5 transition-colors ${
-                    view === key ? "bg-raised text-fg" : "text-faint hover:text-fg"
-                  }`}
-                >
-                  {icon}
-                </button>
-              ))}
-            </div>
+            <span className="hidden sm:inline-flex">
+              <ViewToggle view={view} onChange={setView} />
+            </span>
           </div>
         </div>
 
-        <div className="mt-3 flex flex-wrap items-center gap-2.5">
-          <input
-            ref={searchRef}
-            type="search"
+        <div className="mt-3 flex items-center gap-2 lg:hidden">
+          <SearchInput
+            inputRef={mobileSearchRef}
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search company or role…  ( / )"
-            aria-label="Search company or role"
-            className="h-10 w-full max-w-xs rounded-xl border border-border bg-surface px-3.5 text-sm outline-none placeholder:text-faint focus:border-accent"
+            onChange={(value) => update({ query: value }, "replace")}
+          />
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen(true)}
+            className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+              filterCount > 0
+                ? "border-accent/45 bg-accent/10 text-accent"
+                : "border-border bg-surface text-muted"
+            }`}
+          >
+            <FilterIcon /> Filters
+            {filterCount > 0 && (
+              <span className="inline-flex size-5 items-center justify-center rounded-full bg-accent text-[10px] text-white">
+                {filterCount}
+              </span>
+            )}
+          </button>
+        </div>
+
+        <div className="mt-2 flex items-center gap-2 lg:hidden">
+          <QuickToggle
+            label="Remote Only"
+            checked={remoteOnly}
+            count={remoteCount}
+            onChange={setRemoteOnly}
+          />
+          <QuickToggle
+            label="Visa Sponsorship"
+            checked={visaSponsorship}
+            description="Only shows roles explicitly marked as offering visa sponsorship."
+            onChange={(value) => update({ visaSponsorship: value })}
+          />
+        </div>
+
+        <div className="mt-3 hidden flex-wrap items-center gap-2.5 lg:flex">
+          <SearchInput
+            inputRef={desktopSearchRef}
+            value={query}
+            onChange={(value) => update({ query: value }, "replace")}
+          />
+          <LocationFilterMenu
+            options={locationOptions}
+            selected={locationIds}
+            order={locationOrder}
+            disabled={remoteOnly}
+            onToggle={toggleLocation}
+            onOrderChange={(value) => update({ locationOrder: value })}
           />
           <select
-            value={location}
-            onChange={(e) => setLocation(e.target.value)}
-            aria-label="Filter by location"
-            className="h-10 rounded-xl border border-border bg-surface px-3 text-sm text-muted focus:border-accent"
-          >
-            <option value="">All locations</option>
-            <option value="Remote">Remote</option>
-            {locations.map((loc) => (
-              <option key={loc} value={loc}>
-                {loc}
-              </option>
-            ))}
-          </select>
-          <select
             value={sort}
-            onChange={(e) => setSort(e.target.value as SortKey)}
-            aria-label="Sort"
-            className="h-10 rounded-xl border border-border bg-surface px-3 text-sm text-muted focus:border-accent"
+            onChange={(event) => update({ sort: event.target.value as SortKey })}
+            aria-label="Sort jobs"
+            className="h-10 rounded-xl border border-border bg-surface px-3 text-sm text-muted focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
           >
-            {SORTS.map(([key, label]) => (
+            {SORT_OPTIONS.map(([key, label]) => (
               <option key={key} value={key}>
                 {label}
               </option>
             ))}
           </select>
-
-          {/* Collections */}
-          <div className="inline-flex rounded-xl border border-border bg-surface p-1">
+          <div
+            className="inline-flex rounded-xl border border-border bg-surface p-1"
+            role="group"
+            aria-label="Job collection"
+          >
             {(
               [
                 ["all", "All"],
                 ["saved", `Saved ${savedInTab || ""}`.trim()],
-                ["applied", `Applied ${appliedInTab || ""}`.trim()],
               ] as Array<[Collection, string]>
             ).map(([key, label]) => (
               <button
                 key={key}
+                type="button"
                 aria-pressed={collection === key}
-                onClick={() => setCollection(key)}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
-                  collection === key ? "bg-raised text-fg" : "text-muted hover:text-fg"
+                onClick={() => update({ collection: key })}
+                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
+                  collection === key
+                    ? "bg-raised text-fg"
+                    : "text-muted hover:text-fg"
                 }`}
               >
                 {label}
               </button>
             ))}
           </div>
+          <StageFilterMenu
+            selected={stages}
+            counts={stageCounts}
+            onToggle={toggleStageFilter}
+          />
+          <QuickToggle
+            label="Remote Only"
+            checked={remoteOnly}
+            count={remoteCount}
+            onChange={setRemoteOnly}
+          />
+          <QuickToggle
+            label="Visa Sponsorship"
+            checked={visaSponsorship}
+            description="Only shows roles explicitly marked as offering visa sponsorship."
+            onChange={(value) => update({ visaSponsorship: value })}
+          />
+          <span
+            aria-label={`${filterCount} active filters`}
+            className={`inline-flex min-h-8 items-center rounded-full border px-2.5 text-[11px] font-bold ${
+              filterCount > 0
+                ? "border-accent/35 bg-accent/10 text-accent"
+                : "border-border bg-surface text-faint"
+            }`}
+          >
+            Filters {filterCount}
+          </span>
         </div>
 
-        <div className="mt-5 border-b border-border/70">
+        <div className="mt-4 hidden overflow-x-auto border-b border-border/70 lg:block">
           <div
-            className="-mb-px flex min-w-max items-center gap-1 overflow-x-auto pb-px"
-            role="tablist"
+            className="-mb-px flex min-w-max items-center gap-1 pb-px"
+            role="group"
             aria-label="Browse internships by major"
           >
             {MAJORS.map((option) => (
               <button
                 key={option.id}
                 type="button"
-                role="tab"
-                aria-selected={major === option.id}
+                aria-pressed={major === option.id}
                 onClick={() => selectMajor(option.id)}
-                className={`rounded-t-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow] duration-150 ${
+                className={`rounded-t-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow] duration-150 focus-visible:outline-2 focus-visible:outline-accent ${
                   major === option.id
                     ? "bg-[linear-gradient(135deg,rgba(255,255,255,0.1),rgba(231,201,139,0.1))] text-champagne shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 ring-champagne/20 backdrop-blur-md"
                     : "text-muted hover:bg-white/[0.04] hover:text-fg"
@@ -696,17 +516,16 @@ export function Board({
           </div>
         </div>
 
-        <div className="mt-3 flex min-w-0 items-center gap-2">
+        <div className="mt-3 hidden min-w-0 items-center gap-2 lg:flex">
           <div
             className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1"
             role="group"
-            aria-label={`${activeMajor.label} niches`}
+            aria-label={`${activeMajor.label} specializations`}
           >
             {activeMajor.niches.map((option) => {
               const available = (nicheCounts.get(option.id) ?? 0) > 0;
               const selected = niche === option.id;
               const unavailableMessage = `${option.label} has no live roles yet`;
-
               return (
                 <button
                   key={option.id}
@@ -715,8 +534,8 @@ export function Board({
                   aria-label={available ? option.label : unavailableMessage}
                   disabled={!available}
                   title={available ? option.label : unavailableMessage}
-                  onClick={() => setNiche(option.id)}
-                  className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-[color,background-color,border-color] duration-150 ${
+                  onClick={() => update({ niche: option.id })}
+                  className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-[color,background-color,border-color] duration-150 focus-visible:outline-2 focus-visible:outline-accent ${
                     selected
                       ? "border-border-strong bg-raised text-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
                       : available
@@ -729,267 +548,294 @@ export function Board({
               );
             })}
           </div>
+        </div>
 
-          {hasFilters && (
+        {(filterCount > 0 || query) && (
+          <div className="mt-2 flex min-w-0 items-center gap-2">
+            <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1">
+              {remoteOnly && (
+                <FilterChip label="Remote Only" onRemove={() => setRemoteOnly(false)} />
+              )}
+              {visaSponsorship && (
+                <FilterChip
+                  label="Visa Sponsorship"
+                  onRemove={() => update({ visaSponsorship: false })}
+                />
+              )}
+              {locationIds.map((id, index) => (
+                <FilterChip
+                  key={id}
+                  label={selectedLocationLabels[index]}
+                  onRemove={() => toggleLocation(id)}
+                />
+              ))}
+              {stages.map((stage) => (
+                <FilterChip
+                  key={stage}
+                  label={APPLICATION_STAGE_LABELS[stage]}
+                  onRemove={() => toggleStageFilter(stage)}
+                />
+              ))}
+              {freshness !== "all" && (
+                <FilterChip
+                  label={freshness === "hot" ? "Hot" : "New"}
+                  onRemove={() => update({ freshness: "all" })}
+                />
+              )}
+              {collection === "saved" && (
+                <FilterChip label="Saved" onRemove={() => update({ collection: "all" })} />
+              )}
+              {(major !== "all" || niche !== "all") && (
+                <FilterChip
+                  label={
+                    niche !== "all"
+                      ? activeNiche.label
+                      : activeMajor.label
+                  }
+                  onRemove={() => update({ major: "all", niche: "all" })}
+                />
+              )}
+              {sort !== "featured" && (
+                <FilterChip
+                  label={SORT_OPTIONS.find(([key]) => key === sort)?.[1] ?? sort}
+                  onRemove={() => update({ sort: "featured" })}
+                />
+              )}
+            </div>
             <button
               type="button"
-              onClick={() => {
-                setMajor("all");
-                setNiche("all");
-                setLocation("");
-                setQuery("");
-                setFreshness("all");
-                setCollection("all");
-              }}
-              className="shrink-0 px-2 py-1 text-xs font-medium text-faint underline underline-offset-2 hover:text-muted"
+              onClick={clearFilters}
+              className="shrink-0 px-2 py-1 text-xs font-semibold text-faint underline underline-offset-2 hover:text-muted focus-visible:outline-2 focus-visible:outline-accent"
             >
-              Clear
+              Clear all
             </button>
-          )}
-        </div>
+          </div>
+        )}
       </div>
 
-      {/* Result count */}
-      <p className="mt-6 text-xs font-medium text-faint">
-        {filtered.length === tabJobs.length
-          ? `${tabJobs.length} roles`
-          : `${filtered.length} of ${tabJobs.length} roles`}
-      </p>
-
-      {/* Column headers — only in the dense table view */}
-      {dense && filtered.length > 0 && (
-        <div
-          className={`${GRID} mt-3 hidden px-5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-faint sm:grid`}
-        >
-          <span />
-          <span>Company / Role</span>
-          <span>Category</span>
-          <span>Location</span>
-          <span>Comp</span>
-          <span className="text-right">Age</span>
-          <span />
-        </div>
+      {mobileFiltersOpen && (
+        <MobileFilterSheet
+          open
+          onClose={() => setMobileFiltersOpen(false)}
+          filters={filters}
+          jobs={jobs}
+          applications={records}
+          onApply={(nextFilters) => updateFilters(nextFilters, "push")}
+        />
       )}
 
-      {/* List */}
-      <ul className={dense ? "mt-1 space-y-1" : "mt-3 space-y-2.5"}>
-        {filtered.map((job) => (
-          <JobRow
-            key={job.id}
-            job={job}
-            now={now}
-            dense={dense}
-            saved={saved.has(job.link)}
-            applied={applied.has(job.link)}
-            onToggleSaved={() => toggleSaved(job.link)}
-            onToggleApplied={() => toggleApplied(job.link)}
-          />
-        ))}
-        {filtered.length === 0 && (
-          <li className="rounded-2xl border border-border bg-surface px-4 py-16 text-center text-sm text-muted">
-            {loadError
-              ? "Couldn't load listings — try refreshing in a minute."
-              : collection === "saved"
-                ? "No saved roles yet — tap the ☆ on any role to save it."
-                : collection === "applied"
-                  ? "Nothing marked applied yet — tap the ✓ once you apply."
-                  : jobs.length === 0
-                    ? "No listings yet — the first ingestion run hasn't landed."
-                    : "Nothing matches those filters."}
-          </li>
+      <section
+        id="job-results"
+        role="tabpanel"
+        tabIndex={-1}
+        aria-labelledby={`role-tab-${tab}`}
+        className="focus:outline-none"
+      >
+        <p className="mt-6 text-xs font-medium text-faint" aria-live="polite">
+          {filtered.length === 0
+            ? `0 of ${tabJobs.length} roles`
+            : `Showing ${visibleJobs.length} of ${filtered.length} ${
+                filtered.length === 1 ? "role" : "roles"
+              }`}
+        </p>
+
+        {dense && filtered.length > 0 && (
+          <div
+            className={`${JOB_GRID} mt-3 hidden px-5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-faint sm:grid`}
+          >
+            <span />
+            <span>Company / Role</span>
+            <span>Category</span>
+            <span>Location</span>
+            <span>Comp</span>
+            <span className="text-right">Age</span>
+            <span className="text-right">Actions</span>
+          </div>
         )}
-      </ul>
+
+        <ul
+          data-job-list
+          className={dense ? "mt-1 space-y-1" : "mt-3 space-y-2.5"}
+        >
+          {visibleJobs.map((job) => (
+            <JobCard
+              key={job.id}
+              job={job}
+              now={now}
+              dense={dense}
+              saved={saved.has(job.link)}
+              stage={getApplicationStage(records, job.link)}
+              onToggleSaved={() => toggleSaved(job.link)}
+              onStageChange={(stage) => {
+                updateStage(job.link, stage);
+                setStageAnnouncement(
+                  `${job.company} moved to ${APPLICATION_STAGE_LABELS[stage]}.`,
+                );
+              }}
+            />
+          ))}
+          {filtered.length === 0 && (
+            <li className="rounded-2xl border border-border bg-surface px-4 py-16 text-center text-sm text-muted">
+              <EmptyState
+                loadError={loadError}
+                jobs={jobs}
+                filters={filters}
+                locationLabels={selectedLocationLabels}
+              />
+            </li>
+          )}
+        </ul>
+
+        {filtered.length > 0 && (
+          <div className="mt-8 flex flex-col items-center gap-3 border-t border-border/70 pt-6">
+            {remainingCount > 0 ? (
+              <button
+                data-load-more
+                data-testid="load-more"
+                type="button"
+                aria-label={`Load ${nextPageCount} more roles, ${remainingCount} remaining`}
+                onClick={() =>
+                  setPagination({
+                    key: paginationKey,
+                    count: Math.min(
+                      filtered.length,
+                      visibleCount + PAGE_SIZE,
+                    ),
+                  })
+                }
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-accent/45 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent transition-[color,background-color,border-color,box-shadow] hover:border-accent hover:bg-accent hover:text-white hover:shadow-[0_8px_24px_rgba(10,132,255,0.22)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                <span>Load {nextPageCount} more</span>
+                <span className="text-xs font-medium opacity-70">
+                  {remainingCount} remaining
+                </span>
+              </button>
+            ) : (
+              <p className="inline-flex items-center gap-2 text-xs font-medium text-faint">
+                <span className="size-1.5 rounded-full bg-new" />
+                All {filtered.length} {filtered.length === 1 ? "role" : "roles"}{" "}
+                loaded
+              </p>
+            )}
+          </div>
+        )}
+      </section>
+
+      {stageAnnouncement && (
+        <div
+          role="status"
+          aria-live="polite"
+          className="fixed right-4 bottom-4 z-[130] max-w-[calc(100vw-2rem)] rounded-xl border border-border-strong bg-raised px-4 py-3 text-sm font-semibold text-fg shadow-[0_18px_48px_rgba(0,0,0,0.75)]"
+        >
+          {stageAnnouncement}
+        </div>
+      )}
     </div>
   );
 }
 
-function JobRow({
-  job,
-  now,
-  dense,
-  saved,
-  applied,
-  onToggleSaved,
-  onToggleApplied,
+function SearchInput({
+  inputRef,
+  value,
+  onChange,
 }: {
-  job: Internship;
-  now: number;
-  dense: boolean;
-  saved: boolean;
-  applied: boolean;
-  onToggleSaved: () => void;
-  onToggleApplied: () => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  value: string;
+  onChange: (value: string) => void;
 }) {
-  const days = daysAgo(job, now);
-  const logoSize = dense ? 28 : 40;
-
   return (
-    <li>
-      <div
-        className={`group relative ${GRID} rounded-2xl border border-border bg-surface transition-[border-color,box-shadow,background-color] hover:border-white/25 hover:bg-surface/70 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.06)] ${
-          dense ? "px-3 py-2 sm:px-5" : "px-4 py-4 sm:px-5"
-        } ${applied ? "opacity-60" : ""}`}
-      >
-        {/* Stretched click target — opens the listing. Sits beneath the
-            content; the save/apply buttons opt back into pointer events. */}
-        <a
-          href={job.link}
-          target="_blank"
-          rel="noopener noreferrer"
-          aria-label={`${job.title} at ${job.company} — open listing`}
-          className="absolute inset-0 z-0 rounded-2xl"
-        />
-
-        {/* Logo */}
-        <span className="pointer-events-none relative z-10 row-span-2 sm:row-span-1">
-          <CompanyLogo company={job.company} size={logoSize} />
-        </span>
-
-        {/* Company + role */}
-        <div className="pointer-events-none relative z-10 min-w-0">
-          <div className="flex min-w-0 items-center gap-2">
-            <span className={`truncate font-semibold ${dense ? "text-[13px]" : "text-[15px]"}`}>
-              {job.company}
-            </span>
-            <FreshnessBadge days={days} />
-            {job.season && !dense && (
-              <span className="hidden text-[11px] font-medium text-faint md:inline">{job.season}</span>
-            )}
-          </div>
-          <div className={`mt-0.5 truncate text-muted ${dense ? "text-xs" : "text-sm"}`} title={job.title}>
-            {job.title}
-          </div>
-        </div>
-
-        {/* Category */}
-        <div className="pointer-events-none relative z-10 col-start-2 row-start-2 flex items-center sm:col-start-3 sm:row-start-1">
-          <span className={`cat cat-${job.category}`}>{CATEGORY_LABELS[job.category]}</span>
-        </div>
-
-        {/* Location */}
-        <div className="pointer-events-none relative z-10 col-start-2 row-start-2 flex min-w-0 items-center sm:col-start-4 sm:row-start-1">
-          <span className="hidden truncate text-xs text-muted sm:inline" title={job.location}>
-            {job.location || "—"}
-          </span>
-        </div>
-
-        {/* Comp / rules */}
-        <div className="pointer-events-none relative z-10 hidden min-w-0 flex-col items-start justify-center sm:col-start-5 sm:row-start-1 sm:flex">
-          {job.salary && <span className="truncate text-xs font-semibold text-fg/80">{job.salary}</span>}
-          {job.sponsorship && (
-            <span className="truncate text-[10px] font-medium text-faint">
-              {job.sponsorship.includes("citizen")
-                ? "Citizens only"
-                : job.sponsorship.includes("offers")
-                  ? "Sponsors visa"
-                  : "No sponsorship"}
-            </span>
-          )}
-        </div>
-
-        {/* Age */}
-        <div className="pointer-events-none relative z-10 col-start-3 row-start-2 flex items-center justify-end sm:col-start-6 sm:row-start-1">
-          <span className="text-right text-xs font-medium text-faint" title={job.posted_date ?? undefined}>
-            {relative(job, now)}
-          </span>
-        </div>
-
-        {/* Actions */}
-        <div className="pointer-events-none relative z-10 col-start-3 row-start-1 flex items-center justify-end gap-1 justify-self-end sm:col-start-7">
-          <IconButton
-            label={saved ? "Remove from saved" : "Save role"}
-            active={saved}
-            onClick={onToggleSaved}
-          >
-            <StarIcon filled={saved} />
-          </IconButton>
-          <IconButton
-            label={applied ? "Mark not applied" : "Mark as applied"}
-            active={applied}
-            activeClass="text-new"
-            onClick={onToggleApplied}
-          >
-            <CheckIcon />
-          </IconButton>
-          {!dense && (
-            <span className="ml-1 hidden rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold text-muted transition-colors group-hover:border-accent group-hover:bg-accent group-hover:text-white sm:inline">
-              Apply
-            </span>
-          )}
-        </div>
-      </div>
-    </li>
+    <input
+      ref={inputRef}
+      type="search"
+      value={value}
+      onChange={(event) => onChange(event.target.value)}
+      placeholder="Search company, role, or city…  ( / )"
+      aria-label="Search company, role, or city"
+      className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3.5 text-sm outline-none placeholder:text-faint focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent lg:w-full lg:max-w-xs lg:flex-none"
+    />
   );
 }
 
-function FreshnessBadge({ days }: { days: number }) {
-  if (days <= HOT_DAYS) {
-    return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wide text-hot">
-        <span className="size-1.5 animate-pulse rounded-full bg-hot" />
-        HOT
-      </span>
-    );
-  }
-  if (days <= NEW_DAYS) {
-    return (
-      <span className="inline-flex items-center gap-1 text-[10px] font-bold tracking-wide text-new">
-        <span className="size-1.5 rounded-full bg-new" />
-        NEW
-      </span>
-    );
-  }
-  return null;
-}
-
-function IconButton({
-  label,
-  active,
-  activeClass = "text-hot",
-  onClick,
-  children,
+function ViewToggle({
+  view,
+  onChange,
 }: {
-  label: string;
-  active: boolean;
-  activeClass?: string;
-  onClick: () => void;
-  children: React.ReactNode;
+  view: ViewMode;
+  onChange: (view: ViewMode) => void;
 }) {
   return (
-    <button
-      type="button"
-      aria-label={label}
-      aria-pressed={active}
-      title={label}
-      onClick={(e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        onClick();
-      }}
-      className={`pointer-events-auto flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-raised ${
-        active ? activeClass : "text-faint hover:text-fg"
-      }`}
+    <div
+      className="inline-flex rounded-full border border-border bg-surface p-1"
+      role="group"
+      aria-label="View density"
     >
-      {children}
-    </button>
+      {(
+        [
+          ["card", "Card view", <CardIcon key="card" />],
+          ["table", "Table view", <TableIcon key="table" />],
+        ] as Array<[ViewMode, string, React.ReactNode]>
+      ).map(([key, label, icon]) => (
+        <button
+          key={key}
+          type="button"
+          aria-label={label}
+          aria-pressed={view === key}
+          onClick={() => onChange(key)}
+          className={`rounded-full p-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
+            view === key ? "bg-raised text-fg" : "text-faint hover:text-fg"
+          }`}
+        >
+          {icon}
+        </button>
+      ))}
+    </div>
   );
 }
 
-// ---------------------------------------------------------------------------
-// Inline icons (no dependency).
-
-function StarIcon({ filled }: { filled: boolean }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill={filled ? "currentColor" : "none"} stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-    </svg>
-  );
+function EmptyState({
+  loadError,
+  jobs,
+  filters,
+  locationLabels,
+}: {
+  loadError: boolean;
+  jobs: Internship[];
+  filters: BoardFilters;
+  locationLabels: string[];
+}) {
+  if (loadError) return <>Couldn&apos;t load listings — try refreshing in a minute.</>;
+  if (filters.collection === "saved") {
+    return <>No saved roles match these filters — save a role with the star button.</>;
+  }
+  if (filters.stages.length > 0) {
+    return <>No jobs are currently in the selected application stages.</>;
+  }
+  if (filters.remoteOnly) {
+    return <>No explicitly remote roles match the other selected filters.</>;
+  }
+  if (filters.visaSponsorship) {
+    return <>No roles explicitly marked as sponsoring match the other filters.</>;
+  }
+  if (locationLabels.length > 0) {
+    return (
+      <>
+        No roles match {locationLabels.join(" or ")}. Try another location or
+        clear the location filter.
+      </>
+    );
+  }
+  if (jobs.length === 0) {
+    return <>No listings yet — the first ingestion run hasn&apos;t landed.</>;
+  }
+  return <>Nothing matches those filters. Try clearing one or two.</>;
 }
 
-function CheckIcon() {
+function FilterIcon() {
   return (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <polyline points="20 6 9 17 4 12" />
+    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <line x1="4" y1="6" x2="20" y2="6" />
+      <line x1="7" y1="12" x2="17" y2="12" />
+      <line x1="10" y1="18" x2="14" y2="18" />
     </svg>
   );
 }

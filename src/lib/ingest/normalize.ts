@@ -1,4 +1,5 @@
 import type { Category, NormalizedJob } from "../types";
+import { sanitizeUsLocation } from "../usLocations";
 
 /** Strip emoji, flag markers, markdown bold and stray whitespace. */
 export function cleanText(s: string): string {
@@ -259,83 +260,6 @@ export function dedupeJobs(jobs: NormalizedJob[]): NormalizedJob[] {
 
 export const MAX_AGE_DAYS = 120;
 
-const US_TOKENS = new Set([
-  "us", "usa", "america", "remote",
-  "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id", "il",
-  "in", "ia", "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms", "mo", "mt",
-  "ne", "nv", "nh", "nj", "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa", "ri",
-  "sc", "sd", "tn", "tx", "ut", "vt", "va", "wa", "wv", "wi", "wy", "dc",
-  "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
-  "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
-  "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine",
-  "maryland", "massachusetts", "michigan", "minnesota", "mississippi",
-  "missouri", "montana", "nebraska", "nevada", "hampshire", "jersey",
-  "york", "carolina", "dakota", "ohio", "oklahoma", "oregon", "pennsylvania",
-  "tennessee", "texas", "utah", "vermont", "virginia", "washington",
-  "wisconsin", "wyoming",
-]);
-
-const US_CITY_NAMES = [
-  "nyc",
-  "new york",
-  "chicago",
-  "boston",
-  "austin",
-  "seattle",
-  "dallas",
-  "houston",
-  "atlanta",
-  "miami",
-  "denver",
-  "phoenix",
-  "detroit",
-  "pittsburgh",
-  "philadelphia",
-  "san francisco",
-  "san jose",
-  "los angeles",
-  "san diego",
-  "long beach",
-  "mountain view",
-  "palo alto",
-  "bellevue",
-  "redmond",
-  "cambridge",
-  "minneapolis",
-  "nashville",
-  "charlotte",
-  "raleigh",
-  "baltimore",
-  "portland",
-  "salt lake city",
-  "columbus",
-  "cincinnati",
-  "indianapolis",
-  "milwaukee",
-  "madison",
-  "cleveland",
-  "tampa",
-  "orlando",
-];
-
-const KNOWN_NON_US_CITY_NAMES = ["buenos aires"];
-
-function isUSA(location: string): boolean {
-  const loc = location
-    .toLowerCase()
-    .replace(/[^a-z]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-  if (!loc) return true; // no location info — keep, sources are US-centric
-  if (KNOWN_NON_US_CITY_NAMES.some((city) => loc.includes(city))) return false;
-  const tokens = loc.split(" ");
-  const usSignal =
-    tokens.some((t) => US_TOKENS.has(t)) || loc.includes("united states");
-  // Keep remote listings from the USA-focused sources, but require a US signal
-  // for physical locations so unknown international places cannot slip through.
-  return usSignal || US_CITY_NAMES.some((city) => loc.includes(city)) || loc.includes("remote");
-}
-
 function isRecent(posted: string | null, now: number): boolean {
   if (!posted) return true; // no date — let first_seen aging handle it
   const t = new Date(`${posted}T00:00:00Z`).getTime();
@@ -345,7 +269,21 @@ function isRecent(posted: string | null, now: number): boolean {
 /** USA-only, posted within the last MAX_AGE_DAYS. */
 export function applyPostFilters(jobs: NormalizedJob[]): NormalizedJob[] {
   const now = Date.now();
-  return jobs.filter((j) => isRecent(j.posted_date, now) && isUSA(j.location));
+  return jobs.flatMap((job) => {
+    if (!isRecent(job.posted_date, now)) return [];
+
+    const sanitized = sanitizeUsLocation(job.location);
+    if (!sanitized.eligible) return [];
+
+    const location = sanitized.display;
+    return [
+      {
+        ...job,
+        location,
+        dedupe_key: dedupeKey(job.company, job.title, location),
+      },
+    ];
+  });
 }
 
 export async function fetchText(url: string): Promise<string> {

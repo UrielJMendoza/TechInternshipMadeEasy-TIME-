@@ -7,6 +7,7 @@ import {
   getJobLocationFacetIds,
   getJobLocationSearchText,
   getLocationFacetCounts,
+  getUsLocationDisplay,
   isRemoteLocation,
   matchesPhysicalLocationSelection,
 } from "./jobLocations";
@@ -87,5 +88,35 @@ test("preserves popular non-canonical locations as normalized fallback facets", 
   assert.equal(
     matchesPhysicalLocationSelection("Patt AFB, OH", ["place:patt-afb-oh"]),
     true,
+  );
+});
+
+test("foreign and malformed locations never become fallback facets", () => {
+  const mixed = "London, UK; Chicago, IL";
+  assert.deepEqual(getJobLocationFacetIds(mixed), ["chicago-il"]);
+  assert.deepEqual(getJobLocationFacetIds("Amsterdam, NH"), []);
+  assert.equal(getUsLocationDisplay(mixed), "Chicago, IL");
+  assert.doesNotMatch(getJobLocationSearchText(mixed), /london/);
+
+  const options = buildLocationFacetOptions(
+    [
+      { location: mixed },
+      { location: "Amsterdam, NH" },
+      { location: "Remote in Canada" },
+    ],
+    "popular",
+  );
+  assert.equal(options.some((option) => option.id === "place:london-uk"), false);
+  assert.equal(options.some((option) => option.id === "place:amsterdam-nh"), false);
+});
+
+test("ambiguous Northwestern office text becomes separate safe facets", () => {
+  assert.deepEqual(getJobLocationFacetIds("Chicago, Puerto Rico"), [
+    "chicago-il",
+    "place:puerto-rico",
+  ]);
+  assert.equal(
+    getUsLocationDisplay("Chicago, Puerto Rico"),
+    "Chicago, IL; Puerto Rico",
   );
 });

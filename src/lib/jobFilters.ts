@@ -6,6 +6,7 @@ import {
 import {
   getPrimaryLocationLabel,
   getJobLocationSearchText,
+  getUsLocationDisplay,
   isRemoteLocation,
   matchesPhysicalLocationSelection,
   normalizeLocationText,
@@ -124,7 +125,7 @@ export function buildJobSearchHaystack(job: JobSearchFields): string {
     [
       job.title,
       job.company,
-      job.location,
+      getUsLocationDisplay(job.location),
       getJobLocationSearchText(job.location),
       category,
     ].join(" "),

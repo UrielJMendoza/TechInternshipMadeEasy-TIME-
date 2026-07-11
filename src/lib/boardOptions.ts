@@ -4,7 +4,7 @@ export const SORT_OPTIONS: ReadonlyArray<readonly [SortKey, string]> = [
   ["featured", "Featured"],
   ["newest", "Newest"],
   ["company", "Company A–Z"],
-  ["salary", "Top salary"],
+  ["salary", "Highest listed pay"],
   ["location", "Location A–Z"],
   ["application-stage", "Application stage"],
 ];

@@ -59,6 +59,13 @@ test("job search includes normalized canonical locations and categories", () => 
   assert.equal(matchesJobSearch(job, "Denver"), true);
   assert.equal(matchesJobSearch(job, "Cloud / Infra"), true);
   assert.equal(matchesJobSearch(job, "New York"), false);
+
+  const mixedLocation = {
+    ...job,
+    location: "London, UK; Chicago, IL",
+  };
+  assert.equal(matchesJobSearch(mixedLocation, "Chicago"), true);
+  assert.equal(matchesJobSearch(mixedLocation, "London"), false);
 });
 
 const FILTER_NOW = new Date("2026-07-10T12:00:00Z").getTime();
@@ -160,4 +167,34 @@ test("physical locations use OR semantics and application-stage sorting is stabl
   });
 
   assert.deepEqual(result.map((job) => job.id), ["new-york", "denver"]);
+});
+
+test("salary sorting uses source-listed pay and never category estimates", () => {
+  const listed = fixtureJob("listed", {
+    salary: "$20/hr",
+    posted_date: "2026-07-01",
+  });
+  const estimated = fixtureJob("estimated", {
+    category: "quant",
+    salary: null,
+    posted_date: "2026-07-10",
+  });
+
+  const result = filterAndSortJobs([estimated, listed], {
+    query: "",
+    locationIds: [],
+    remoteOnly: false,
+    visaSponsorship: false,
+    stages: [],
+    freshness: "all",
+    collection: "all",
+    sort: "salary",
+    saved: new Set(),
+    applications: {},
+    now: FILTER_NOW,
+    matchesMajor: () => true,
+    matchesNiche: () => true,
+  });
+
+  assert.deepEqual(result.map((job) => job.id), ["listed", "estimated"]);
 });

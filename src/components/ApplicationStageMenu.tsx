@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   APPLICATION_STAGE_LABELS,
   APPLICATION_STAGES,
@@ -24,6 +25,18 @@ const SHORT_LABELS: Record<ApplicationStage, string> = {
   rejected: "Rejected",
   offer: "Offer",
 };
+
+interface MenuPosition {
+  left: number;
+  top: number;
+}
+
+const VIEWPORT_PADDING = 8;
+const MENU_GAP = 7;
+
+function clamp(value: number, minimum: number, maximum: number): number {
+  return Math.min(Math.max(value, minimum), Math.max(minimum, maximum));
+}
 
 export function StageDot({ stage }: { stage: ApplicationStage }) {
   return (
@@ -73,8 +86,10 @@ export function ApplicationStageMenu({
   jobLabel: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState<MenuPosition | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const triggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   useEffect(() => {
@@ -83,7 +98,13 @@ export function ApplicationStageMenu({
     optionRefs.current[selectedIndex]?.focus();
 
     const onPointerDown = (event: PointerEvent) => {
-      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+      const target = event.target as Node;
+      if (
+        !rootRef.current?.contains(target) &&
+        !menuRef.current?.contains(target)
+      ) {
+        setOpen(false);
+      }
     };
     const onEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
@@ -98,6 +119,57 @@ export function ApplicationStageMenu({
       document.removeEventListener("keydown", onEscape);
     };
   }, [open, stage]);
+
+  useLayoutEffect(() => {
+    if (!open) return;
+
+    const updatePosition = () => {
+      const trigger = triggerRef.current;
+      const menu = menuRef.current;
+      if (!trigger || !menu) return;
+
+      const triggerRect = trigger.getBoundingClientRect();
+      const menuRect = menu.getBoundingClientRect();
+      const maximumLeft =
+        window.innerWidth - menuRect.width - VIEWPORT_PADDING;
+      const left = clamp(
+        triggerRect.right - menuRect.width,
+        VIEWPORT_PADDING,
+        maximumLeft,
+      );
+
+      const topBelow = triggerRect.bottom + MENU_GAP;
+      const topAbove = triggerRect.top - menuRect.height - MENU_GAP;
+      const fitsBelow =
+        topBelow + menuRect.height <=
+        window.innerHeight - VIEWPORT_PADDING;
+      const preferredTop = fitsBelow ? topBelow : topAbove;
+      const top = clamp(
+        preferredTop,
+        VIEWPORT_PADDING,
+        window.innerHeight - menuRect.height - VIEWPORT_PADDING,
+      );
+
+      setPosition({ left, top });
+    };
+
+    updatePosition();
+    window.addEventListener("resize", updatePosition);
+    window.addEventListener("scroll", updatePosition, true);
+
+    let resizeObserver: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== "undefined") {
+      resizeObserver = new ResizeObserver(updatePosition);
+      if (triggerRef.current) resizeObserver.observe(triggerRef.current);
+      if (menuRef.current) resizeObserver.observe(menuRef.current);
+    }
+
+    return () => {
+      resizeObserver?.disconnect();
+      window.removeEventListener("resize", updatePosition);
+      window.removeEventListener("scroll", updatePosition, true);
+    };
+  }, [open]);
 
   const stopCardNavigation = (event: React.SyntheticEvent) => {
     event.preventDefault();
@@ -139,6 +211,7 @@ export function ApplicationStageMenu({
         aria-expanded={open}
         onClick={(event) => {
           stopCardNavigation(event);
+          if (!open) setPosition(null);
           setOpen((current) => !current);
         }}
         className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-2 text-[11px] font-semibold whitespace-nowrap transition-[border-color,background-color,color] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:min-h-9 sm:px-2.5 ${STAGE_CLASSES[stage]}`}
@@ -150,55 +223,65 @@ export function ApplicationStageMenu({
         </svg>
       </button>
 
-      {open && (
-        <div
-          role="menu"
-          aria-label={`Application stage for ${jobLabel}`}
-          onKeyDown={(event) => {
-            if (event.key === "ArrowDown") moveFocus(event, 1);
-            else if (event.key === "ArrowUp") moveFocus(event, -1);
-            else if (event.key === "Tab") setOpen(false);
-            else if (event.key === "Home") {
-              event.preventDefault();
-              optionRefs.current[0]?.focus();
-            } else if (event.key === "End") {
-              event.preventDefault();
-              optionRefs.current[APPLICATION_STAGES.length - 1]?.focus();
-            }
-          }}
-          className="absolute right-0 top-[calc(100%+0.4rem)] z-[90] w-52 rounded-2xl border border-border-strong bg-raised p-1.5 shadow-[0_18px_48px_rgba(0,0,0,0.76)]"
-        >
-          <p className="px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-faint">
-            Application stage
-          </p>
-          {APPLICATION_STAGES.map((option, index) => (
-            <button
-              key={option}
-              ref={(node) => {
-                optionRefs.current[index] = node;
-              }}
-              type="button"
-              role="menuitemradio"
-              aria-checked={stage === option}
-              onClick={(event) => {
-                stopCardNavigation(event);
-                select(option);
-              }}
-              className={`flex min-h-10 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
-                stage === option
-                  ? "bg-white/[0.08] text-fg"
-                  : "text-muted hover:bg-white/[0.05] hover:text-fg"
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <StageDot stage={option} />
-                {APPLICATION_STAGE_LABELS[option]}
-              </span>
-              {stage === option && <CheckIcon />}
-            </button>
-          ))}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={menuRef}
+            role="menu"
+            aria-label={`Application stage for ${jobLabel}`}
+            onClick={stopCardNavigation}
+            onPointerDown={stopPointerPropagation}
+            onKeyDown={(event) => {
+              if (event.key === "ArrowDown") moveFocus(event, 1);
+              else if (event.key === "ArrowUp") moveFocus(event, -1);
+              else if (event.key === "Tab") setOpen(false);
+              else if (event.key === "Home") {
+                event.preventDefault();
+                optionRefs.current[0]?.focus();
+              } else if (event.key === "End") {
+                event.preventDefault();
+                optionRefs.current[APPLICATION_STAGES.length - 1]?.focus();
+              }
+            }}
+            className="fixed isolate z-[45] w-52 rounded-2xl border border-border-strong bg-[#1f1f23] p-1.5 shadow-[0_18px_48px_rgba(0,0,0,0.82)] ring-1 ring-black/60"
+            style={{
+              left: position?.left ?? -9999,
+              top: position?.top ?? -9999,
+              visibility: position ? "visible" : "hidden",
+            }}
+          >
+            <p className="px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-faint">
+              Application stage
+            </p>
+            {APPLICATION_STAGES.map((option, index) => (
+              <button
+                key={option}
+                ref={(node) => {
+                  optionRefs.current[index] = node;
+                }}
+                type="button"
+                role="menuitemradio"
+                aria-checked={stage === option}
+                onClick={(event) => {
+                  stopCardNavigation(event);
+                  select(option);
+                }}
+                className={`flex min-h-10 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
+                  stage === option
+                    ? "bg-white/[0.08] text-fg"
+                    : "text-muted hover:bg-white/[0.05] hover:text-fg"
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <StageDot stage={option} />
+                  {APPLICATION_STAGE_LABELS[option]}
+                </span>
+                {stage === option && <CheckIcon />}
+              </button>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

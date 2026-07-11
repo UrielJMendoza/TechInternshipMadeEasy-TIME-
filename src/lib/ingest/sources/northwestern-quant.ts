@@ -1,4 +1,5 @@
 import type { Category, NormalizedJob } from "../../types";
+import { isUsStateLabel, normalizeLocationText } from "../../usLocations";
 import { categorize, cleanLink, cleanText, dedupeKey, fetchText } from "../normalize";
 
 const URL =
@@ -11,6 +12,12 @@ const ROLE_DETAILS: Record<string, { title: string; category: Category }> = {
   SWE: { title: "Software Engineering Intern", category: "software" },
   HW: { title: "Hardware Engineering Intern", category: "hardware" },
   ML: { title: "Machine Learning Intern", category: "data-ml" },
+};
+
+const NORTHWESTERN_LOCATION_REWRITES: Record<string, readonly string[]> = {
+  "chicago puerto rico": ["Chicago, IL", "Puerto Rico"],
+  "chicago nyc": ["Chicago, IL", "New York, NY"],
+  "chicago austin": ["Chicago, IL", "Austin, TX"],
 };
 
 function markdownLinks(cell: string): Array<{ label: string; href: string }> {
@@ -34,6 +41,39 @@ function categoryFor(role: string): Category | null {
 }
 
 /**
+ * This source uses commas both for city/state pairs and to enumerate offices.
+ * Preserve real state pairs while converting office boundaries to semicolons.
+ */
+export function normalizeNorthwesternLocation(value: string): string {
+  const clean = cleanText(value);
+  if (!clean) return "";
+
+  const locations: string[] = [];
+
+  for (const block of clean.split(";").map(cleanText).filter(Boolean)) {
+    const rewrite = NORTHWESTERN_LOCATION_REWRITES[normalizeLocationText(block)];
+    if (rewrite) {
+      locations.push(...rewrite);
+      continue;
+    }
+
+    const tokens = block.split(",").map(cleanText).filter(Boolean);
+    for (let index = 0; index < tokens.length; index += 1) {
+      const city = tokens[index];
+      const state = tokens[index + 1];
+      if (state && isUsStateLabel(state)) {
+        locations.push(`${city}, ${state}`);
+        index += 1;
+      } else {
+        locations.push(city);
+      }
+    }
+  }
+
+  return locations.join("; ");
+}
+
+/**
  * Northwestern Fintech keeps this public repository current with GitHub
  * Actions. Each company has a location block followed by an open-role table.
  */
@@ -53,7 +93,7 @@ export async function fetchNorthwesternQuant(): Promise<NormalizedJob[]> {
 
     const locationMatch = line.match(/^\*\*Locations\*\*:\s*(.*)$/i);
     if (locationMatch) {
-      location = cleanText(locationMatch[1]);
+      location = normalizeNorthwesternLocation(locationMatch[1]);
       continue;
     }
 

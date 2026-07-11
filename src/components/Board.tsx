@@ -366,7 +366,7 @@ export function Board({
                 </button>
               ))}
             </div>
-            <span className="hidden sm:inline-flex">
+            <span className="hidden lg:inline-flex">
               <ViewToggle view={view} onChange={setView} />
             </span>
           </div>
@@ -631,17 +631,23 @@ export function Board({
         aria-labelledby={`role-tab-${tab}`}
         className="focus:outline-none"
       >
-        <p className="mt-6 text-xs font-medium text-faint" aria-live="polite">
-          {filtered.length === 0
-            ? `0 of ${tabJobs.length} roles`
-            : `Showing ${visibleJobs.length} of ${filtered.length} ${
-                filtered.length === 1 ? "role" : "roles"
-              }`}
-        </p>
+        <div className="mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
+          <p className="text-xs font-medium text-faint" aria-live="polite">
+            {filtered.length === 0
+              ? `0 of ${tabJobs.length} roles`
+              : `Showing ${visibleJobs.length} of ${filtered.length} ${
+                  filtered.length === 1 ? "role" : "roles"
+                }`}
+          </p>
+          <p className="text-[11px] leading-snug text-faint">
+            Pay guide: amounts without “Est.” come from source listings; estimates
+            are broad US category ranges.
+          </p>
+        </div>
 
         {dense && filtered.length > 0 && (
           <div
-            className={`${JOB_GRID} mt-3 hidden px-5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-faint sm:grid`}
+            className={`${JOB_GRID} mt-3 hidden px-5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-faint lg:grid`}
           >
             <span />
             <span>Company / Role</span>

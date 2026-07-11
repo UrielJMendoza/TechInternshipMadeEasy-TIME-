@@ -12,6 +12,7 @@ import {
   type Compensation,
 } from "@/lib/compensation";
 import { classifySponsorship } from "@/lib/jobFilters";
+import { getUsLocationDisplay } from "@/lib/jobLocations";
 import {
   HOT_DAYS,
   NEW_DAYS,
@@ -21,7 +22,7 @@ import {
 import { CATEGORY_LABELS, type Internship } from "@/lib/types";
 
 export const JOB_GRID =
-  "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 sm:grid-cols-[auto_minmax(0,2fr)_6rem_minmax(0,1.15fr)_7rem_3.25rem_minmax(6.75rem,auto)] sm:gap-x-4 sm:items-center";
+  "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 lg:grid-cols-[auto_minmax(12rem,2fr)_6.5rem_minmax(8rem,1.15fr)_7.5rem_3.5rem_minmax(7rem,auto)] lg:items-center lg:gap-x-4";
 
 export function JobCard({
   job,
@@ -42,6 +43,7 @@ export function JobCard({
 }) {
   const days = daysAgo(job, now);
   const compensation = compensationFor(job);
+  const displayLocation = getUsLocationDisplay(job.location) || "Location unavailable";
   const logoSize = dense ? 28 : 40;
   const statusAccent =
     stage === "offer"
@@ -60,7 +62,9 @@ export function JobCard({
         data-company={job.company}
         data-application-stage={stage}
         className={`group relative ${JOB_GRID} rounded-2xl border bg-surface transition-[border-color,box-shadow,background-color] hover:border-white/25 hover:bg-surface/70 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.06)] ${statusAccent} ${
-          dense ? "px-3 py-2 sm:px-5" : "px-4 py-4 sm:px-5"
+          dense
+            ? "px-4 py-4 sm:px-5 lg:py-2"
+            : "px-4 py-4 sm:px-5"
         }`}
       >
         <a
@@ -71,14 +75,14 @@ export function JobCard({
           className="absolute inset-0 z-0 rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         />
 
-        <span className="pointer-events-none relative z-10 row-span-2 sm:row-span-1">
+        <span className="pointer-events-none relative z-10 row-span-3 lg:row-span-1">
           <CompanyLogo company={job.company} size={logoSize} />
         </span>
 
         <div className="pointer-events-none relative z-10 min-w-0">
           <div className="flex min-w-0 items-center gap-2">
             <span
-              className={`truncate font-semibold ${dense ? "text-[13px]" : "text-[15px]"}`}
+              className={`truncate font-semibold ${dense ? "text-[15px] lg:text-[13px]" : "text-[15px]"}`}
             >
               {job.company}
             </span>
@@ -93,13 +97,13 @@ export function JobCard({
             <TruncatedTooltip
               text={job.title}
               className={`text-muted focus:whitespace-normal focus:overflow-visible ${
-                dense ? "text-xs" : "text-sm"
+                dense ? "text-sm lg:text-xs" : "text-sm"
               }`}
             />
           </div>
         </div>
 
-        <div className="pointer-events-none relative z-10 col-start-2 row-start-2 flex min-w-0 flex-wrap items-center gap-1.5 sm:col-start-3 sm:row-start-1">
+        <div className="pointer-events-none relative z-10 col-start-2 row-start-2 flex min-w-0 flex-wrap items-center gap-1.5 lg:col-start-3 lg:row-start-1">
           <span className={`cat cat-${job.category}`}>
             {CATEGORY_LABELS[job.category]}
           </span>
@@ -110,18 +114,32 @@ export function JobCard({
           <SponsorshipTag sponsorship={job.sponsorship} className="sm:hidden" />
         </div>
 
-        <div className="pointer-events-none relative z-10 col-start-2 row-start-2 flex min-w-0 items-center sm:col-start-4 sm:row-start-1">
-          <span className="hidden truncate text-xs text-muted sm:inline" title={job.location}>
-            {job.location || "—"}
+        <div className="pointer-events-none relative z-10 col-start-2 row-start-2 flex min-w-0 items-center lg:col-start-4 lg:row-start-1">
+          <span className="hidden truncate text-xs text-muted lg:inline" title={displayLocation}>
+            {displayLocation}
           </span>
         </div>
 
-        <div className="pointer-events-none relative z-10 hidden min-w-0 flex-col items-start justify-center sm:col-start-5 sm:row-start-1 sm:flex">
+        <div className="pointer-events-none relative z-10 hidden min-w-0 flex-col items-start justify-center lg:col-start-5 lg:row-start-1 lg:flex">
           <CompensationTag compensation={compensation} />
           <SponsorshipTag sponsorship={job.sponsorship} />
         </div>
 
-        <div className="pointer-events-none relative z-10 col-start-3 row-start-2 flex items-center justify-end sm:col-start-6 sm:row-start-1">
+        <div className="pointer-events-none relative z-10 col-start-2 col-span-2 row-start-3 mt-2 hidden min-w-0 items-center gap-2 sm:flex lg:hidden">
+          <span
+            className="min-w-0 flex-1 truncate text-xs text-muted"
+            title={displayLocation}
+          >
+            {displayLocation}
+          </span>
+          <CompensationTag compensation={compensation} className="shrink-0" />
+          <SponsorshipTag
+            sponsorship={job.sponsorship}
+            className="max-w-28 shrink-0"
+          />
+        </div>
+
+        <div className="pointer-events-none relative z-10 col-start-3 row-start-2 flex items-center justify-end lg:col-start-6 lg:row-start-1">
           <span
             className="text-right text-xs font-medium text-faint"
             title={job.posted_date ?? undefined}
@@ -130,7 +148,7 @@ export function JobCard({
           </span>
         </div>
 
-        <div className="pointer-events-none relative z-30 col-start-3 row-start-1 flex items-center justify-end gap-1.5 justify-self-end sm:col-start-7">
+        <div className="pointer-events-none relative z-30 col-start-3 row-start-1 flex items-center justify-end gap-1.5 justify-self-end lg:col-start-7">
           <SaveButton saved={saved} onToggle={onToggleSaved} />
           <ApplicationStageMenu
             stage={stage}
@@ -162,12 +180,12 @@ function CompensationTag({
 }) {
   return (
     <span
-      data-salary-kind={compensation.estimated ? "estimated" : "reported"}
+      data-salary-kind={compensation.kind}
       data-testid="salary-pill"
-      title={compensation.title}
-      aria-label={`${compensation.label}. ${compensation.title}`}
+      title={compensation.disclosure}
+      aria-label={`${compensation.label}. ${compensation.disclosure}`}
       className={`inline-flex max-w-full items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
-        compensation.estimated
+        compensation.kind === "category-estimate"
           ? "border-champagne/30 bg-champagne/10 text-champagne"
           : "border-new/30 bg-new-soft text-new"
       } ${className}`}

@@ -1,3 +1,12 @@
+import {
+  getSafeUsLocationParts,
+  getUsLocationDisplay,
+  isUsRemoteLocation,
+  normalizeLocationText,
+} from "./usLocations";
+
+export { getUsLocationDisplay, normalizeLocationText } from "./usLocations";
+
 export const DENVER_LOCATION_ID = "denver-co" as const;
 
 export const PHYSICAL_LOCATION_IDS = [
@@ -144,27 +153,13 @@ export function isPhysicalLocationFacetId(
   );
 }
 
-export function normalizeLocationText(location: string | null | undefined): string {
-  return (location ?? "")
-    .normalize("NFKD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .replace(/\s+/g, " ")
-    .trim();
-}
-
 /** Only explicit remote language qualifies; hybrid alone does not. */
 export function isRemoteLocation(location: string | null | undefined): boolean {
-  const normalized = normalizeLocationText(location);
-  return /\b(?:remote|work from home|wfh)\b/.test(normalized);
+  return isUsRemoteLocation(location);
 }
 
 function locationParts(location: string | null | undefined): string[] {
-  return (location ?? "")
-    .split(";")
-    .map((part) => part.trim().replace(/\s+/g, " "))
-    .filter(Boolean);
+  return getSafeUsLocationParts(location);
 }
 
 function canonicalIdsForPart(
@@ -210,9 +205,9 @@ export function getJobLocationFacetIds(
   return [...ids];
 }
 
-/** Raw location plus canonical labels, normalized for inclusion in job search. */
+/** Display-safe location plus canonical labels, normalized for job search. */
 export function getJobLocationSearchText(location: string | null | undefined): string {
-  const raw = normalizeLocationText(location);
+  const raw = normalizeLocationText(getUsLocationDisplay(location));
   const labels = getJobLocationFacetIds(location).map((id) => {
     const facet = LOCATION_FACET_CONFIG.find((candidate) => candidate.id === id);
     return normalizeLocationText(facet?.label);

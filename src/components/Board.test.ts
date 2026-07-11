@@ -38,4 +38,6 @@ test("board renders its initial server markup with the new tracking controls", (
   assert.match(markup, /Visa Sponsorship/);
   assert.match(markup, /Track/);
   assert.match(markup, /Est\. \$30–50\/hr/);
+  assert.match(markup, /Pay guide:/);
+  assert.match(markup, /broad US category ranges/);
 });

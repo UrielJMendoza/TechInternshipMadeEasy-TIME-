@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { sanitizeUsLocation } from "@/lib/usLocations";
 import type { Internship } from "@/lib/types";
 import { Board } from "@/components/Board";
 
@@ -24,7 +25,11 @@ async function fetchJobs(): Promise<Internship[]> {
       .order("id", { ascending: true })
       .range(from, from + PAGE - 1);
     if (error) throw new Error(error.message);
-    rows.push(...(data as Internship[]));
+    for (const job of (data ?? []) as Internship[]) {
+      const location = sanitizeUsLocation(job.location);
+      if (!location.eligible) continue;
+      rows.push({ ...job, location: location.display });
+    }
     if (!data || data.length < PAGE) break;
   }
   return rows;

@@ -7,8 +7,8 @@
   --surface: #141416;
   --raised: #1f1f23;
   --fg: #f5f5f7;
-  --muted: #98989d;
-  --faint: #636366;
+  --muted: #b0b0b5;
+  --faint: #8e8e93;
   --border: #2a2a2e;
   --border-strong: #3f3f46;
   --accent: #0a84ff;
@@ -61,11 +61,11 @@ body {
   @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap;
 }
 .cat-software { background: rgba(10, 132, 255, 0.18); color: #64aeff; }
-.cat-cloud { background: rgba(100, 210, 255, 0.15); color: #70d7ff; }
+.cat-cloud { background: rgba(48, 209, 88, 0.15); color: #5ddd7f; }
 .cat-data-ml { background: rgba(191, 90, 242, 0.18); color: #d99bff; }
 .cat-quant { background: rgba(255, 214, 10, 0.14); color: #ffd60a; }
 .cat-security { background: rgba(255, 69, 58, 0.16); color: #ff8c85; }
-.cat-hardware { background: rgba(48, 209, 88, 0.15); color: #5ddd7f; }
+.cat-hardware { background: rgba(255, 191, 71, 0.16); color: #ffbf47; }
 .cat-mechanical, .cat-manufacturing { background: rgba(255, 159, 10, 0.16); color: #ffb340; }
 .cat-electrical, .cat-industrial { background: rgba(100, 210, 255, 0.15); color: #70d7ff; }
 .cat-civil, .cat-materials { background: rgba(94, 92, 230, 0.18); color: #aaa9ff; }

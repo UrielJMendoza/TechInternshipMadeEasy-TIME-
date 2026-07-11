@@ -49,6 +49,7 @@ const BUSINESS_CATEGORIES: Category[] = [
 ];
 const HOT_DAYS = 3;
 const NEW_DAYS = 14;
+const PAGE_SIZE = 30;
 
 type SortKey = "featured" | "newest" | "company" | "salary";
 type Freshness = "all" | "hot" | "new";
@@ -239,10 +240,39 @@ const SORTS: Array<[SortKey, string]> = [
   ["salary", "Top salary"],
 ];
 
+type PayRangeByRole = Record<RoleType, readonly [number, number]>;
+
+// Broad, product-owned US market ranges. Source-provided compensation always
+// wins; these estimates exist only to make otherwise missing pay information
+// visible and are never written back to the job record.
+const ESTIMATED_PAY_RANGES: Record<Category, PayRangeByRole> = {
+  software: { internship: [28, 48], new_grad: [95, 145] },
+  cloud: { internship: [30, 50], new_grad: [100, 150] },
+  "data-ml": { internship: [30, 52], new_grad: [100, 155] },
+  quant: { internship: [45, 80], new_grad: [125, 210] },
+  security: { internship: [27, 46], new_grad: [90, 140] },
+  hardware: { internship: [27, 45], new_grad: [88, 135] },
+  mechanical: { internship: [23, 36], new_grad: [72, 105] },
+  electrical: { internship: [24, 40], new_grad: [78, 118] },
+  civil: { internship: [21, 32], new_grad: [65, 95] },
+  aerospace: { internship: [24, 40], new_grad: [78, 120] },
+  manufacturing: { internship: [22, 34], new_grad: [68, 100] },
+  industrial: { internship: [22, 35], new_grad: [70, 105] },
+  materials: { internship: [22, 36], new_grad: [70, 108] },
+  finance: { internship: [24, 42], new_grad: [70, 115] },
+  consulting: { internship: [25, 42], new_grad: [75, 120] },
+  accounting: { internship: [20, 32], new_grad: [60, 90] },
+  operations: { internship: [20, 33], new_grad: [62, 95] },
+  product: { internship: [25, 45], new_grad: [85, 130] },
+  marketing: { internship: [18, 30], new_grad: [55, 85] },
+  "supply-chain": { internship: [20, 32], new_grad: [62, 92] },
+  other: { internship: [20, 35], new_grad: [65, 105] },
+};
+
 // Shared column template so every row lines up into vertical columns on sm+,
 // and header labels (table view) align with the data beneath them.
 const GRID =
-  "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 sm:grid-cols-[auto_minmax(0,2.1fr)_6.5rem_minmax(0,1.25fr)_5.5rem_3.25rem_auto] sm:gap-x-4 sm:items-center";
+  "grid grid-cols-[auto_minmax(0,1fr)_auto] gap-x-3 sm:grid-cols-[auto_minmax(0,2.1fr)_6.5rem_minmax(0,1.25fr)_7rem_3.25rem_auto] sm:gap-x-4 sm:items-center";
 
 function postedTime(job: Internship): number {
   return job.posted_date
@@ -280,6 +310,35 @@ function annualSalary(s: string | null): number {
   const n = Number(m[1]) * (m[2] ? 1000 : 1);
   const unit = m[3].toLowerCase();
   return unit === "hr" ? n * 2080 : unit === "mo" ? n * 12 : n;
+}
+
+interface Compensation {
+  label: string;
+  estimated: boolean;
+  title: string;
+}
+
+function compensationFor(job: Internship): Compensation {
+  const reported = job.salary?.trim();
+  if (reported) {
+    return {
+      label: reported,
+      estimated: false,
+      title: "Compensation reported by the source listing",
+    };
+  }
+
+  const [low, high] = ESTIMATED_PAY_RANGES[job.category][job.role_type];
+  const label =
+    job.role_type === "internship"
+      ? `Est. $${low}\u2013${high}/hr`
+      : `Est. $${low}\u2013${high}k/yr`;
+
+  return {
+    label,
+    estimated: true,
+    title: "Broad estimated US range for this role category; actual compensation varies by company and location",
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -364,6 +423,7 @@ export function Board({
   const [freshness, setFreshness] = useState<Freshness>("all");
   const [collection, setCollection] = useState<Collection>("all");
   const [sort, setSort] = useState<SortKey>("featured");
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
   const [view, setView] = usePersistentValue<ViewMode>("timley:view", "card");
   const [saved, toggleSaved] = usePersistentSet("timley:saved");
   const [applied, toggleApplied] = usePersistentSet("timley:applied");
@@ -375,6 +435,10 @@ export function Board({
       setTab("new_grad");
     }
   }, []);
+
+  useEffect(() => {
+    setVisibleCount(PAGE_SIZE);
+  }, [tab, query, major, niche, location, freshness, collection, sort]);
   const switchTab = (next: RoleType) => {
     setTab(next);
     const url = next === "new_grad" ? "?tab=new-grad" : window.location.pathname;
@@ -490,6 +554,13 @@ export function Board({
     now,
   ]);
 
+  const visibleJobs = useMemo(
+    () => filtered.slice(0, visibleCount),
+    [filtered, visibleCount],
+  );
+  const remainingCount = Math.max(0, filtered.length - visibleJobs.length);
+  const nextPageCount = Math.min(PAGE_SIZE, remainingCount);
+
   const internCount = jobs.filter((j) => j.role_type === "internship").length;
   const gradCount = jobs.length - internCount;
   const savedInTab = useMemo(() => tabJobs.filter((j) => saved.has(j.link)).length, [tabJobs, saved]);
@@ -531,7 +602,11 @@ export function Board({
       </header>
 
       {/* Toolbar — sticky while scrolling the list */}
-      <div className="sticky top-0 z-10 -mx-4 mt-8 border-b border-border/60 bg-bg/85 px-4 pt-3 pb-4 backdrop-blur-md sm:-mx-6 sm:px-6">
+      <div
+        data-sticky-toolbar
+        data-testid="job-toolbar"
+        className="sticky top-0 z-50 isolate -mx-4 mt-8 border-b border-border/60 bg-bg px-4 pt-3 pb-4 shadow-[0_14px_28px_rgba(0,0,0,0.82)] sm:-mx-6 sm:px-6"
+      >
         <div className="flex flex-wrap items-center justify-between gap-3">
           {/* Tabs — segmented control */}
           <div className="inline-flex rounded-full border border-border bg-surface p-1" role="tablist">
@@ -671,9 +746,9 @@ export function Board({
           </div>
         </div>
 
-        <div className="mt-5 border-b border-border/70">
+        <div className="mt-5 overflow-x-auto border-b border-border/70">
           <div
-            className="-mb-px flex min-w-max items-center gap-1 overflow-x-auto pb-px"
+            className="-mb-px flex min-w-max items-center gap-1 pb-px"
             role="tablist"
             aria-label="Browse internships by major"
           >
@@ -750,10 +825,12 @@ export function Board({
       </div>
 
       {/* Result count */}
-      <p className="mt-6 text-xs font-medium text-faint">
-        {filtered.length === tabJobs.length
-          ? `${tabJobs.length} roles`
-          : `${filtered.length} of ${tabJobs.length} roles`}
+      <p className="mt-6 text-xs font-medium text-faint" aria-live="polite">
+        {filtered.length === 0
+          ? `0 of ${tabJobs.length} roles`
+          : `Showing ${visibleJobs.length} of ${filtered.length} ${
+              filtered.length === 1 ? "role" : "roles"
+            }`}
       </p>
 
       {/* Column headers — only in the dense table view */}
@@ -772,8 +849,8 @@ export function Board({
       )}
 
       {/* List */}
-      <ul className={dense ? "mt-1 space-y-1" : "mt-3 space-y-2.5"}>
-        {filtered.map((job) => (
+      <ul data-job-list className={dense ? "mt-1 space-y-1" : "mt-3 space-y-2.5"}>
+        {visibleJobs.map((job) => (
           <JobRow
             key={job.id}
             job={job}
@@ -799,6 +876,35 @@ export function Board({
           </li>
         )}
       </ul>
+
+      {filtered.length > 0 && (
+        <div className="mt-8 flex flex-col items-center gap-3 border-t border-border/70 pt-6">
+          {remainingCount > 0 ? (
+            <button
+              data-load-more
+              data-testid="load-more"
+              type="button"
+              aria-label={`Load ${nextPageCount} more roles, ${remainingCount} remaining`}
+              onClick={() =>
+                setVisibleCount((count) =>
+                  Math.min(filtered.length, count + PAGE_SIZE),
+                )
+              }
+              className="inline-flex min-h-11 items-center gap-2 rounded-full border border-accent/45 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent transition-[color,background-color,border-color,box-shadow] hover:border-accent hover:bg-accent hover:text-white hover:shadow-[0_8px_24px_rgba(10,132,255,0.22)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            >
+              <span>Load {nextPageCount} more</span>
+              <span className="text-xs font-medium opacity-70">
+                {remainingCount} remaining
+              </span>
+            </button>
+          ) : (
+            <p className="inline-flex items-center gap-2 text-xs font-medium text-faint">
+              <span className="size-1.5 rounded-full bg-new" />
+              All {filtered.length} {filtered.length === 1 ? "role" : "roles"} loaded
+            </p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -822,10 +928,14 @@ function JobRow({
 }) {
   const days = daysAgo(job, now);
   const logoSize = dense ? 28 : 40;
+  const compensation = compensationFor(job);
 
   return (
     <li>
       <div
+        data-job-row
+        data-testid="job-row"
+        data-company={job.company}
         className={`group relative ${GRID} rounded-2xl border border-border bg-surface transition-[border-color,box-shadow,background-color] hover:border-white/25 hover:bg-surface/70 hover:shadow-[0_0_0_1px_rgba(255,255,255,0.06)] ${
           dense ? "px-3 py-2 sm:px-5" : "px-4 py-4 sm:px-5"
         } ${applied ? "opacity-60" : ""}`}
@@ -837,7 +947,7 @@ function JobRow({
           target="_blank"
           rel="noopener noreferrer"
           aria-label={`${job.title} at ${job.company} — open listing`}
-          className="absolute inset-0 z-0 rounded-2xl"
+          className="absolute inset-0 z-0 rounded-2xl focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
         />
 
         {/* Logo */}
@@ -862,8 +972,9 @@ function JobRow({
         </div>
 
         {/* Category */}
-        <div className="pointer-events-none relative z-10 col-start-2 row-start-2 flex items-center sm:col-start-3 sm:row-start-1">
+        <div className="pointer-events-none relative z-10 col-start-2 row-start-2 flex min-w-0 flex-wrap items-center gap-1.5 sm:col-start-3 sm:row-start-1">
           <span className={`cat cat-${job.category}`}>{CATEGORY_LABELS[job.category]}</span>
+          <CompensationTag compensation={compensation} className="sm:hidden" />
         </div>
 
         {/* Location */}
@@ -875,7 +986,7 @@ function JobRow({
 
         {/* Comp / rules */}
         <div className="pointer-events-none relative z-10 hidden min-w-0 flex-col items-start justify-center sm:col-start-5 sm:row-start-1 sm:flex">
-          {job.salary && <span className="truncate text-xs font-semibold text-fg/80">{job.salary}</span>}
+          <CompensationTag compensation={compensation} />
           {job.sponsorship && (
             <span className="truncate text-[10px] font-medium text-faint">
               {job.sponsorship.includes("citizen")
@@ -912,13 +1023,37 @@ function JobRow({
             <CheckIcon />
           </IconButton>
           {!dense && (
-            <span className="ml-1 hidden rounded-full border border-border px-3.5 py-1.5 text-xs font-semibold text-muted transition-colors group-hover:border-accent group-hover:bg-accent group-hover:text-white sm:inline">
+            <span className="apply-cta ml-1 hidden rounded-full border border-accent/45 bg-accent/10 px-3.5 py-1.5 text-xs font-semibold text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)] transition-[color,background-color,border-color,box-shadow] group-hover:border-accent group-hover:bg-accent group-hover:text-white group-focus-within:border-accent group-focus-within:bg-accent group-focus-within:text-white sm:inline">
               Apply
             </span>
           )}
         </div>
       </div>
     </li>
+  );
+}
+
+function CompensationTag({
+  compensation,
+  className = "",
+}: {
+  compensation: Compensation;
+  className?: string;
+}) {
+  return (
+    <span
+      data-salary-kind={compensation.estimated ? "estimated" : "reported"}
+      data-testid="salary-pill"
+      title={compensation.title}
+      aria-label={`${compensation.label}. ${compensation.title}`}
+      className={`inline-flex max-w-full items-center overflow-hidden text-ellipsis whitespace-nowrap rounded-full border px-2 py-0.5 text-[10px] font-semibold ${
+        compensation.estimated
+          ? "border-champagne/30 bg-champagne/10 text-champagne"
+          : "border-new/30 bg-new-soft text-new"
+      } ${className}`}
+    >
+      {compensation.label}
+    </span>
   );
 }
 

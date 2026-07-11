@@ -75,7 +75,11 @@ export default async function Home() {
           <a className="underline underline-offset-2 hover:text-muted" href="https://github.com/speedyapply/2027-SWE-College-Jobs" target="_blank" rel="noopener noreferrer">
             speedyapply/2027-SWE-College-Jobs
           </a>
-          . Star those repos — they do the heavy lifting. Company logos via Clearbit. USA roles only, postings older than 4 months age out automatically. Saved &amp; applied roles are stored only in your browser.
+          . Star those repos — they do the heavy lifting. Company favicons via{" "}
+          <a className="underline underline-offset-2 hover:text-muted" href="https://vemetric.com/favicon-api" target="_blank" rel="noopener noreferrer">
+            Vemetric
+          </a>
+          . USA roles only, postings older than 4 months age out automatically. Saved &amp; applied roles are stored only in your browser.
         </p>
       </footer>
     </main>

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import Image from "next/image";
 import { companyDomain } from "@/lib/companyDomain";
 
 // Deterministic avatar color per company, drawn from the iOS dark palette —
@@ -22,27 +23,37 @@ function avatarColor(company: string): string {
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
 }
 
-// Domains that already failed this session — skip straight to the letter so we
-// don't re-request a logo we know is missing as the user scrolls/filters.
-const failedDomains = new Set<string>();
-
 function logoUrl(domain: string): string {
-  // Clearbit serves transparent PNG logos and 404s cleanly for unknown
-  // domains, which drives onError -> the letter fallback below.
-  return `https://logo.clearbit.com/${domain}?size=80`;
+  return `https://favicon.vemetric.com/${encodeURIComponent(domain)}?size=128&format=png`;
 }
 
 export function CompanyLogo({ company, size = 40 }: { company: string; size?: number }) {
   const domain = companyDomain(company);
-  const [loaded, setLoaded] = useState(false);
-  const [failed, setFailed] = useState(() => !domain || failedDomains.has(domain));
 
-  // A pooled list row is reused for different companies as filters change —
-  // reset the image state for the new company.
-  useEffect(() => {
-    setLoaded(false);
-    setFailed(!domain || failedDomains.has(domain));
-  }, [domain]);
+  // Keying the stateful image makes a reused row start cleanly when its company
+  // changes, without permanently caching a transient network/provider failure.
+  return (
+    <CompanyLogoImage
+      key={`${company}:${domain}:${size}`}
+      company={company}
+      domain={domain}
+      size={size}
+    />
+  );
+}
+
+function CompanyLogoImage({
+  company,
+  domain,
+  size,
+}: {
+  company: string;
+  domain: string;
+  size: number;
+}) {
+  const src = domain ? logoUrl(domain) : null;
+  const [loaded, setLoaded] = useState(false);
+  const [failed, setFailed] = useState(() => !src);
 
   const rgb = avatarColor(company);
   const radius = Math.round(size * 0.28);
@@ -64,18 +75,19 @@ export function CompanyLogo({ company, size = 40 }: { company: string; size?: nu
       }}
     >
       {company.charAt(0).toUpperCase()}
-      {domain && !failed && (
-        <img
-          src={logoUrl(domain)}
+      {src && !failed && (
+        <Image
+          key={src}
+          src={src}
           alt=""
           width={size}
           height={size}
           loading="lazy"
+          unoptimized
+          decoding="async"
+          referrerPolicy="no-referrer"
           onLoad={() => setLoaded(true)}
-          onError={() => {
-            failedDomains.add(domain);
-            setFailed(true);
-          }}
+          onError={() => setFailed(true)}
           className="absolute inset-0 bg-white object-contain transition-opacity duration-200"
           style={{ padding: size * 0.12, opacity: loaded ? 1 : 0 }}
         />

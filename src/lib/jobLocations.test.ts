@@ -22,9 +22,15 @@ test("normalizes Denver variants and cautious metro aliases", () => {
 
 test("detects explicit remote language but not hybrid alone", () => {
   assert.equal(isRemoteLocation("Remote - United States"), true);
-  assert.equal(isRemoteLocation("Work from home"), true);
+  assert.equal(isRemoteLocation("Work from home"), false);
   assert.equal(isRemoteLocation("Hybrid - Denver, CO"), false);
-  assert.equal(countRemoteJobs([{ location: "Remote" }, { location: "Hybrid" }]), 1);
+  assert.equal(
+    countRemoteJobs([
+      { location: "Remote", country_code: "US" },
+      { location: "Hybrid" },
+    ]),
+    1,
+  );
 });
 
 test("multi-location jobs return all canonical physical facets with OR matching", () => {

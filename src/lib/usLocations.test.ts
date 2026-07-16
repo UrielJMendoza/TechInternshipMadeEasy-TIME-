@@ -41,7 +41,20 @@ test("remote eligibility respects its declared region", () => {
   assert.equal(isUsLocationEligible("Remote in USA"), true);
   assert.equal(isUsRemoteLocation("Remote in Canada"), false);
   assert.equal(isUsLocationEligible("Remote in Canada"), false);
-  assert.equal(isUsRemoteLocation("Remote"), true);
+  assert.equal(isUsRemoteLocation("Remote"), false);
+  assert.equal(
+    isUsRemoteLocation("Remote", { allowAmbiguousRemote: true }),
+    true,
+  );
+  for (const unsafe of [
+    "Remote in Israel",
+    "Remote in South Africa",
+    "San Jose, Costa Rica",
+    "Remote worldwide",
+    "Remote anywhere",
+  ]) {
+    assert.equal(isUsLocationEligible(unsafe), false, unsafe);
+  }
 });
 
 test("rewrites the known Chicago and Puerto Rico office-list ambiguity", () => {
@@ -59,11 +72,11 @@ test("rewrites the known Chicago and Puerto Rico office-list ambiguity", () => {
   );
 });
 
-test("blank locations preserve existing ingestion eligibility", () => {
+test("blank locations remain quarantined at read time", () => {
   assert.deepEqual(sanitizeUsLocation(""), {
     parts: [],
     display: "",
-    eligible: true,
+    eligible: false,
     hasRemote: false,
   });
 });

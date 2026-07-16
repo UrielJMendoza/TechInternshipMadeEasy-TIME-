@@ -1,12 +1,30 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "./database.types";
 
-// Fallbacks are the project's *public* credentials — the publishable key is
-// shipped to every browser by design; RLS restricts it to reads and the
-// secret-gated RPCs. Env vars override for forks/local overrides.
-const URL = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "https://ogkocdharscqzdrnlpnq.supabase.co";
-const KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "sb_publishable_ejWVjfUaEx5WAdrN72s7FQ_RwO7CDEh";
+let publicClient: SupabaseClient<Database> | null = null;
 
-export function supabase() {
-  return createClient(URL, KEY, { auth: { persistSession: false } });
+export function publicSupabaseConfigured(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_SUPABASE_URL &&
+      (process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+  );
+}
+
+/** Lazily initialize so `next build` never contacts production via fallbacks. */
+export function supabase(): SupabaseClient<Database> {
+  if (publicClient) return publicClient;
+
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key =
+    process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+  if (!url || !key) {
+    throw new Error("Public Supabase configuration is missing");
+  }
+
+  publicClient = createClient<Database>(url, key, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  return publicClient;
 }

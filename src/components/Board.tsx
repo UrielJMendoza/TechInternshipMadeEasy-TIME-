@@ -1,7 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import {
+  APPLICATION_STAGE_ORDER,
   APPLICATION_STAGE_LABELS,
   APPLICATION_STAGES,
   getApplicationStage,
@@ -17,11 +25,8 @@ import {
 } from "@/lib/boardFilterState";
 import { SORT_OPTIONS } from "@/lib/boardOptions";
 import {
-  filterAndSortJobs,
-} from "@/lib/jobFilters";
-import {
   PHYSICAL_LOCATION_FACETS,
-  buildLocationFacetOptions,
+  buildLocationFacetOptionsFromCounts,
   countRemoteJobs,
   type PhysicalLocationFacetId,
 } from "@/lib/jobLocations";
@@ -33,10 +38,11 @@ import {
   relativeTimestamp,
 } from "@/lib/jobTime";
 import type { Internship, RoleType } from "@/lib/types";
+import type { JobPage, JobQuery } from "@/lib/jobQuery";
 import { useApplicationTracking } from "@/hooks/useApplicationTracking";
 import { useBoardFilters } from "@/hooks/useBoardFilters";
 import {
-  usePersistentSet,
+  useSavedTracking,
   usePersistentString,
 } from "@/hooks/useLocalStorageState";
 import {
@@ -44,9 +50,22 @@ import {
   LocationFilterMenu,
   QuickToggle,
   StageFilterMenu,
+  TermFilterMenu,
 } from "@/components/BoardFilterControls";
 import { JobCard, JOB_GRID } from "@/components/JobCard";
 import { MobileFilterSheet } from "@/components/MobileFilterSheet";
+import { ApplicationTrackingTransfer } from "@/components/ApplicationTrackingTransfer";
+import {
+  exportTrackingDataCsv,
+  exportTrackingDataJson,
+  importTrackingDataCsv,
+  importTrackingDataJson,
+} from "@/lib/trackingDataTransfer";
+import {
+  buildTermFacetOptions,
+  termLabelFromKey,
+  type InternshipTermKey,
+} from "@/lib/jobTerms";
 
 const PAGE_SIZE = 30;
 const LOCATION_LABELS = new Map<PhysicalLocationFacetId, string>(
@@ -58,12 +77,14 @@ function isViewMode(value: string): value is ViewMode {
 }
 
 export function Board({
-  jobs,
+  jobs: initialJobs,
+  initialPage,
   loadError,
   generatedAt,
   updatedAt,
 }: {
   jobs: Internship[];
+  initialPage?: JobPage;
   loadError: boolean;
   generatedAt: string;
   updatedAt: string | null;
@@ -71,17 +92,60 @@ export function Board({
   const now = useMemo(() => new Date(generatedAt).getTime(), [generatedAt]);
   const { filters, ready: filtersReady, updateFilters, clearFilters } =
     useBoardFilters();
-  const [view, setView] = usePersistentString<ViewMode>(
+  const [view, setView, viewReady] = usePersistentString<ViewMode>(
     "timley:view",
     "card",
     isViewMode,
   );
-  const [saved, toggleSaved] = usePersistentSet("timley:saved");
-  const { records, updateStage } = useApplicationTracking();
-  const [pagination, setPagination] = useState({
-    key: "",
-    count: PAGE_SIZE,
+  const [page, setPage] = useState<JobPage>(() => initialPage ?? {
+    items: initialJobs,
+    total: initialJobs.length,
+    facets: { locations: [], categories: [], sources: [], terms: [] },
+    nextCursor: null,
+    hasMore: false,
+    updatedAt,
+    roleTotals: {
+      internship: initialJobs.filter((job) => job.role_type === "internship").length,
+      new_grad: initialJobs.filter((job) => job.role_type === "new_grad").length,
+    },
   });
+  const [resolvedTrackingAliases, setResolvedTrackingAliases] = useState<
+    Record<string, string>
+  >({});
+  const trackingAliases = useMemo(
+    () => ({
+      ...resolvedTrackingAliases,
+      ...Object.fromEntries(
+        page.items.map((job) => [job.link, job.tracking_key]),
+      ),
+    }),
+    [page.items, resolvedTrackingAliases],
+  );
+  const {
+    saved,
+    unmatchedSaved,
+    store: savedStore,
+    ready: savedReady,
+    storageAvailable: savedStorageAvailable,
+    toggleSaved,
+    importStore: importSavedStore,
+  } = useSavedTracking(trackingAliases);
+  const {
+    store: applicationStore,
+    records,
+    unmatchedRecords,
+    ready: applicationsReady,
+    storageAvailable: applicationsStorageAvailable,
+    updateStage,
+    importStore: importApplicationStore,
+  } = useApplicationTracking(trackingAliases);
+  const [networkState, setNetworkState] = useState<
+    "idle" | "loading" | "loading-more" | "error"
+  >("idle");
+  const [failedRequest, setFailedRequest] = useState<"query" | "more" | null>(null);
+  const [retryNonce, setRetryNonce] = useState(0);
+  const requestSequence = useRef(0);
+  const attemptedTrackingAliases = useRef(new Set<string>());
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const [stageAnnouncement, setStageAnnouncement] = useState("");
   const mobileSearchRef = useRef<HTMLInputElement>(null);
@@ -94,6 +158,7 @@ export function Board({
     niche,
     locationIds,
     locationOrder,
+    termKeys,
     freshness,
     collection,
     sort,
@@ -101,6 +166,99 @@ export function Board({
     remoteOnly,
     visaSponsorship,
   } = filters;
+  const deferredQuery = useDeferredValue(query);
+  const jobs = page.items;
+  const storageReady =
+    filtersReady && savedReady && applicationsReady && viewReady;
+  const trackingStorageAvailable =
+    savedStorageAvailable === false || applicationsStorageAvailable === false
+      ? false
+      : savedStorageAvailable === true && applicationsStorageAvailable === true
+        ? true
+        : null;
+  const exportTrackingJson = useCallback(
+    () =>
+      exportTrackingDataJson({
+        applications: applicationStore,
+        saved: savedStore,
+      }),
+    [applicationStore, savedStore],
+  );
+  const exportTrackingCsv = useCallback(
+    () =>
+      exportTrackingDataCsv({
+        applications: applicationStore,
+        saved: savedStore,
+      }),
+    [applicationStore, savedStore],
+  );
+  const importTrackingJson = useCallback(
+    (raw: string) => {
+      const imported = importTrackingDataJson(raw);
+      importApplicationStore(imported.applications);
+      if (imported.saved) importSavedStore(imported.saved);
+    },
+    [importApplicationStore, importSavedStore],
+  );
+  const importTrackingCsv = useCallback(
+    (raw: string) => {
+      const imported = importTrackingDataCsv(raw);
+      importApplicationStore(imported.applications);
+      if (imported.saved) importSavedStore(imported.saved);
+    },
+    [importApplicationStore, importSavedStore],
+  );
+
+  useEffect(() => {
+    if (!savedReady || !applicationsReady) return;
+    const pendingUrls = [
+      ...new Set([
+        ...unmatchedSaved,
+        ...Object.keys(unmatchedRecords),
+      ]),
+    ].filter(
+      (url) =>
+        isHttpsUrl(url) &&
+        !trackingAliases[url] &&
+        !attemptedTrackingAliases.current.has(url),
+    ).slice(0, 100);
+    if (pendingUrls.length === 0) return;
+    pendingUrls.forEach((url) => attemptedTrackingAliases.current.add(url));
+
+    const controller = new AbortController();
+    void fetch("/api/tracking/resolve", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ urls: pendingUrls }),
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`alias request failed: ${response.status}`);
+        const payload: unknown = await response.json();
+        if (!isRecord(payload) || !isStringRecord(payload.aliases)) {
+          throw new Error("invalid alias response");
+        }
+        const aliases = payload.aliases;
+        setResolvedTrackingAliases((current) => ({
+          ...current,
+          ...aliases,
+        }));
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted) return;
+        pendingUrls.forEach((url) => attemptedTrackingAliases.current.delete(url));
+        console.error(error);
+      });
+
+    return () => controller.abort();
+  }, [
+    applicationsReady,
+    savedReady,
+    trackingAliases,
+    unmatchedRecords,
+    unmatchedSaved,
+  ]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -127,10 +285,7 @@ export function Board({
     return () => window.clearTimeout(timeout);
   }, [stageAnnouncement]);
 
-  const tabJobs = useMemo(
-    () => jobs.filter((job) => job.role_type === tab),
-    [jobs, tab],
-  );
+  const tabJobs = jobs;
   const activeMajor = MAJORS_BY_ID[major];
   const activeNiche =
     activeMajor.niches.find((option) => option.id === niche) ??
@@ -165,8 +320,12 @@ export function Board({
   );
   const remoteCount = useMemo(() => countRemoteJobs(tabJobs), [tabJobs]);
   const locationOptions = useMemo(
-    () => buildLocationFacetOptions(tabJobs, locationOrder),
-    [locationOrder, tabJobs],
+    () => buildLocationFacetOptionsFromCounts(page.facets.locations, locationOrder),
+    [locationOrder, page.facets.locations],
+  );
+  const termOptions = useMemo(
+    () => buildTermFacetOptions(page.facets.terms),
+    [page.facets.terms],
   );
   const stageCounts = useMemo(
     () =>
@@ -174,7 +333,7 @@ export function Board({
         APPLICATION_STAGES.map((stage) => [
           stage,
           tabJobs.filter(
-            (job) => getApplicationStage(records, job.link) === stage,
+            (job) => getApplicationStage(records, job.tracking_key) === stage,
           ).length,
         ]),
       ) as Record<ApplicationStage, number>,
@@ -182,61 +341,147 @@ export function Board({
   );
 
   const filtered = useMemo(() => {
-    return filterAndSortJobs(tabJobs, {
-      query,
-      locationIds,
-      remoteOnly,
-      visaSponsorship,
-      stages,
-      freshness,
-      collection,
-      sort,
-      saved,
-      applications: records,
-      now,
-      matchesMajor: activeMajor.matches,
-      matchesNiche: activeNiche.matches,
-    });
-  }, [
-    activeMajor,
-    activeNiche,
-    collection,
+    if (sort !== "application-stage") return tabJobs;
+    const rank = new Map(APPLICATION_STAGE_ORDER.map((stage, index) => [stage, index]));
+    return [...tabJobs].sort((left, right) =>
+      (rank.get(getApplicationStage(records, left.tracking_key)) ?? 99) -
+        (rank.get(getApplicationStage(records, right.tracking_key)) ?? 99) ||
+      right.first_seen_at.localeCompare(left.first_seen_at),
+    );
+  }, [records, sort, tabJobs]);
+
+  const visibleJobs = filtered;
+  const remainingCount = Math.max(0, page.total - visibleJobs.length);
+  const nextPageCount = Math.min(PAGE_SIZE, remainingCount);
+  const internCount = page.roleTotals.internship;
+  const gradCount = page.roleTotals.new_grad;
+  const savedInTab = tabJobs.filter((job) => saved.has(job.tracking_key)).length;
+  const filterCount = activeFilterCount(filters);
+  const dense = view === "table";
+
+  const trackingKeys = useMemo(() => {
+    let keys: Set<string> | null = null;
+    if (collection === "saved") keys = new Set(saved);
+    if (stages.length > 0) {
+      const stageKeys = new Set(
+        Object.entries(records)
+          .filter(([, record]) => stages.includes(record.stage))
+          .map(([trackingKey]) => trackingKey),
+      );
+      keys = keys
+        ? new Set([...keys].filter((trackingKey) => stageKeys.has(trackingKey)))
+        : stageKeys;
+    }
+    return keys ? [...keys].slice(0, 500) : null;
+  }, [collection, records, saved, stages]);
+
+  const queryBody = useMemo<JobQuery>(() => ({
+    roleType: tab,
+    query: deferredQuery,
+    majorId: major,
+    nicheId: niche,
+    locationIds,
+    termKeys,
+    remoteOnly,
+    visaSponsorship,
+    freshness,
+    trackingKeys,
+    sort,
+    cursor: null,
+    pageSize: PAGE_SIZE,
+  }), [
+    deferredQuery,
     freshness,
     locationIds,
-    now,
-    query,
-    records,
+    major,
+    niche,
     remoteOnly,
-    saved,
     sort,
-    stages,
-    tabJobs,
+    tab,
+    termKeys,
+    trackingKeys,
     visaSponsorship,
   ]);
 
-  const paginationKey = useMemo(
-    () => filtered.map((job) => job.id).join("\u001f"),
-    [filtered],
-  );
-  const visibleCount =
-    pagination.key === paginationKey ? pagination.count : PAGE_SIZE;
-  const visibleJobs = filtered.slice(0, visibleCount);
-  const remainingCount = Math.max(0, filtered.length - visibleJobs.length);
-  const nextPageCount = Math.min(PAGE_SIZE, remainingCount);
-  const internCount = jobs.filter(
-    (job) => job.role_type === "internship",
-  ).length;
-  const gradCount = jobs.length - internCount;
-  const savedInTab = tabJobs.filter((job) => saved.has(job.link)).length;
-  const filterCount = activeFilterCount(filters);
-  const dense = view === "table";
+  useEffect(() => {
+    if (!storageReady) return;
+    const controller = new AbortController();
+    const sequence = ++requestSequence.current;
+    queueMicrotask(() => {
+      if (!controller.signal.aborted && sequence === requestSequence.current) {
+        setFailedRequest(null);
+        setNetworkState("loading");
+      }
+    });
+
+    void fetch("/api/jobs", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(queryBody),
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (response) => {
+        if (!response.ok) throw new Error(`jobs request failed: ${response.status}`);
+        const payload: unknown = await response.json();
+        if (!isJobPage(payload)) throw new Error("invalid jobs response");
+        if (sequence !== requestSequence.current) return;
+        setPage(payload);
+        setFailedRequest(null);
+        setNetworkState("idle");
+      })
+      .catch((error: unknown) => {
+        if (controller.signal.aborted || sequence !== requestSequence.current) return;
+        console.error(error);
+        setFailedRequest("query");
+        setNetworkState("error");
+      });
+
+    return () => controller.abort();
+  }, [queryBody, retryNonce, storageReady]);
+
+  const loadMore = async () => {
+    if (!page.nextCursor || networkState === "loading" || networkState === "loading-more") return;
+    const sequence = ++requestSequence.current;
+    setFailedRequest(null);
+    setNetworkState("loading-more");
+    try {
+      const response = await fetch("/api/jobs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...queryBody, cursor: page.nextCursor }),
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error(`jobs request failed: ${response.status}`);
+      const payload: unknown = await response.json();
+      if (!isJobPage(payload)) throw new Error("invalid jobs response");
+      if (sequence !== requestSequence.current) return;
+      setPage((current) => {
+        const seen = new Set(current.items.map((job) => job.id));
+        return {
+          ...payload,
+          items: [...current.items, ...payload.items.filter((job) => !seen.has(job.id))],
+          total: current.total,
+          roleTotals: current.roleTotals,
+        };
+      });
+      setFailedRequest(null);
+      setNetworkState("idle");
+    } catch (error) {
+      if (sequence !== requestSequence.current) return;
+      console.error(error);
+      setFailedRequest("more");
+      setNetworkState("error");
+    }
+  };
 
   const update = (
     changes: Partial<BoardFilters>,
     mode: "push" | "replace" = "push",
   ) => updateFilters(changes, mode);
 
-  const switchTab = (nextTab: RoleType) => update({ tab: nextTab });
+  const switchTab = (nextTab: RoleType) =>
+    update({ tab: nextTab, termKeys: nextTab === "internship" ? termKeys : [] });
   const selectMajor = (nextMajor: MajorId) =>
     update({ major: nextMajor, niche: "all" });
   const toggleLocation = (id: PhysicalLocationFacetId) =>
@@ -244,6 +489,12 @@ export function Board({
       locationIds: locationIds.includes(id)
         ? locationIds.filter((selected) => selected !== id)
         : [...locationIds, id],
+    });
+  const toggleTerm = (key: InternshipTermKey) =>
+    update({
+      termKeys: termKeys.includes(key)
+        ? termKeys.filter((selected) => selected !== key)
+        : [...termKeys, key],
     });
   const toggleStageFilter = (stage: ApplicationStage) =>
     update({
@@ -285,20 +536,27 @@ export function Board({
             timley<span className="text-accent">.</span>
           </h1>
           <p className="mt-1.5 text-[15px] text-muted">
-            Every 2027 tech internship &amp; new grad role in the US — live,
-            deduped, refreshed every 2 hours.
+            US-focused internship &amp; new grad listings from six maintained
+            sources — sorted by opening date and refreshed every 2 hours.
           </p>
         </div>
         <p className="text-[13px] font-medium text-faint">
-          {jobs.length} open roles
-          {updatedAt && <> · updated {relativeTimestamp(updatedAt, now)}</>}
+          {page.roleTotals.internship + page.roleTotals.new_grad} open roles
+          {(page.updatedAt ?? updatedAt) && (
+            <> · updated {relativeTimestamp(page.updatedAt ?? updatedAt!, now)}</>
+          )}
         </p>
       </header>
 
       <div
         data-sticky-toolbar
         data-testid="job-toolbar"
-        className="sticky top-0 z-50 isolate -mx-4 mt-8 border-b border-border/60 bg-bg px-4 pt-3 pb-3 shadow-[0_14px_28px_rgba(0,0,0,0.82)] sm:-mx-6 sm:px-6"
+        data-filters-ready={filtersReady}
+        aria-hidden={!filtersReady}
+        inert={!filtersReady}
+        className={`sticky top-0 z-50 isolate -mx-4 mt-8 border-b border-border/60 bg-bg px-4 pt-3 pb-3 shadow-[0_14px_28px_rgba(0,0,0,0.82)] sm:-mx-6 sm:px-6 ${
+          filtersReady ? "" : "invisible pointer-events-none"
+        }`}
       >
         <div className="flex items-center justify-between gap-2">
           <div
@@ -367,7 +625,7 @@ export function Board({
               ))}
             </div>
             <span className="hidden lg:inline-flex">
-              <ViewToggle view={view} onChange={setView} />
+              <ViewToggle view={view} ready={viewReady} onChange={setView} />
             </span>
           </div>
         </div>
@@ -425,6 +683,14 @@ export function Board({
             onToggle={toggleLocation}
             onOrderChange={(value) => update({ locationOrder: value })}
           />
+          {tab === "internship" && (
+            <TermFilterMenu
+              options={termOptions}
+              selected={termKeys}
+              onToggle={toggleTerm}
+              onClear={() => update({ termKeys: [] })}
+            />
+          )}
           <select
             value={sort}
             onChange={(event) => update({ sort: event.target.value as SortKey })}
@@ -445,7 +711,7 @@ export function Board({
             {(
               [
                 ["all", "All"],
-                ["saved", `Saved ${savedInTab || ""}`.trim()],
+                ["saved", `To apply ${savedInTab || ""}`.trim()],
               ] as Array<[Collection, string]>
             ).map(([key, label]) => (
               <button
@@ -523,7 +789,8 @@ export function Board({
             aria-label={`${activeMajor.label} specializations`}
           >
             {activeMajor.niches.map((option) => {
-              const available = (nicheCounts.get(option.id) ?? 0) > 0;
+              const available =
+                page.total > tabJobs.length || (nicheCounts.get(option.id) ?? 0) > 0;
               const selected = niche === option.id;
               const unavailableMessage = `${option.label} has no live roles yet`;
               return (
@@ -569,6 +836,16 @@ export function Board({
                   onRemove={() => toggleLocation(id)}
                 />
               ))}
+              {termKeys.map((key) => {
+                const option = termOptions.find((term) => term.id === key);
+                return (
+                  <FilterChip
+                    key={key}
+                    label={option?.label ?? termLabelFromKey(key)}
+                    onRemove={() => toggleTerm(key)}
+                  />
+                );
+              })}
               {stages.map((stage) => (
                 <FilterChip
                   key={stage}
@@ -583,7 +860,7 @@ export function Board({
                 />
               )}
               {collection === "saved" && (
-                <FilterChip label="Saved" onRemove={() => update({ collection: "all" })} />
+                <FilterChip label="To apply" onRemove={() => update({ collection: "all" })} />
               )}
               {(major !== "all" || niche !== "all") && (
                 <FilterChip
@@ -595,10 +872,10 @@ export function Board({
                   onRemove={() => update({ major: "all", niche: "all" })}
                 />
               )}
-              {sort !== "featured" && (
+              {sort !== "newest" && (
                 <FilterChip
                   label={SORT_OPTIONS.find(([key]) => key === sort)?.[1] ?? sort}
-                  onRemove={() => update({ sort: "featured" })}
+                  onRemove={() => update({ sort: "newest" })}
                 />
               )}
             </div>
@@ -620,6 +897,7 @@ export function Board({
           filters={filters}
           jobs={jobs}
           applications={records}
+          termOptions={termOptions}
           onApply={(nextFilters) => updateFilters(nextFilters, "push")}
         />
       )}
@@ -633,19 +911,26 @@ export function Board({
       >
         <div className="mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
           <p className="text-xs font-medium text-faint" aria-live="polite">
-            {filtered.length === 0
-              ? `0 of ${tabJobs.length} roles`
-              : `Showing ${visibleJobs.length} of ${filtered.length} ${
-                  filtered.length === 1 ? "role" : "roles"
+            {visibleJobs.length === 0
+              ? `0 of ${page.total} roles`
+              : `Showing ${visibleJobs.length} of ${page.total} ${
+                  page.total === 1 ? "role" : "roles"
                 }`}
           </p>
-          <p className="text-[11px] leading-snug text-faint">
-            Pay guide: amounts without “Est.” come from source listings; estimates
-            are broad US category ranges.
-          </p>
+          <div className="max-w-xl text-[11px] leading-snug text-faint sm:text-right">
+            <p>
+              Star a role for To apply; use Track once you start. “Term not
+              listed” means the source did not provide enough evidence to
+              classify it.
+            </p>
+            <p className="mt-1">
+              Pay guide: amounts without “Est.” come from source listings;
+              estimates are broad US category ranges.
+            </p>
+          </div>
         </div>
 
-        {dense && filtered.length > 0 && (
+        {dense && storageReady && networkState !== "loading" && filtered.length > 0 && (
           <div
             className={`${JOB_GRID} mt-3 hidden px-5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-faint lg:grid`}
           >
@@ -661,29 +946,40 @@ export function Board({
 
         <ul
           data-job-list
+          aria-busy={!storageReady || networkState === "loading" || networkState === "loading-more"}
           className={dense ? "mt-1 space-y-1" : "mt-3 space-y-2.5"}
         >
-          {visibleJobs.map((job) => (
+          {storageReady && networkState !== "loading" && visibleJobs.map((job) => (
             <JobCard
               key={job.id}
               job={job}
               now={now}
               dense={dense}
-              saved={saved.has(job.link)}
-              stage={getApplicationStage(records, job.link)}
-              onToggleSaved={() => toggleSaved(job.link)}
+              saved={saved.has(job.tracking_key)}
+              stage={getApplicationStage(records, job.tracking_key)}
+              onToggleSaved={() => toggleSaved(job.tracking_key)}
               onStageChange={(stage) => {
-                updateStage(job.link, stage);
+                updateStage(job.tracking_key, stage);
                 setStageAnnouncement(
                   `${job.company} moved to ${APPLICATION_STAGE_LABELS[stage]}.`,
                 );
               }}
             />
           ))}
-          {filtered.length === 0 && (
+          {(!storageReady || networkState === "loading") && (
+            <li
+              role="status"
+              className="rounded-2xl border border-border bg-surface px-4 py-16 text-center text-sm text-muted"
+            >
+              {!storageReady
+                ? "Restoring your saved roles, filters, and application stages…"
+                : "Loading matching roles…"}
+            </li>
+          )}
+          {storageReady && networkState !== "loading" && filtered.length === 0 && (
             <li className="rounded-2xl border border-border bg-surface px-4 py-16 text-center text-sm text-muted">
               <EmptyState
-                loadError={loadError}
+                loadError={loadError || networkState === "error"}
                 jobs={jobs}
                 filters={filters}
                 locationLabels={selectedLocationLabels}
@@ -692,40 +988,57 @@ export function Board({
           )}
         </ul>
 
-        {filtered.length > 0 && (
+        {storageReady && networkState !== "loading" && filtered.length > 0 && (
           <div className="mt-8 flex flex-col items-center gap-3 border-t border-border/70 pt-6">
-            {remainingCount > 0 ? (
+            {networkState === "error" ? (
+              <button
+                type="button"
+                onClick={() => {
+                  if (failedRequest === "more") void loadMore();
+                  else setRetryNonce((value) => value + 1);
+                }}
+                className="inline-flex min-h-11 items-center rounded-full border border-action bg-action px-5 py-2.5 text-sm font-semibold text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+              >
+                Retry loading roles
+              </button>
+            ) : page.hasMore && page.nextCursor && remainingCount > 0 ? (
               <button
                 data-load-more
                 data-testid="load-more"
                 type="button"
                 aria-label={`Load ${nextPageCount} more roles, ${remainingCount} remaining`}
-                onClick={() =>
-                  setPagination({
-                    key: paginationKey,
-                    count: Math.min(
-                      filtered.length,
-                      visibleCount + PAGE_SIZE,
-                    ),
-                  })
-                }
-                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-accent/45 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent transition-[color,background-color,border-color,box-shadow] hover:border-accent hover:bg-accent hover:text-white hover:shadow-[0_8px_24px_rgba(10,132,255,0.22)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                disabled={networkState === "loading-more"}
+                onClick={() => void loadMore()}
+                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-accent/45 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent transition-[color,background-color,border-color,box-shadow] hover:border-accent hover:bg-action hover:text-white hover:shadow-[0_8px_24px_rgba(10,132,255,0.22)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-wait disabled:opacity-60"
               >
-                <span>Load {nextPageCount} more</span>
-                <span className="text-xs font-medium opacity-70">
+                <span>{networkState === "loading-more" ? "Loading…" : `Load ${nextPageCount} more`}</span>
+                <span className="text-xs font-medium">
                   {remainingCount} remaining
                 </span>
               </button>
             ) : (
               <p className="inline-flex items-center gap-2 text-xs font-medium text-faint">
                 <span className="size-1.5 rounded-full bg-new" />
-                All {filtered.length} {filtered.length === 1 ? "role" : "roles"}{" "}
+                All {visibleJobs.length} {visibleJobs.length === 1 ? "role" : "roles"}{" "}
                 loaded
               </p>
             )}
           </div>
         )}
       </section>
+
+      <ApplicationTrackingTransfer
+        exportJson={exportTrackingJson}
+        exportCsv={exportTrackingCsv}
+        importJson={importTrackingJson}
+        importCsv={importTrackingCsv}
+        ready={savedReady && applicationsReady}
+        storageAvailable={trackingStorageAvailable}
+        unmatchedCount={
+          Object.keys(unmatchedRecords).length +
+          Object.keys(savedStore.unmatched).length
+        }
+      />
 
       {stageAnnouncement && (
         <div
@@ -737,6 +1050,41 @@ export function Board({
         </div>
       )}
     </div>
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringRecord(value: unknown): value is Record<string, string> {
+  return isRecord(value) && Object.values(value).every(
+    (entry) => typeof entry === "string",
+  );
+}
+
+function isHttpsUrl(value: string): boolean {
+  try {
+    return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isJobPage(value: unknown): value is JobPage {
+  if (!isRecord(value) || !Array.isArray(value.items) || !isRecord(value.facets)) {
+    return false;
+  }
+  if (!isRecord(value.roleTotals) || typeof value.total !== "number") return false;
+  if (value.nextCursor !== null && typeof value.nextCursor !== "string") return false;
+  if (typeof value.hasMore !== "boolean") return false;
+  return value.items.every(
+    (job) =>
+      isRecord(job) &&
+      typeof job.id === "string" &&
+      typeof job.tracking_key === "string" &&
+      typeof job.title === "string" &&
+      typeof job.link === "string",
   );
 }
 
@@ -764,14 +1112,20 @@ function SearchInput({
 
 function ViewToggle({
   view,
+  ready,
   onChange,
 }: {
   view: ViewMode;
+  ready: boolean;
   onChange: (view: ViewMode) => void;
 }) {
   return (
     <div
-      className="inline-flex rounded-full border border-border bg-surface p-1"
+      data-view-toggle-ready={ready}
+      aria-hidden={!ready}
+      className={`inline-flex rounded-full border border-border bg-surface p-1 ${
+        ready ? "" : "invisible pointer-events-none"
+      }`}
       role="group"
       aria-label="View density"
     >
@@ -786,6 +1140,8 @@ function ViewToggle({
           type="button"
           aria-label={label}
           aria-pressed={view === key}
+          disabled={!ready}
+          tabIndex={ready ? 0 : -1}
           onClick={() => onChange(key)}
           className={`rounded-full p-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
             view === key ? "bg-raised text-fg" : "text-faint hover:text-fg"
@@ -811,7 +1167,7 @@ function EmptyState({
 }) {
   if (loadError) return <>Couldn&apos;t load listings — try refreshing in a minute.</>;
   if (filters.collection === "saved") {
-    return <>No saved roles match these filters — save a role with the star button.</>;
+    return <>No To apply roles match these filters — add one with its star button.</>;
   }
   if (filters.stages.length > 0) {
     return <>No jobs are currently in the selected application stages.</>;

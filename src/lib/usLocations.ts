@@ -12,6 +12,11 @@ export interface SanitizedUsLocation {
   hasRemote: boolean;
 }
 
+export interface UsLocationSanitizationOptions {
+  /** Only set from already-normalized structured data with country_code=US. */
+  allowAmbiguousRemote?: boolean;
+}
+
 const US_STATE_CODES = [
   "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi",
   "id", "il", "in", "ia", "ks", "ky", "la", "me", "md", "ma", "mi",
@@ -100,7 +105,10 @@ const US_CITY_ONLY_NAMES = [
 ] as const;
 
 const EXPLICIT_FOREIGN_MARKER =
-  /\b(?:united kingdom|uk|canada|netherlands|north holland|nl|germany|france|india|ireland|spain|singapore|switzerland|australia|new zealand|mexico|brazil|argentina|japan|china|hong kong|taiwan|south korea|poland|italy|portugal|sweden|norway|denmark|finland|belgium|austria|romania|hungary|united arab emirates|uae|europe|emea|apac)\b/;
+  /\b(?:united kingdom|uk|canada|israel|south africa|costa rica|netherlands|north holland|nl|germany|france|india|ireland|spain|singapore|switzerland|australia|new zealand|mexico|brazil|argentina|japan|china|hong kong|taiwan|south korea|poland|italy|portugal|sweden|norway|denmark|finland|belgium|austria|romania|hungary|united arab emirates|uae|europe|emea|apac|latin america)\b/;
+
+const AMBIGUOUS_GLOBAL_MARKER =
+  /\b(?:worldwide|global|anywhere|international)\b/;
 
 const REMOTE_LANGUAGE = /\b(?:remote|work from home|wfh)\b/;
 const GENERIC_US_LANGUAGE =
@@ -189,6 +197,15 @@ function hasKnownUsCity(part: string): boolean {
   );
 }
 
+function hasExplicitUsRemoteEvidence(normalized: string): boolean {
+  return (
+    GENERIC_US_LANGUAGE.test(normalized) ||
+    /\b(?:us|u s|nationwide|puerto rico|guam|us virgin islands|u s virgin islands|northern mariana islands|american samoa)\b/.test(
+      normalized,
+    )
+  );
+}
+
 /** Classify one already-delimited location. Explicit foreign evidence wins. */
 export function classifyUsLocationPart(part: string): UsLocationPartKind {
   const normalized = normalizeLocationText(part);
@@ -198,7 +215,8 @@ export function classifyUsLocationPart(part: string): UsLocationPartKind {
     KNOWN_FOREIGN_COLLISIONS.has(normalized) ||
     normalized.startsWith("amsterdam nh ") ||
     normalized.startsWith("buenos aires ") ||
-    EXPLICIT_FOREIGN_MARKER.test(normalized)
+    EXPLICIT_FOREIGN_MARKER.test(normalized) ||
+    AMBIGUOUS_GLOBAL_MARKER.test(normalized)
   ) {
     return "foreign";
   }
@@ -216,11 +234,12 @@ export function classifyUsLocationPart(part: string): UsLocationPartKind {
 }
 
 /**
- * Keep only display-safe US parts. Blank source locations remain eligible to
- * preserve the ingestion pipeline's existing "location unavailable" behavior.
+ * Keep only display-safe US parts. Blank locations are ineligible so this
+ * read-time sanitizer cannot re-admit rows quarantined during ingestion.
  */
 export function sanitizeUsLocation(
   location: string | null | undefined,
+  options: UsLocationSanitizationOptions = {},
 ): SanitizedUsLocation {
   const source = location ?? "";
   const parts: string[] = [];
@@ -230,6 +249,13 @@ export function sanitizeUsLocation(
   for (const part of sourceLocationParts(source)) {
     const kind = classifyUsLocationPart(part);
     if (kind === "foreign" || kind === "unknown") continue;
+    if (
+      kind === "remote" &&
+      !options.allowAmbiguousRemote &&
+      !hasExplicitUsRemoteEvidence(normalizeLocationText(part))
+    ) {
+      continue;
+    }
 
     const key = normalizeLocationText(part);
     if (!key || seen.has(key)) continue;
@@ -241,7 +267,7 @@ export function sanitizeUsLocation(
   return {
     parts,
     display: parts.join("; "),
-    eligible: source.trim() === "" || parts.length > 0,
+    eligible: parts.length > 0,
     hasRemote,
   };
 }
@@ -255,18 +281,21 @@ export function getSafeUsLocationParts(
 /** Safe text for cards, search, and server-side defense-in-depth filtering. */
 export function getUsLocationDisplay(
   location: string | null | undefined,
+  options: UsLocationSanitizationOptions = {},
 ): string {
-  return sanitizeUsLocation(location).display;
+  return sanitizeUsLocation(location, options).display;
 }
 
 export function isUsLocationEligible(
   location: string | null | undefined,
+  options: UsLocationSanitizationOptions = {},
 ): boolean {
-  return sanitizeUsLocation(location).eligible;
+  return sanitizeUsLocation(location, options).eligible;
 }
 
 export function isUsRemoteLocation(
   location: string | null | undefined,
+  options: UsLocationSanitizationOptions = {},
 ): boolean {
-  return sanitizeUsLocation(location).hasRemote;
+  return sanitizeUsLocation(location, options).hasRemote;
 }

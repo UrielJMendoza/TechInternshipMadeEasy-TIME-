@@ -3,9 +3,10 @@ import {
   getUsLocationDisplay,
   isUsRemoteLocation,
   normalizeLocationText,
-} from "./usLocations";
+  type UsLocationSanitizationOptions,
+} from "./usLocations.ts";
 
-export { getUsLocationDisplay, normalizeLocationText } from "./usLocations";
+export { getUsLocationDisplay, normalizeLocationText } from "./usLocations.ts";
 
 export const DENVER_LOCATION_ID = "denver-co" as const;
 
@@ -140,6 +141,7 @@ export const PHYSICAL_LOCATION_FACETS: readonly PhysicalLocationFacet[] =
 
 export interface LocationLike {
   location?: string | null;
+  country_code?: string | null;
 }
 
 const canonicalIds = new Set<string>(PHYSICAL_LOCATION_IDS);
@@ -154,8 +156,11 @@ export function isPhysicalLocationFacetId(
 }
 
 /** Only explicit remote language qualifies; hybrid alone does not. */
-export function isRemoteLocation(location: string | null | undefined): boolean {
-  return isUsRemoteLocation(location);
+export function isRemoteLocation(
+  location: string | null | undefined,
+  options: UsLocationSanitizationOptions = {},
+): boolean {
+  return isUsRemoteLocation(location, options);
 }
 
 function locationParts(location: string | null | undefined): string[] {
@@ -243,7 +248,16 @@ export function getLocationFacetCounts(
 }
 
 export function countRemoteJobs(jobs: readonly LocationLike[]): number {
-  return jobs.reduce((count, job) => count + Number(isRemoteLocation(job.location)), 0);
+  return jobs.reduce(
+    (count, job) =>
+      count +
+      Number(
+        isRemoteLocation(job.location, {
+          allowAmbiguousRemote: job.country_code === "US",
+        }),
+      ),
+    0,
+  );
 }
 
 /**
@@ -288,6 +302,44 @@ export function buildLocationFacetOptions(
   const options = [...canonicalOptions, ...fallbackOptions];
 
   return options.sort((a, b) => {
+    if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
+    if (order === "popular" && a.count !== b.count) return b.count - a.count;
+    return a.label.localeCompare(b.label);
+  });
+}
+
+/** Build the same location menu from server-side facet counts, without jobs. */
+export function buildLocationFacetOptionsFromCounts(
+  facetCounts: readonly { id: string; count: number }[],
+  order: LocationFacetOrder = "popular",
+): LocationFacetOption[] {
+  const counts = new Map(facetCounts.map((facet) => [facet.id, facet.count]));
+  const canonicalOptions = PHYSICAL_LOCATION_FACETS
+    .filter((facet) => facet.id === DENVER_LOCATION_ID || (counts.get(facet.id) ?? 0) > 0)
+    .map((facet) => ({
+      ...facet,
+      count: counts.get(facet.id) ?? 0,
+      disabled: (counts.get(facet.id) ?? 0) === 0,
+    }));
+  const fallbackOptions = facetCounts
+    .filter((facet): facet is { id: FallbackPhysicalLocationFacetId; count: number } =>
+      facet.id.startsWith("place:"),
+    )
+    .map((facet) => ({
+      id: facet.id,
+      label: facet.id
+        .slice("place:".length)
+        .split("-")
+        .map((word) => word ? word[0].toUpperCase() + word.slice(1) : word)
+        .join(" "),
+      pinned: false,
+      count: facet.count,
+      disabled: facet.count === 0,
+    }))
+    .sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    .slice(0, 20);
+
+  return [...canonicalOptions, ...fallbackOptions].sort((a, b) => {
     if (a.pinned !== b.pinned) return a.pinned ? -1 : 1;
     if (order === "popular" && a.count !== b.count) return b.count - a.count;
     return a.label.localeCompare(b.label);

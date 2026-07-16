@@ -76,12 +76,14 @@ function fixtureJob(
 ): Internship {
   return {
     id,
+    tracking_key: `00000000-0000-4000-8000-${id.padEnd(12, "0").slice(0, 12)}`,
     title: "Software Engineering Intern",
     company: `Company ${id}`,
     location: "Denver, CO",
     category: "software",
     role_type: "internship",
     season: "Summer 2027",
+    term_keys: ["summer-2027"],
     salary: null,
     link: `https://example.com/${id}`,
     source: "fixture",
@@ -89,7 +91,25 @@ function fixtureJob(
     posted_date: "2026-07-10",
     first_seen_at: "2026-07-10T00:00:00Z",
     last_seen_at: "2026-07-10T00:00:00Z",
+    last_checked_at: "2026-07-10T00:00:00Z",
     is_active: true,
+    company_domain: null,
+    country_code: "US",
+    region_code: "CO",
+    city: "Denver",
+    metro_id: "denver",
+    location_type: "onsite",
+    normalization_confidence: 1,
+    contributing_sources: ["fixture"],
+    salary_currency: null,
+    salary_minimum: null,
+    salary_maximum: null,
+    salary_cadence: null,
+    annualized_salary_minimum: null,
+    annualized_salary_maximum: null,
+    salary_parse_confidence: null,
+    salary_provenance: null,
+    listing_changes: [],
     ...overrides,
   };
 }
@@ -116,12 +136,12 @@ test("compound remote, visa, and multi-stage filters use AND across groups", () 
     sort: "application-stage",
     saved: new Set(),
     applications: {
-      [remoteVisa.link]: {
+      [remoteVisa.tracking_key]: {
         stage: "interview",
         updatedAt: "2026-07-10T00:00:00Z",
         appliedAt: "2026-07-09T00:00:00Z",
       },
-      [denverVisa.link]: {
+      [denverVisa.tracking_key]: {
         stage: "offer",
         updatedAt: "2026-07-10T00:00:00Z",
         appliedAt: "2026-07-09T00:00:00Z",
@@ -152,11 +172,11 @@ test("physical locations use OR semantics and application-stage sorting is stabl
     sort: "application-stage",
     saved: new Set(),
     applications: {
-      [denver.link]: {
+      [denver.tracking_key]: {
         stage: "applied",
         updatedAt: "2026-07-10T00:00:00Z",
       },
-      [newYork.link]: {
+      [newYork.tracking_key]: {
         stage: "offer",
         updatedAt: "2026-07-10T00:00:00Z",
       },
@@ -197,4 +217,31 @@ test("salary sorting uses source-listed pay and never category estimates", () =>
   });
 
   assert.deepEqual(result.map((job) => job.id), ["listed", "estimated"]);
+});
+
+test("term filters use OR semantics and keep not-listed explicit", () => {
+  const fall = fixtureJob("fall", { term_keys: ["fall-2026"] });
+  const summer = fixtureJob("summer", { term_keys: ["summer-2027"] });
+  const unclassified = fixtureJob("unclassified", {
+    season: null,
+    term_keys: [],
+  });
+  const result = filterAndSortJobs([summer, unclassified, fall], {
+    query: "",
+    locationIds: [],
+    termKeys: ["fall-2026", "not-listed"],
+    remoteOnly: false,
+    visaSponsorship: false,
+    stages: [],
+    freshness: "all",
+    collection: "all",
+    sort: "newest",
+    saved: new Set(),
+    applications: {},
+    now: FILTER_NOW,
+    matchesMajor: () => true,
+    matchesNiche: () => true,
+  });
+
+  assert.deepEqual(result.map((job) => job.id), ["fall", "unclassified"]);
 });

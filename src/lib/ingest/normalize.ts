@@ -1,5 +1,20 @@
-import type { Category, NormalizedJob } from "../types";
-import { sanitizeUsLocation } from "../usLocations";
+import type {
+  Category,
+  JobSourceObservation,
+  NormalizedJob,
+  NormalizationConfidence,
+  SourceCompensation,
+  SourceId,
+  StructuredLocation,
+} from "../types.ts";
+import { fetchFeedText } from "./fetch.ts";
+import { normalizeStructuredLocation, normalizeLocationText } from "./location.ts";
+import { SOURCE_REGISTRY } from "./sourceRegistry.ts";
+import {
+  UNKNOWN_TERM_KEY,
+  sortTermKeys,
+  termKeysFromValues,
+} from "../jobTerms.ts";
 
 /** Strip emoji, flag markers, markdown bold and stray whitespace. */
 export function cleanText(s: string): string {
@@ -122,15 +137,18 @@ function slug(s: string): string {
     .replace(/^-|-$/g, "");
 }
 
-// The same job appears across sources with cosmetic differences ("Varda" vs
-// "Varda Space", "San Mateo, CA" vs "San Mateo, California, United States",
-// "(Fall 2026)" vs "- Fall 2026"). The dedupe key aggressively normalizes all
-// three parts; display fields keep the original text.
-
+// Only unambiguous legal entity suffixes are removed. Words such as Capital,
+// Management, Trading, Labs, Space, and Industries carry company identity and
+// must not collapse distinct employers.
 const COMPANY_SUFFIXES = new Set([
-  "inc", "llc", "corp", "co", "ltd", "plc", "company", "corporation",
-  "capital", "management", "trading", "group", "holdings", "partners",
-  "technologies", "technology", "labs", "space", "industries",
+  "inc",
+  "incorporated",
+  "llc",
+  "corp",
+  "corporation",
+  "ltd",
+  "limited",
+  "plc",
 ]);
 
 function companyKey(company: string): string {
@@ -141,83 +159,459 @@ function companyKey(company: string): string {
   return tokens.join("-");
 }
 
-function titleKey(title: string): string {
-  return slug(
-    title
-      .replace(/\b(summer|fall|spring|winter)\b/gi, " ")
-      .replace(/\b20\d{2}\b/g, " "),
-  );
-}
-
-const GEO_ALIASES: Record<string, string> = {
-  "new york city": "new york",
-  nyc: "new york",
-  manhattan: "new york",
-  sf: "san francisco",
-  "san francisco bay area": "san francisco",
-  "washington dc": "washington",
-  "washington d c": "washington",
-};
-
-const GEO_DROP = new Set([
-  "us", "usa", "u s", "u s a", "united states", "united states of america",
-  "america", "north america", "canada", "can", "uk", "united kingdom", "remote",
-  "hybrid", "onsite", "multiple locations",
-  // states — abbreviations
-  "al", "ak", "az", "ar", "ca", "co", "ct", "de", "fl", "ga", "hi", "id", "il",
-  "in", "ia", "ks", "ky", "la", "me", "md", "ma", "mi", "mn", "ms", "mo", "mt",
-  "ne", "nv", "nh", "nj", "nm", "ny", "nc", "nd", "oh", "ok", "or", "pa", "ri",
-  "sc", "sd", "tn", "tx", "ut", "vt", "va", "wa", "wv", "wi", "wy", "dc",
-  // states — full names
-  "alabama", "alaska", "arizona", "arkansas", "california", "colorado",
-  "connecticut", "delaware", "florida", "georgia", "hawaii", "idaho",
-  "illinois", "indiana", "iowa", "kansas", "kentucky", "louisiana", "maine",
-  "maryland", "massachusetts", "michigan", "minnesota", "mississippi",
-  "missouri", "montana", "nebraska", "nevada", "new hampshire", "new jersey",
-  "new mexico", "new york", "north carolina", "north dakota", "ohio",
-  "oklahoma", "oregon", "pennsylvania", "rhode island", "south carolina",
-  "south dakota", "tennessee", "texas", "utah", "vermont", "virginia",
-  "washington", "west virginia", "wisconsin", "wyoming",
+const SHARED_APPLICATION_HOSTS = new Set([
+  "ashbyhq",
+  "greenhouse",
+  "lever",
+  "myworkdayjobs",
+  "smartrecruiters",
+  "workable",
 ]);
 
+/**
+ * Accept a logo domain only when the application host itself provides strong,
+ * exact company evidence. ATS/shared hosts and approximate name matches stay
+ * null so the UI falls back to a letter avatar.
+ */
+export function companyDomainFromApplicationUrl(
+  company: string,
+  applicationUrl: string,
+): string | null {
+  const safeUrl = cleanLink(applicationUrl);
+  if (!safeUrl) return null;
+  const hostname = new URL(safeUrl).hostname.toLowerCase();
+  const labels = hostname.split(".");
+  if (labels.length < 2) return null;
+
+  const usesCompoundSuffix =
+    labels.at(-1)?.length === 2 &&
+    ["ac", "co", "com", "net", "org"].includes(labels.at(-2) ?? "");
+  const companyLabelIndex = usesCompoundSuffix ? labels.length - 3 : labels.length - 2;
+  if (companyLabelIndex < 0) return null;
+
+  const companyLabel = labels[companyLabelIndex];
+  if (SHARED_APPLICATION_HOSTS.has(companyLabel)) return null;
+  const normalizedCompany = companyKey(company).replace(/-/g, "");
+  const normalizedDomain = companyLabel.replace(/-/g, "");
+  if (!normalizedCompany || normalizedCompany !== normalizedDomain) return null;
+
+  return labels.slice(companyLabelIndex).join(".");
+}
+
+function titleKey(title: string): string {
+  // Season, year, and requisition cues distinguish real postings. Fuzzy
+  // matching may score them separately later, but the compatibility key must
+  // not erase them and turn a candidate match into primary identity.
+  return slug(title);
+}
+
 function locationKey(location: string): string {
-  // First listed location only — sources disagree on how many they list.
-  const first = location.split(";")[0].split("+")[0].replace(/[()]/g, ",");
-  const segments = first
-    .split(/[,\-\/·]/)
-    .map((s) =>
-      cleanText(s).toLowerCase().replace(/\./g, "").replace(/\s+/g, " ").trim(),
+  const normalized = normalizeStructuredLocation(location);
+  const parts = normalized.locations
+    .map((part) =>
+      [
+        part.country_code ?? "unknown",
+        part.region_code ?? "unknown",
+        normalizeLocationText(part.city ?? part.raw_location),
+        part.location_type,
+      ].join(":"),
     )
     .filter(Boolean)
-    .map((s) => GEO_ALIASES[s] ?? s);
-  const cities = segments.filter((s) => !GEO_DROP.has(s));
-  // "New York, New York" drops everything — fall back to the first segment.
-  return slug(cities.join(" ")) || slug(segments[0] ?? "") || "anywhere";
+    .sort();
+  return slug(parts.join("|")) || "anywhere";
 }
 
 export function dedupeKey(company: string, title: string, location: string): string {
   return `${companyKey(company)}|${titleKey(title)}|${locationKey(location)}`;
 }
 
-/** Drop the tracking params some lists append to apply URLs. */
+export const MAX_APPLICATION_URL_LENGTH = 2_048;
+
+function validHostname(hostname: string): boolean {
+  if (!hostname || hostname.length > 253 || hostname.endsWith(".")) return false;
+  // Application links are never fetched by ingestion, but accepting literal IPs
+  // makes host validation needlessly permissive and can expose unsafe links in
+  // downstream clients. Source listings are expected to use public DNS names.
+  if (/^\d+(?:\.\d+){3}$/.test(hostname)) return false;
+  const labels = hostname.split(".");
+  if (labels.length < 2) return false;
+  return labels.every(
+    (label) =>
+      label.length > 0 &&
+      label.length <= 63 &&
+      /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?$/i.test(label),
+  );
+}
+
+/** Validate and canonicalize an untrusted application URL. */
 export function cleanLink(url: string): string {
+  if (!url || url.length > MAX_APPLICATION_URL_LENGTH) return "";
   try {
     const u = new URL(url);
+    if (
+      u.protocol !== "https:" ||
+      u.username ||
+      u.password ||
+      !validHostname(u.hostname)
+    ) {
+      return "";
+    }
     for (const p of [...u.searchParams.keys()]) {
       if (p.startsWith("utm_") || p === "ref" || p === "src") u.searchParams.delete(p);
     }
     return u.toString().replace(/\?$/, "");
   } catch {
-    return url;
+    return "";
   }
 }
 
 function linkKey(link: string): string {
   try {
-    const u = new URL(link);
+    const safe = cleanLink(link);
+    if (!safe) return "";
+    const u = new URL(safe);
     return `${u.host.toLowerCase()}${u.pathname.replace(/\/$/, "")}${u.search}`;
   } catch {
-    return link;
+    return "";
+  }
+}
+
+export function externalIdFromUrl(link: string): string | null {
+  const safe = cleanLink(link);
+  if (!safe) return null;
+  const url = new URL(safe);
+  for (const key of ["gh_jid", "job_id", "jobId", "req", "reqId", "requisitionId"]) {
+    const value = url.searchParams.get(key);
+    if (value && /^[a-z0-9][a-z0-9._-]{2,127}$/i.test(value)) return value;
+  }
+  const segments = url.pathname.split("/").filter(Boolean).reverse();
+  return (
+    segments.find((segment) => /^[a-z0-9][a-z0-9._-]{3,127}$/i.test(segment)) ??
+    null
+  );
+}
+
+export function requisitionIdFrom(
+  title: string,
+  explicit: string | null | undefined,
+  link: string,
+): string | null {
+  const supplied = cleanText(explicit ?? "");
+  if (supplied && /^[a-z0-9][a-z0-9._-]{2,127}$/i.test(supplied)) return supplied;
+  const fromTitle = title.match(
+    /\b(?:req(?:uisition)?(?:\s+id)?|job\s+id)\s*[:#-]?\s*([a-z0-9][a-z0-9._-]{2,127})\b/i,
+  )?.[1];
+  return fromTitle ?? externalIdFromUrl(link);
+}
+
+const ISO_POSTED_DATE =
+  /^\d{4}-\d{2}-\d{2}(?:T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,9})?)?(?:Z|[+-]\d{2}:\d{2}))?$/;
+const MAX_FUTURE_POST_DAYS = 7;
+
+export function normalizePostedDate(
+  value: string | null | undefined,
+  now = Date.now(),
+): string | null {
+  if (!value) return null;
+  const input = value.trim();
+  if (!ISO_POSTED_DATE.test(input)) return null;
+  const parsedInput = Date.parse(input);
+  if (!Number.isFinite(parsedInput)) return null;
+  const date = input.slice(0, 10);
+  const time = new Date(`${date}T00:00:00Z`).getTime();
+  if (!Number.isFinite(time)) return null;
+  if (new Date(time).toISOString().slice(0, 10) !== date) return null;
+  if (time > now + MAX_FUTURE_POST_DAYS * 86_400_000) return null;
+  return date;
+}
+
+export function postedDateFromUnixSeconds(
+  seconds: number | null | undefined,
+  now = Date.now(),
+): string | null {
+  if (!seconds || !Number.isFinite(seconds) || seconds < 0) return null;
+  const time = seconds * 1_000;
+  if (!Number.isFinite(time)) return null;
+  const date = new Date(time);
+  if (!Number.isFinite(date.getTime())) return null;
+  return normalizePostedDate(date.toISOString(), now);
+}
+
+const MISSING_COMPENSATION =
+  /^(?:n\/?a|none|not available|not disclosed|competitive|competitive pay|tbd|unknown|-|—)$/i;
+
+function currencyFrom(raw: string): string | null {
+  if (/\bCAD\b/i.test(raw)) return "CAD";
+  if (/\bEUR\b/i.test(raw) || raw.includes("€")) return "EUR";
+  if (/\bGBP\b/i.test(raw) || raw.includes("£")) return "GBP";
+  if (/\bUSD\b/i.test(raw) || raw.includes("$")) return "USD";
+  return null;
+}
+
+function cadenceFrom(raw: string): SourceCompensation["cadence"] | null {
+  if (/\b(?:per\s*)?(?:hour|hourly|hr|hrs)\b|\/\s*(?:h|hr)\b/i.test(raw)) {
+    return "hourly";
+  }
+  if (/\b(?:per\s*)?(?:month|monthly|mo)\b|\/\s*mo\b/i.test(raw)) {
+    return "monthly";
+  }
+  if (/\b(?:per\s*)?(?:year|yearly|annual|annually|annum|yr)\b|\/\s*yr\b/i.test(raw)) {
+    return "annual";
+  }
+  return null;
+}
+
+interface CompensationNumber {
+  value: number;
+  index: number;
+}
+
+function compensationNumbers(raw: string): number[] {
+  const pattern =
+    /(^|[^a-z0-9$€£])((?:USD|CAD|EUR|GBP)\s*)?([$€£])?\s*([0-9]{1,3}(?:,[0-9]{3})+|[0-9]+(?:\.\d+)?)\s*([kK])?(?![a-z0-9])/gi;
+  const candidates: CompensationNumber[] = [];
+  for (const match of raw.matchAll(pattern)) {
+    const value =
+      Number(match[4].replace(/,/g, "")) * (match[5] ? 1_000 : 1);
+    const explicit = Boolean(match[2] || match[3] || match[5]);
+    // A season/year suffix is metadata, not a second end of a salary range.
+    if (!explicit && value >= 1_900 && value <= 2_100) continue;
+    if (!Number.isFinite(value) || value < 0) continue;
+    candidates.push({
+      value,
+      index: (match.index ?? 0) + (match[1]?.length ?? 0),
+    });
+  }
+
+  const cadenceMarker = raw.search(
+    /\b(?:per\s*)?(?:hour|hourly|hr|hrs|month|monthly|mo|year|yearly|annual|annually|annum|yr)\b|\/\s*(?:h|hr|mo|yr)\b/i,
+  );
+  const beforeCadence =
+    cadenceMarker < 0
+      ? []
+      : candidates.filter((candidate) => candidate.index <= cadenceMarker);
+  const relevant = beforeCadence.length > 0 ? beforeCadence : candidates;
+  return relevant.slice(0, 2).map((candidate) => candidate.value);
+}
+
+function annualize(value: number, cadence: SourceCompensation["cadence"]): number {
+  if (cadence === "hourly") return value * 2_080;
+  if (cadence === "monthly") return value * 12;
+  return value;
+}
+
+export function parseSourceCompensation(
+  value: string | null | undefined,
+): SourceCompensation | null {
+  const raw = cleanText(value ?? "").slice(0, 1_000);
+  if (!raw || MISSING_COMPENSATION.test(raw)) return null;
+  const cadence = cadenceFrom(raw);
+  const numbers = compensationNumbers(raw).slice(0, 2);
+  if (!cadence || numbers.length === 0) return null;
+  const minimum = Math.min(...numbers);
+  const maximum = Math.max(...numbers);
+  const currency = currencyFrom(raw) ?? "USD";
+  const explicitCurrency = currencyFrom(raw) !== null;
+  const confidence: NormalizationConfidence = explicitCurrency ? "high" : "low";
+  return {
+    currency,
+    minimum,
+    maximum,
+    cadence,
+    annualized_minimum: annualize(minimum, cadence),
+    annualized_maximum: annualize(maximum, cadence),
+    raw_text: raw,
+    parse_confidence: confidence,
+    provenance: "source-listed",
+  };
+}
+
+/** Only confident USD source-listed pay is comparable for salary sorting. */
+export function comparableAnnualCompensation(value: string | null): number {
+  const parsed = parseSourceCompensation(value);
+  return parsed?.currency === "USD" && parsed.parse_confidence === "high"
+    ? parsed.annualized_maximum
+    : 0;
+}
+
+function sourceId(value: string): SourceId | null {
+  return value in SOURCE_REGISTRY ? (value as SourceId) : null;
+}
+
+function sourceHomepage(source: string): string {
+  const id = sourceId(source);
+  return id ? SOURCE_REGISTRY[id].homepage : "";
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter(Boolean) as string[])];
+}
+
+function persistedTermKeys(
+  provided: NormalizedJob["term_keys"],
+  evidence: readonly string[],
+) {
+  return sortTermKeys([
+    ...(provided ?? []),
+    ...termKeysFromValues(evidence),
+  ]).filter((key) => key !== UNKNOWN_TERM_KEY);
+}
+
+function observationFor(job: NormalizedJob): JobSourceObservation {
+  const safeLink = cleanLink(job.link);
+  const compensation = job.compensation ?? parseSourceCompensation(job.salary);
+  const requisitionId = requisitionIdFrom(
+    job.raw_title ?? job.title,
+    job.requisition_id,
+    safeLink,
+  );
+  return {
+    source: job.source,
+    external_id: job.external_id ?? externalIdFromUrl(safeLink),
+    raw_title: job.raw_title ?? job.title,
+    raw_location: job.raw_location ?? job.location,
+    source_url: job.source_url ?? sourceHomepage(job.source),
+    apply_url: safeLink,
+    season: job.season,
+    term_keys: persistedTermKeys(job.term_keys, [
+      job.season ?? "",
+      job.raw_title ?? job.title,
+    ]),
+    requisition_id: requisitionId,
+    posted_date: job.posted_date,
+    locations: job.locations ?? [],
+    compensation,
+  };
+}
+
+function preparedJob(job: NormalizedJob): NormalizedJob {
+  const observations = job.observations?.length
+    ? job.observations.map((observation) => ({
+        ...observation,
+        term_keys: persistedTermKeys(observation.term_keys, [
+          observation.season ?? "",
+          observation.raw_title,
+        ]),
+      }))
+    : [observationFor(job)];
+  const compensation = job.compensation ?? parseSourceCompensation(job.salary);
+  const requisitionId = requisitionIdFrom(
+    job.raw_title ?? job.title,
+    job.requisition_id,
+    job.link,
+  );
+  return {
+    ...job,
+    salary: compensation?.raw_text ?? null,
+    compensation,
+    contributing_sources: uniqueStrings([
+      ...(job.contributing_sources ?? []),
+      job.source,
+    ]),
+    observations,
+    seasons: uniqueStrings([...(job.seasons ?? []), job.season]),
+    term_keys: persistedTermKeys(job.term_keys, [
+      job.season ?? "",
+      job.raw_title ?? job.title,
+    ]),
+    requisition_id: requisitionId,
+    requisition_ids: uniqueStrings([
+      ...(job.requisition_ids ?? []),
+      requisitionId,
+    ]),
+    locations: (job.locations ?? []).map((location) => ({ ...location })),
+  };
+}
+
+function latestPostedDate(
+  first: string | null,
+  second: string | null,
+): string | null {
+  const left = normalizePostedDate(first);
+  const right = normalizePostedDate(second);
+  if (!left) return right;
+  if (!right) return left;
+  return left >= right ? left : right;
+}
+
+function locationIdentity(location: StructuredLocation): string {
+  return [
+    normalizeLocationText(location.raw_location),
+    location.country_code,
+    location.region_code,
+    location.location_type,
+  ].join("|");
+}
+
+function mergeJobs(into: NormalizedJob, from: NormalizedJob): void {
+  const intoComp = into.compensation;
+  const fromComp = from.compensation;
+  if (
+    !intoComp ||
+    (intoComp.parse_confidence !== "high" && fromComp?.parse_confidence === "high")
+  ) {
+    into.compensation = fromComp ?? intoComp ?? null;
+    into.salary = into.compensation?.raw_text ?? into.salary ?? from.salary;
+  }
+  into.season ??= from.season;
+  into.sponsorship ??= from.sponsorship;
+  into.posted_date = latestPostedDate(into.posted_date, from.posted_date);
+  into.contributing_sources = uniqueStrings([
+    ...(into.contributing_sources ?? []),
+    ...(from.contributing_sources ?? []),
+    from.source,
+  ]);
+  into.seasons = uniqueStrings([...(into.seasons ?? []), ...(from.seasons ?? [])]);
+  into.term_keys = sortTermKeys([
+    ...(into.term_keys ?? []),
+    ...(from.term_keys ?? []),
+  ]);
+  into.requisition_ids = uniqueStrings([
+    ...(into.requisition_ids ?? []),
+    ...(from.requisition_ids ?? []),
+  ]);
+
+  const observationKeys = new Set(
+    (into.observations ?? []).map(
+      (observation) =>
+        `${observation.source}|${observation.external_id ?? ""}|${observation.apply_url}`,
+    ),
+  );
+  for (const observation of from.observations ?? []) {
+    const key = `${observation.source}|${observation.external_id ?? ""}|${observation.apply_url}`;
+    if (!observationKeys.has(key)) {
+      observationKeys.add(key);
+      into.observations?.push(observation);
+    }
+  }
+
+  const locationKeys = new Set((into.locations ?? []).map(locationIdentity));
+  for (const location of from.locations ?? []) {
+    const key = locationIdentity(location);
+    if (!locationKeys.has(key)) {
+      locationKeys.add(key);
+      into.locations?.push(location);
+    }
+  }
+}
+
+class DisjointSet {
+  private readonly parents: number[];
+
+  constructor(size: number) {
+    this.parents = Array.from({ length: size }, (_, index) => index);
+  }
+
+  find(index: number): number {
+    const parent = this.parents[index];
+    if (parent !== index) this.parents[index] = this.find(parent);
+    return this.parents[index];
+  }
+
+  union(left: number, right: number): void {
+    const leftRoot = this.find(left);
+    const rightRoot = this.find(right);
+    if (leftRoot !== rightRoot) this.parents[rightRoot] = leftRoot;
   }
 }
 
@@ -228,29 +622,29 @@ function linkKey(link: string): string {
  * catches re-posts that use different tracking URLs.
  */
 export function dedupeJobs(jobs: NormalizedJob[]): NormalizedJob[] {
-  const byLink = new Map<string, NormalizedJob>();
-  const byKey = new Map<string, NormalizedJob>();
-  const out: NormalizedJob[] = [];
+  const prepared = jobs.map(preparedJob);
+  const groups = new DisjointSet(prepared.length);
+  const byLink = new Map<string, number>();
+  const byKey = new Map<string, number>();
 
-  const merge = (into: NormalizedJob, from: NormalizedJob) => {
-    into.salary ??= from.salary;
-    into.season ??= from.season;
-    into.sponsorship ??= from.sponsorship;
-    into.posted_date ??= from.posted_date;
-  };
-
-  for (const job of jobs) {
+  prepared.forEach((job, index) => {
     const link = linkKey(job.link);
-    const existing = byLink.get(link) ?? byKey.get(job.dedupe_key);
-    if (existing) {
-      merge(existing, job);
-      continue;
-    }
-    byLink.set(link, job);
-    byKey.set(job.dedupe_key, job);
-    out.push(job);
-  }
-  return out;
+    const linkMatch = link ? byLink.get(link) : undefined;
+    const keyMatch = job.dedupe_key ? byKey.get(job.dedupe_key) : undefined;
+    if (linkMatch !== undefined) groups.union(index, linkMatch);
+    if (keyMatch !== undefined) groups.union(index, keyMatch);
+    if (link) byLink.set(link, index);
+    if (job.dedupe_key) byKey.set(job.dedupe_key, index);
+  });
+
+  const merged = new Map<number, NormalizedJob>();
+  prepared.forEach((job, index) => {
+    const root = groups.find(index);
+    const existing = merged.get(root);
+    if (existing) mergeJobs(existing, job);
+    else merged.set(root, job);
+  });
+  return [...merged.values()];
 }
 
 // ---------------------------------------------------------------------------
@@ -262,34 +656,74 @@ export const MAX_AGE_DAYS = 120;
 
 function isRecent(posted: string | null, now: number): boolean {
   if (!posted) return true; // no date — let first_seen aging handle it
-  const t = new Date(`${posted}T00:00:00Z`).getTime();
+  const normalized = normalizePostedDate(posted, now);
+  if (!normalized) return false;
+  const t = new Date(`${normalized}T00:00:00Z`).getTime();
   return now - t <= MAX_AGE_DAYS * 86_400_000;
 }
 
 /** USA-only, posted within the last MAX_AGE_DAYS. */
-export function applyPostFilters(jobs: NormalizedJob[]): NormalizedJob[] {
-  const now = Date.now();
+export function applyPostFilters(
+  jobs: NormalizedJob[],
+  now = Date.now(),
+): NormalizedJob[] {
   return jobs.flatMap((job) => {
     if (!isRecent(job.posted_date, now)) return [];
+    const link = cleanLink(job.link);
+    if (!link) return [];
 
-    const sanitized = sanitizeUsLocation(job.location);
-    if (!sanitized.eligible) return [];
+    const normalizedLocation = normalizeStructuredLocation(
+      job.raw_location ?? job.location,
+      { sourceUsOnly: job.source_us_only ?? false },
+    );
+    if (!normalizedLocation.eligible) return [];
 
-    const location = sanitized.display;
+    const location = normalizedLocation.display;
+    const compensation = parseSourceCompensation(job.salary);
+    const postedDate = normalizePostedDate(job.posted_date, now);
+    const termKeys = persistedTermKeys(job.term_keys, [
+      job.season ?? "",
+      job.raw_title ?? job.title,
+    ]);
+    const enriched: NormalizedJob = {
+      ...job,
+      raw_title: job.raw_title ?? job.title,
+      raw_location: job.raw_location ?? job.location,
+      source_url: job.source_url ?? sourceHomepage(job.source),
+      external_id: job.external_id ?? externalIdFromUrl(link),
+      requisition_id: requisitionIdFrom(
+        job.raw_title ?? job.title,
+        job.requisition_id,
+        link,
+      ),
+      link,
+      salary: compensation?.raw_text ?? null,
+      compensation,
+      term_keys: termKeys,
+      posted_date: postedDate,
+      location,
+      locations: normalizedLocation.locations,
+      dedupe_key: dedupeKey(job.company, job.title, location),
+      contributing_sources: uniqueStrings([
+        ...(job.contributing_sources ?? []),
+        job.source,
+      ]),
+    };
+    enriched.seasons = uniqueStrings([...(job.seasons ?? []), enriched.season]);
+    enriched.requisition_ids = uniqueStrings([
+      ...(job.requisition_ids ?? []),
+      enriched.requisition_id,
+    ]);
+    enriched.observations = [observationFor(enriched)];
     return [
-      {
-        ...job,
-        location,
-        dedupe_key: dedupeKey(job.company, job.title, location),
-      },
+      enriched,
     ];
   });
 }
 
 export async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: { "User-Agent": "internship-tracker (github.com/UrielJMendoza)" },
+  const response = await fetchFeedText(url, {
+    expectedContentTypes: ["application/json", "text/plain", "text/markdown"],
   });
-  if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
-  return res.text();
+  return response.text;
 }

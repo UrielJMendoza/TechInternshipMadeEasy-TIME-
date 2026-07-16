@@ -12,6 +12,9 @@
   --border: #2a2a2e;
   --border-strong: #3f3f46;
   --accent: #0a84ff;
+  /* Filled controls need a darker blue so white text stays above 4.5:1. */
+  --action: #0066cc;
+  --action-hover: #005ebd;
   --champagne: #e7c98b;
   --new: #30d158;
   --new-soft: rgba(48, 209, 88, 0.14);
@@ -29,6 +32,8 @@
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-accent: var(--accent);
+  --color-action: var(--action);
+  --color-action-hover: var(--action-hover);
   --color-champagne: var(--champagne);
   --color-new: var(--new);
   --color-new-soft: var(--new-soft);
@@ -56,6 +61,29 @@ body {
   background: rgba(10, 132, 255, 0.4);
 }
 
+/*
+ * Existing filled controls use the accent utility directly. Remap only the
+ * white-on-blue fills so text, borders, and focus rings keep the vivid accent.
+ */
+.bg-accent.text-white {
+  background-color: var(--action);
+}
+
+.bg-accent.text-white:hover {
+  background-color: var(--action-hover);
+}
+
+[data-load-more] {
+  border-color: var(--accent);
+  background-color: var(--action);
+  color: #ffffff;
+}
+
+[data-load-more]:hover {
+  background-color: var(--action-hover);
+  color: #ffffff;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -69,7 +97,7 @@ body {
 
 /* Category tags — vivid iOS-palette capsules */
 .cat {
-  @apply inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold whitespace-nowrap;
+  @apply inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap;
 }
 .cat-software { background: rgba(10, 132, 255, 0.18); color: #64aeff; }
 .cat-cloud { background: rgba(48, 209, 88, 0.15); color: #5ddd7f; }

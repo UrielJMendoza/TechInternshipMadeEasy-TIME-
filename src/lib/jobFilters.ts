@@ -30,6 +30,10 @@ import {
   daysAgo,
   postedTime,
 } from "./jobTime";
+import {
+  matchesTermFilter,
+  type InternshipTermKey,
+} from "./jobTerms";
 
 export type SponsorshipStatus =
   | "offers-sponsorship"
@@ -111,6 +115,7 @@ export interface JobSearchFields {
   company: string;
   location: string;
   category?: Category;
+  country_code?: string | null;
 }
 
 function normalizeSearchText(value: string): string {
@@ -125,7 +130,9 @@ export function buildJobSearchHaystack(job: JobSearchFields): string {
     [
       job.title,
       job.company,
-      getUsLocationDisplay(job.location),
+      getUsLocationDisplay(job.location, {
+        allowAmbiguousRemote: job.country_code === "US",
+      }),
       getJobLocationSearchText(job.location),
       category,
     ].join(" "),
@@ -140,6 +147,7 @@ export function matchesJobSearch(job: JobSearchFields, query: string): boolean {
 export interface JobFilterOptions {
   query: string;
   locationIds: readonly PhysicalLocationFacetId[];
+  termKeys?: readonly InternshipTermKey[];
   remoteOnly: boolean;
   visaSponsorship: boolean;
   stages: readonly ApplicationStage[];
@@ -159,13 +167,19 @@ export function filterAndSortJobs(
   options: JobFilterOptions,
 ): Internship[] {
   const list = jobs.filter((job) => {
-    const stage = getApplicationStage(options.applications, job.link);
-    if (options.collection === "saved" && !options.saved.has(job.link)) {
+    const stage = getApplicationStage(options.applications, job.tracking_key);
+    if (options.collection === "saved" && !options.saved.has(job.tracking_key)) {
       return false;
     }
     if (!matchesJobSearch(job, options.query)) return false;
     if (!options.matchesMajor(job) || !options.matchesNiche(job)) return false;
-    if (options.remoteOnly && !isRemoteLocation(job.location)) return false;
+    if (!matchesTermFilter(job.term_keys, options.termKeys ?? [])) return false;
+    if (
+      options.remoteOnly &&
+      !isRemoteLocation(job.location, {
+        allowAmbiguousRemote: job.country_code === "US",
+      })
+    ) return false;
     if (
       !options.remoteOnly &&
       !matchesPhysicalLocationSelection(job.location, options.locationIds)
@@ -236,8 +250,8 @@ export function filterAndSortJobs(
       list.sort(
         (a, b) =>
           compareApplicationStages(
-            getApplicationStage(options.applications, a.link),
-            getApplicationStage(options.applications, b.link),
+            getApplicationStage(options.applications, a.tracking_key),
+            getApplicationStage(options.applications, b.tracking_key),
           ) || byNewest(a, b),
       );
       break;

@@ -56,7 +56,23 @@ export function FilterPopover({
   }, [open]);
 
   return (
-    <div ref={rootRef} className={`relative ${className}`}>
+    <div
+      ref={rootRef}
+      className={`relative ${className}`}
+      onBlurCapture={(event) => {
+        const nextTarget = event.relatedTarget;
+        if (
+          nextTarget instanceof Node &&
+          rootRef.current?.contains(nextTarget)
+        ) {
+          return;
+        }
+        window.requestAnimationFrame(() => {
+          const root = rootRef.current;
+          if (root && !root.contains(document.activeElement)) close();
+        });
+      }}
+    >
       <button
         ref={triggerRef}
         type="button"
@@ -74,7 +90,7 @@ export function FilterPopover({
       >
         <span>{label}</span>
         {activeCount > 0 && (
-          <span className="inline-flex size-5 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-white">
+          <span className="inline-flex size-5 items-center justify-center rounded-full bg-action text-xs font-bold text-white">
             {activeCount}
           </span>
         )}
@@ -85,7 +101,7 @@ export function FilterPopover({
           id={id}
           role="dialog"
           aria-label={label}
-          className="absolute left-0 top-[calc(100%+0.5rem)] z-[80] min-w-64 rounded-2xl border border-border-strong bg-raised p-2 shadow-[0_18px_50px_rgba(0,0,0,0.72)]"
+          className="absolute left-0 top-[calc(100%+0.5rem)] z-[80] w-64 max-w-[calc(100vw-1rem)] rounded-2xl border border-border-strong bg-raised p-2 shadow-[0_18px_50px_rgba(0,0,0,0.72)]"
         >
           {children(close)}
         </div>

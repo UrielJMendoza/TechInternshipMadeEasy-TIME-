@@ -1,9 +1,10 @@
 import type { Metadata, Viewport } from "next";
+import { SOURCE_IDS } from "@/lib/ingest/sourceRegistry";
 import "./globals.css";
 
 const title = "Timley — live tech internship & new grad tracker";
 const description =
-  "Every 2027 US tech internship and new grad role in one place — deduped, tagged, and refreshed every 2 hours from maintained GitHub lists.";
+  `US-focused internship and new grad listings from ${SOURCE_IDS.length} maintained public sources — normalized, deduplicated, and refreshed every 2 hours.`;
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://timley.dev"),

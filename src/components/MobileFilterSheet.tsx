@@ -30,6 +30,10 @@ import {
   countRemoteJobs,
 } from "@/lib/jobLocations";
 import type { Internship, RoleType } from "@/lib/types";
+import type {
+  InternshipTermKey,
+  TermFacetOption,
+} from "@/lib/jobTerms";
 
 export function MobileFilterSheet({
   open,
@@ -37,6 +41,7 @@ export function MobileFilterSheet({
   filters,
   jobs,
   applications,
+  termOptions,
   onApply,
 }: {
   open: boolean;
@@ -44,6 +49,7 @@ export function MobileFilterSheet({
   filters: BoardFilters;
   jobs: Internship[];
   applications: ApplicationRecords;
+  termOptions: TermFacetOption[];
   onApply: (filters: BoardFilters) => void;
 }) {
   const [draft, setDraft] = useState(filters);
@@ -66,7 +72,7 @@ export function MobileFilterSheet({
         APPLICATION_STAGES.map((stage) => [
           stage,
           draftJobs.filter(
-            (job) => getApplicationStage(applications, job.link) === stage,
+            (job) => getApplicationStage(applications, job.tracking_key) === stage,
           ).length,
         ]),
       ) as Record<ApplicationStage, number>,
@@ -87,6 +93,14 @@ export function MobileFilterSheet({
       stages: current.stages.includes(stage)
         ? current.stages.filter((selected) => selected !== stage)
         : [...current.stages, stage],
+    }));
+  };
+  const toggleTerm = (key: InternshipTermKey) => {
+    setDraft((current) => ({
+      ...current,
+      termKeys: current.termKeys.includes(key)
+        ? current.termKeys.filter((selected) => selected !== key)
+        : [...current.termKeys, key],
     }));
   };
 
@@ -130,7 +144,10 @@ export function MobileFilterSheet({
               ["internship", "Internships"],
               ["new_grad", "New Grad"],
             ]}
-            onChange={(tab) => patch({ tab })}
+            onChange={(tab) => patch({
+              tab,
+              termKeys: tab === "internship" ? draft.termKeys : [],
+            })}
           />
         </FilterSection>
 
@@ -162,11 +179,36 @@ export function MobileFilterSheet({
             value={draft.collection}
             options={[
               ["all", "All jobs"],
-              ["saved", "Saved"],
+              ["saved", "To apply"],
             ]}
             onChange={(collection) => patch({ collection })}
           />
         </FilterSection>
+
+        {draft.tab === "internship" && (
+          <FilterSection
+            title="Internship term"
+            description="Select multiple terms; roles can match any selected term. Unknown terms are never guessed."
+          >
+            <div className="grid gap-1 sm:grid-cols-2">
+              {termOptions.map((option) => (
+                <label
+                  key={option.id}
+                  className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-xl border border-border px-3 text-sm text-muted hover:border-border-strong hover:text-fg"
+                >
+                  <input
+                    type="checkbox"
+                    checked={draft.termKeys.includes(option.id)}
+                    onChange={() => toggleTerm(option.id)}
+                    className="size-4 accent-[var(--accent)]"
+                  />
+                  <span className="min-w-0 flex-1 truncate">{option.label}</span>
+                  <span className="text-xs text-faint">{option.count}</span>
+                </label>
+              ))}
+            </div>
+          </FilterSection>
+        )}
 
         <FilterSection title="Freshness">
           <SegmentedButtons<Freshness>

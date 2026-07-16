@@ -13,6 +13,12 @@ import type {
   LocationFacetOrder,
   PhysicalLocationFacetId,
 } from "@/lib/jobLocations";
+import {
+  UNKNOWN_TERM_KEY,
+  termLabelFromKey,
+  type InternshipTermKey,
+  type TermFacetOption,
+} from "@/lib/jobTerms";
 
 export function QuickToggle({
   label,
@@ -199,6 +205,62 @@ export function StageFilterMenu({
               className="mt-2 min-h-9 w-full rounded-xl text-xs font-semibold text-muted hover:bg-white/[0.05] hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
             >
               Clear stages
+            </button>
+          )}
+        </>
+      )}
+    </FilterPopover>
+  );
+}
+
+export function TermFilterMenu({
+  options,
+  selected,
+  onToggle,
+  onClear,
+}: {
+  options: readonly TermFacetOption[];
+  selected: readonly InternshipTermKey[];
+  onToggle: (term: InternshipTermKey) => void;
+  onClear: () => void;
+}) {
+  return (
+    <FilterPopover label="Term" activeCount={selected.length}>
+      {() => (
+        <>
+          <p className="px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-faint">
+            Internship term
+          </p>
+          <div className="max-h-72 space-y-0.5 overflow-y-auto pr-1">
+            {options.map((option) => {
+              const checked = selected.includes(option.id);
+              const label = option.id === UNKNOWN_TERM_KEY
+                ? "Term not listed"
+                : option.label || termLabelFromKey(option.id);
+              return (
+                <label
+                  key={option.id}
+                  className="flex min-h-10 cursor-pointer items-center gap-2.5 rounded-xl px-2.5 text-sm text-muted hover:bg-white/[0.05] hover:text-fg"
+                >
+                  <input
+                    type="checkbox"
+                    checked={checked}
+                    onChange={() => onToggle(option.id)}
+                    className="size-4 accent-[var(--accent)]"
+                  />
+                  <span className="min-w-0 flex-1 truncate">{label}</span>
+                  <span className="text-xs font-medium text-faint">{option.count}</span>
+                </label>
+              );
+            })}
+          </div>
+          {selected.length > 0 && (
+            <button
+              type="button"
+              onClick={onClear}
+              className="mt-2 min-h-9 w-full rounded-xl text-xs font-semibold text-muted hover:bg-white/[0.05] hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+            >
+              Clear terms
             </button>
           )}
         </>

@@ -29,13 +29,40 @@ test("post filters sanitize mixed locations and recompute keys without mutating 
   assert.equal(input.location, "London, UK; Chicago, IL");
   assert.equal(input.dedupe_key, "old-key");
   assert.equal(result.location, "Chicago, IL");
+  assert.deepEqual(result.term_keys, ["summer-2027"]);
+  assert.deepEqual(result.observations?.[0].term_keys, ["summer-2027"]);
   assert.equal(
     result.dedupe_key,
     dedupeKey(result.company, result.title, "Chicago, IL"),
   );
 });
 
-test("post filters reject foreign-only locations but retain US remote and blanks", () => {
+test("post filters infer only explicit title terms and preserve multiple terms", () => {
+  const [explicit] = applyPostFilters([
+    fixtureJob("Denver, CO"),
+  ].map((job) => ({
+    ...job,
+    season: null,
+    title: "Software Engineer Intern Fall 2026/Winter 2027",
+  })));
+  const [ambiguous] = applyPostFilters([
+    {
+      ...fixtureJob("Denver, CO"),
+      season: null,
+      title: "2027 Software Engineer Intern",
+      link: "https://example.com/apply/ambiguous",
+    },
+  ]);
+
+  assert.deepEqual(explicit.term_keys, ["fall-2026", "winter-2027"]);
+  assert.deepEqual(explicit.observations?.[0].term_keys, [
+    "fall-2026",
+    "winter-2027",
+  ]);
+  assert.deepEqual(ambiguous.term_keys, []);
+});
+
+test("post filters reject foreign-only and blank locations but retain US remote", () => {
   const results = applyPostFilters([
     fixtureJob("Amsterdam, NH"),
     fixtureJob("Remote in Canada"),
@@ -43,7 +70,7 @@ test("post filters reject foreign-only locations but retain US remote and blanks
     fixtureJob(""),
   ]);
 
-  assert.deepEqual(results.map((job) => job.location), ["Remote in USA", ""]);
+  assert.deepEqual(results.map((job) => job.location), ["Remote in USA"]);
 });
 
 test("Northwestern comma lists preserve city-state pairs and split office markets", () => {

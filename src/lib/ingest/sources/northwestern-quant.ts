@@ -1,9 +1,26 @@
-import type { Category, NormalizedJob } from "../../types";
-import { isUsStateLabel, normalizeLocationText } from "../../usLocations";
-import { categorize, cleanLink, cleanText, dedupeKey, fetchText } from "../normalize";
+import type { Category, NormalizedJob } from "../../types.ts";
+import { isUsStateLabel } from "../../usLocations.ts";
+import {
+  createSnapshot,
+  jobsFromHealthySnapshot,
+  type SnapshotIssue,
+  type SourceSnapshot,
+} from "../contracts.ts";
+import { fetchRegisteredFeed } from "../fetch.ts";
+import { normalizeLocationText } from "../location.ts";
+import {
+  categorize,
+  cleanLink,
+  cleanText,
+  dedupeKey,
+  externalIdFromUrl,
+  requisitionIdFrom,
+} from "../normalize.ts";
+import { markdownCandidateRows, validateRequiredMarkers } from "../schemas.ts";
+import { SOURCE_REGISTRY } from "../sourceRegistry.ts";
 
-const URL =
-  "https://raw.githubusercontent.com/northwesternfintech/2027QuantInternships/main/README.md";
+const SOURCE = SOURCE_REGISTRY.northwesternfintech;
+const FEED = SOURCE.feeds[0];
 const SEASON = "Summer 2027";
 
 const ROLE_DETAILS: Record<string, { title: string; category: Category }> = {
@@ -14,7 +31,7 @@ const ROLE_DETAILS: Record<string, { title: string; category: Category }> = {
   ML: { title: "Machine Learning Intern", category: "data-ml" },
 };
 
-const NORTHWESTERN_LOCATION_REWRITES: Record<string, readonly string[]> = {
+const LOCATION_REWRITES: Record<string, readonly string[]> = {
   "chicago puerto rico": ["Chicago, IL", "Puerto Rico"],
   "chicago nyc": ["Chicago, IL", "New York, NY"],
   "chicago austin": ["Chicago, IL", "Austin, TX"],
@@ -33,30 +50,24 @@ function jobTitle(role: string, qualifier: string): string {
   const detail = ROLE_DETAILS[role.toUpperCase()];
   const base = detail?.title ?? cleanText(role);
   const suffix = cleanText(qualifier.replace(/^✅\s*/u, ""));
-  return suffix ? base + " (" + suffix + ")" : base;
+  return suffix ? `${base} (${suffix})` : base;
 }
 
 function categoryFor(role: string): Category | null {
   return ROLE_DETAILS[role.toUpperCase()]?.category ?? null;
 }
 
-/**
- * This source uses commas both for city/state pairs and to enumerate offices.
- * Preserve real state pairs while converting office boundaries to semicolons.
- */
 export function normalizeNorthwesternLocation(value: string): string {
   const clean = cleanText(value);
   if (!clean) return "";
-
   const locations: string[] = [];
 
   for (const block of clean.split(";").map(cleanText).filter(Boolean)) {
-    const rewrite = NORTHWESTERN_LOCATION_REWRITES[normalizeLocationText(block)];
+    const rewrite = LOCATION_REWRITES[normalizeLocationText(block)];
     if (rewrite) {
       locations.push(...rewrite);
       continue;
     }
-
     const tokens = block.split(",").map(cleanText).filter(Boolean);
     for (let index = 0; index < tokens.length; index += 1) {
       const city = tokens[index];
@@ -69,17 +80,19 @@ export function normalizeNorthwesternLocation(value: string): string {
       }
     }
   }
-
   return locations.join("; ");
 }
 
-/**
- * Northwestern Fintech keeps this public repository current with GitHub
- * Actions. Each company has a location block followed by an open-role table.
- */
-export async function fetchNorthwesternQuant(): Promise<NormalizedJob[]> {
-  const markdown = await fetchText(URL);
+export function parseNorthwesternFeed(markdown: string): SourceSnapshot {
+  const issues: SnapshotIssue[] = validateRequiredMarkers(
+    markdown,
+    FEED.required_markers,
+  );
+  const rows = markdownCandidateRows(markdown, 2);
+  const rowSet = new Set(rows);
   const jobs: NormalizedJob[] = [];
+  let rawCount = 0;
+  let parsedCount = 0;
   let company = "";
   let location = "";
 
@@ -90,38 +103,88 @@ export async function fetchNorthwesternQuant(): Promise<NormalizedJob[]> {
       location = "";
       continue;
     }
-
     const locationMatch = line.match(/^\*\*Locations\*\*:\s*(.*)$/i);
     if (locationMatch) {
       location = normalizeNorthwesternLocation(locationMatch[1]);
       continue;
     }
+    if (!rowSet.has(line)) continue;
 
-    if (!line.startsWith("|")) continue;
     const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
-    if (cells.length !== 2 || /^Role$/i.test(cells[0]) || /^-+$/.test(cells[0])) continue;
-    if (!company || !cells[0] || !cells[1]) continue;
+    const links = markdownLinks(cells[1] ?? "");
+    rawCount += links.length;
+    if (!company || !cells[0] || !cells[1]) {
+      issues.push({
+        code: "invalid_row",
+        message: "Role row is missing company context or required cells",
+        row: parsedCount + 1,
+      });
+      continue;
+    }
+    if (links.length === 0) {
+      issues.push({
+        code: "invalid_url",
+        message: "Role row has no HTTPS application link",
+        row: parsedCount + 1,
+      });
+      continue;
+    }
+    parsedCount += links.length;
 
-    for (const link of markdownLinks(cells[1])) {
-      const title = jobTitle(cells[0], link.label);
-      const normalizedCompany = cleanText(company);
-      const normalizedLocation = cleanText(location);
+    for (const sourceLink of links) {
+      const link = cleanLink(sourceLink.href);
+      if (!link) {
+        issues.push({
+          code: "invalid_url",
+          message: "Application URL failed HTTPS validation",
+          row: parsedCount,
+        });
+        continue;
+      }
+      const title = jobTitle(cells[0], sourceLink.label);
+      const externalId = externalIdFromUrl(link);
       jobs.push({
         title,
-        company: normalizedCompany,
-        location: normalizedLocation,
+        company,
+        location,
+        raw_title: title,
+        raw_location: location,
         category: categorize(title, null, categoryFor(cells[0])),
         role_type: "internship",
         season: SEASON,
         salary: null,
-        link: cleanLink(link.href),
-        source: "northwesternfintech",
+        link,
+        source: SOURCE.id,
+        source_url: SOURCE.homepage,
+        source_us_only: FEED.proven_us_only,
+        external_id: externalId,
+        requisition_id: requisitionIdFrom(title, externalId, link),
         sponsorship: null,
         posted_date: null,
-        dedupe_key: dedupeKey(normalizedCompany, title, normalizedLocation),
+        dedupe_key: dedupeKey(company, title, location),
       });
     }
   }
 
-  return jobs;
+  return createSnapshot(
+    SOURCE.id,
+    SOURCE.parser_version,
+    jobs,
+    {
+      raw_count: rawCount,
+      parsed_count: parsedCount,
+      accepted_count: jobs.length,
+    },
+    issues,
+  );
+}
+
+export async function fetchNorthwesternQuantSnapshot(): Promise<SourceSnapshot> {
+  const response = await fetchRegisteredFeed(FEED);
+  return parseNorthwesternFeed(response.text);
+}
+
+/** Compatibility adapter for the current runner. */
+export async function fetchNorthwesternQuant(): Promise<NormalizedJob[]> {
+  return jobsFromHealthySnapshot(await fetchNorthwesternQuantSnapshot());
 }

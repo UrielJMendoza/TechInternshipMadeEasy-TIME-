@@ -1,20 +1,54 @@
+import { runtimeEnv } from "./runtimeEnv.ts";
+
+const BEARER_PREFIX = "Bearer ";
+const MAX_TOKEN_LENGTH = 512;
+
 /**
- * Extract the cron secret from a trigger request: a Bearer token (what Vercel
- * Cron sends when a CRON_SECRET env var is configured) or a ?key= query param
- * (used by pg_cron and manual curl). The caller must always present it —
- * falling back to the server's own env var would let anyone trigger ingestion
- * unauthenticated.
- *
- * The value is never validated here — it's forwarded to the ingest_upsert
- * Postgres function, which compares it against the secret stored in the
- * app_meta table. Postgres is the single source of truth.
+ * Read an opaque cron credential from Authorization only. Query-string
+ * credentials are deliberately unsupported because URLs are commonly logged.
  */
-export function requestSecret(req: Request): string | null {
-  const bearer = req.headers.get("authorization");
-  if (bearer?.startsWith("Bearer ")) return bearer.slice("Bearer ".length);
-  return new URL(req.url).searchParams.get("key");
+export function requestBearerToken(request: Request): string | null {
+  const header = request.headers.get("authorization");
+  if (!header?.startsWith(BEARER_PREFIX)) return null;
+
+  const token = header.slice(BEARER_PREFIX.length);
+  if (!token || token.length > MAX_TOKEN_LENGTH || /\s/.test(token)) return null;
+  return token;
 }
 
-export function isUnauthorized(message: string): boolean {
-  return message.toLowerCase().includes("unauthorized");
+async function sha256(value: string): Promise<Uint8Array> {
+  return new Uint8Array(
+    await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value)),
+  );
+}
+
+/** Compare fixed-length digests without an early-exit mismatch branch. */
+export async function timingSafeEqualText(
+  provided: string,
+  expected: string,
+): Promise<boolean> {
+  const [providedDigest, expectedDigest] = await Promise.all([
+    sha256(provided),
+    sha256(expected),
+  ]);
+
+  let difference = 0;
+  for (let index = 0; index < expectedDigest.length; index += 1) {
+    difference |= providedDigest[index] ^ expectedDigest[index];
+  }
+  return difference === 0;
+}
+
+/**
+ * Fail closed when the server secret is missing. This function performs no
+ * network or database work and is safe to call before importing adapters.
+ */
+export async function authorizeCronRequest(
+  request: Request,
+  expectedSecret = runtimeEnv("CRON_SECRET"),
+): Promise<boolean> {
+  if (!expectedSecret || expectedSecret.length > MAX_TOKEN_LENGTH) return false;
+  const provided = requestBearerToken(request);
+  if (!provided) return false;
+  return timingSafeEqualText(provided, expectedSecret);
 }

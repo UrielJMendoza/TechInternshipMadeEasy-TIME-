@@ -4,6 +4,10 @@ import {
 } from "@/lib/applicationTracking";
 import type { RoleType } from "@/lib/types";
 import {
+  isInternshipTermKey,
+  type InternshipTermKey,
+} from "@/lib/jobTerms";
+import {
   isPhysicalLocationFacetId,
   type PhysicalLocationFacetId,
 } from "@/lib/jobLocations";
@@ -28,6 +32,7 @@ export interface BoardFilters {
   niche: string;
   locationIds: PhysicalLocationFacetId[];
   locationOrder: LocationOrder;
+  termKeys: InternshipTermKey[];
   freshness: Freshness;
   collection: Collection;
   sort: SortKey;
@@ -45,9 +50,10 @@ export const DEFAULT_BOARD_FILTERS: BoardFilters = {
   niche: "all",
   locationIds: [],
   locationOrder: "popular",
+  termKeys: [],
   freshness: "all",
   collection: "all",
-  sort: "featured",
+  sort: "newest",
   stages: [],
   remoteOnly: false,
   visaSponsorship: false,
@@ -79,6 +85,7 @@ const FILTER_QUERY_KEYS = [
   "niche",
   "locations",
   "location-order",
+  "terms",
   "freshness",
   "collection",
   "sort",
@@ -115,6 +122,9 @@ function validatedFilters(value: unknown): BoardFilters {
   const locationOrder = LOCATION_ORDERS.has(value.locationOrder as LocationOrder)
     ? (value.locationOrder as LocationOrder)
     : DEFAULT_BOARD_FILTERS.locationOrder;
+  const termKeys = cleanStrings(value.termKeys)
+    .filter((key): key is InternshipTermKey => isInternshipTermKey(key))
+    .slice(0, 20);
 
   return {
     tab,
@@ -127,6 +137,7 @@ function validatedFilters(value: unknown): BoardFilters {
       )
       .slice(0, 20),
     locationOrder,
+    termKeys: tab === "internship" ? termKeys : [],
     freshness,
     collection,
     sort,
@@ -170,6 +181,7 @@ export function parseBoardFilters(
 
   const rawStages = csv(params.get("stages"));
   const rawLocations = csv(params.get("locations"));
+  const rawTerms = csv(params.get("terms"));
   return validatedFilters({
     ...base,
     tab: params.get("tab") === "new-grad" ? "new_grad" : "internship",
@@ -178,9 +190,10 @@ export function parseBoardFilters(
     niche: params.get("niche") ?? "all",
     locationIds: rawLocations,
     locationOrder: params.get("location-order") === "az" ? "alphabetical" : "popular",
+    termKeys: rawTerms,
     freshness: params.get("freshness") ?? "all",
     collection: params.get("collection") ?? "all",
-    sort: params.get("sort") ?? "featured",
+    sort: params.get("sort") ?? "newest",
     stages: rawStages,
     remoteOnly: params.get("remote") === "1",
     visaSponsorship: params.get("visa") === "1",
@@ -195,9 +208,12 @@ export function serializeBoardFilters(filters: BoardFilters): URLSearchParams {
   if (filters.niche !== "all") params.set("niche", filters.niche);
   if (filters.locationIds.length) params.set("locations", filters.locationIds.join(","));
   if (filters.locationOrder === "alphabetical") params.set("location-order", "az");
+  if (filters.tab === "internship" && filters.termKeys.length) {
+    params.set("terms", filters.termKeys.join(","));
+  }
   if (filters.freshness !== "all") params.set("freshness", filters.freshness);
   if (filters.collection !== "all") params.set("collection", filters.collection);
-  if (filters.sort !== "featured") params.set("sort", filters.sort);
+  if (filters.sort !== "newest") params.set("sort", filters.sort);
   if (filters.stages.length) params.set("stages", filters.stages.join(","));
   if (filters.remoteOnly) params.set("remote", "1");
   if (filters.visaSponsorship) params.set("visa", "1");
@@ -221,9 +237,10 @@ export function activeFilterCount(filters: BoardFilters): number {
   return (
     (filters.major !== "all" || filters.niche !== "all" ? 1 : 0) +
     filters.locationIds.length +
+    filters.termKeys.length +
     (filters.freshness !== "all" ? 1 : 0) +
     (filters.collection !== "all" ? 1 : 0) +
-    (filters.sort !== "featured" ? 1 : 0) +
+    (filters.sort !== "newest" ? 1 : 0) +
     filters.stages.length +
     (filters.remoteOnly ? 1 : 0) +
     (filters.visaSponsorship ? 1 : 0)

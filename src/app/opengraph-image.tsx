@@ -1,4 +1,5 @@
 import { ImageResponse } from "next/og";
+import { SOURCE_IDS } from "@/lib/ingest/sourceRegistry";
 
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
@@ -24,13 +25,13 @@ export default function OpengraphImage() {
           timley<span style={{ color: "#0a84ff" }}>.</span>
         </div>
         <div style={{ display: "flex", marginTop: 28, fontSize: 34, color: "#98989d", lineHeight: 1.4 }}>
-          Every 2027 US tech internship &amp; new grad role — merged from 4 live lists, deduped, refreshed every 2 hours.
+          US-focused internship &amp; new grad listings from {SOURCE_IDS.length} maintained sources — normalized and refreshed every 2 hours.
         </div>
         <div style={{ display: "flex", marginTop: 56, gap: 16 }}>
           {[
             ["Internships", "rgba(10,132,255,0.18)", "#64aeff"],
             ["New Grad", "rgba(48,209,88,0.15)", "#5ddd7f"],
-            ["Save &amp; track", "rgba(191,90,242,0.18)", "#d99bff"],
+            ["Save & track", "rgba(191,90,242,0.18)", "#d99bff"],
             ["Updated 2h", "rgba(255,159,10,0.15)", "#ffb340"],
           ].map(([label, bg, color]) => (
             <div

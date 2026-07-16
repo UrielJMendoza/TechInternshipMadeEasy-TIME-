@@ -1,80 +1,161 @@
-import type { NormalizedJob } from "../../types";
-import { categorize, cleanLink, cleanText, dedupeKey, fetchText } from "../normalize";
+import type { NormalizedJob } from "../../types.ts";
+import {
+  createSnapshot,
+  jobsFromHealthySnapshot,
+  type SnapshotIssue,
+  type SourceSnapshot,
+} from "../contracts.ts";
+import { fetchRegisteredFeed } from "../fetch.ts";
+import {
+  categorize,
+  cleanLink,
+  cleanText,
+  dedupeKey,
+  externalIdFromUrl,
+  normalizePostedDate,
+  requisitionIdFrom,
+} from "../normalize.ts";
+import { markdownCandidateRows, validateRequiredMarkers } from "../schemas.ts";
+import { SOURCE_REGISTRY } from "../sourceRegistry.ts";
 
-const URL = "https://raw.githubusercontent.com/vanshb03/Summer2027-Internships/main/README.md";
+const SOURCE = SOURCE_REGISTRY.vanshb03;
+const FEED = SOURCE.feeds[0];
 
-/** "Jul 07" has no year; assume the most recent occurrence not in the future. */
-function parseMonthDay(s: string, now: Date): string | null {
-  const m = s.trim().match(/^([A-Z][a-z]{2})\s+(\d{1,2})$/);
-  if (!m) return null;
-  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
-  const month = months.indexOf(m[1]);
-  if (month === -1) return null;
+function parseMonthDay(value: string, now: Date): string | null {
+  const match = value.trim().match(/^([A-Z][a-z]{2})\s+(\d{1,2})$/);
+  if (!match) return null;
+  const months = [
+    "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+  ];
+  const month = months.indexOf(match[1]);
+  const day = Number(match[2]);
+  if (month === -1 || day < 1 || day > 31) return null;
   let year = now.getUTCFullYear();
-  const candidate = Date.UTC(year, month, Number(m[2]));
-  if (candidate > now.getTime()) year -= 1;
-  return `${year}-${String(month + 1).padStart(2, "0")}-${String(m[2]).padStart(2, "0")}`;
+  if (Date.UTC(year, month, day) > now.getTime()) year -= 1;
+  const candidate = `${year}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+  return normalizePostedDate(candidate, now.getTime());
 }
 
 function extractLocation(cell: string): string {
-  // Multi-location cells look like:
-  // <details><summary>**4 locations**</summary>New York, NY</br>Miami, FL</details>
-  const stripped = cell
-    .replace(/<details>.*?<\/summary>/gi, "")
-    .replace(/<\/details>/gi, "")
-    .replace(/<\/?br\s*\/?>/gi, "; ");
-  return cleanText(stripped);
+  return cleanText(
+    cell
+      .replace(/<details>.*?<\/summary>/gi, "")
+      .replace(/<\/details>/gi, "")
+      .replace(/<\/?br\s*\/?>/gi, "; "),
+  );
 }
 
-/**
- * vanshb03/Summer2027-Internships: one markdown table in README.md —
- * | Company | Role | Location | Application/Link | Date Posted |
- * "↳" repeats the previous company; 🔒 marks closed roles (skipped).
- */
-export async function fetchVansh(): Promise<NormalizedJob[]> {
-  const md = await fetchText(URL);
-  const now = new Date();
+export function parseVanshFeed(
+  markdown: string,
+  now = new Date(),
+): SourceSnapshot {
+  const issues: SnapshotIssue[] = validateRequiredMarkers(
+    markdown,
+    FEED.required_markers,
+  );
+  const rows = markdownCandidateRows(markdown, 5);
+  const rowSet = new Set(rows);
   const jobs: NormalizedJob[] = [];
+  let parsedCount = 0;
   let lastCompany = "";
 
-  for (const line of md.split("\n")) {
-    if (!line.startsWith("|")) continue;
-    const cells = line.split("|").slice(1, -1).map((c) => c.trim());
-    if (cells.length < 5) continue;
-    if (/^-+$/.test(cells[0].replace(/\s/g, "")) || /^Company$/i.test(cells[0])) continue;
-    if (line.includes("🔒")) continue; // application closed
-
+  for (const line of markdown.split("\n")) {
+    if (!rowSet.has(line)) continue;
+    const cells = line.split("|").slice(1, -1).map((cell) => cell.trim());
+    if (line.includes("🔒")) continue;
     const [companyCell, roleCell, locationCell, linkCell, dateCell] = cells;
     const company = companyCell.includes("↳") ? lastCompany : cleanText(companyCell);
-    if (!company) continue;
+    if (!company) {
+      issues.push({
+        code: "invalid_row",
+        message: "Repeated-company row appeared before a company name",
+        row: parsedCount + 1,
+      });
+      continue;
+    }
     lastCompany = company;
+    const title = cleanText(roleCell);
+    const location = extractLocation(locationCell);
+    if (!title) {
+      issues.push({
+        code: "invalid_row",
+        message: "Role title is blank",
+        row: parsedCount + 1,
+      });
+      continue;
+    }
+    parsedCount += 1;
 
-    const href = linkCell.match(/href="([^"]+)"/)?.[1];
-    if (!href) continue;
+    const rawHref = linkCell.match(/href="([^"]+)"/)?.[1] ?? "";
+    const link = cleanLink(rawHref);
+    if (!link) {
+      issues.push({
+        code: "invalid_url",
+        message: "Application cell does not contain a valid HTTPS URL",
+        row: parsedCount,
+        path: "application",
+      });
+      continue;
+    }
+    const postedDate = parseMonthDay(dateCell, now);
+    if (cleanText(dateCell) && !postedDate) {
+      issues.push({
+        code: "invalid_date",
+        message: "Date cell is not a valid month/day",
+        row: parsedCount,
+        path: "date",
+      });
+      continue;
+    }
 
     const sponsorship = roleCell.includes("🛂")
       ? "no-sponsorship"
       : roleCell.includes("🇺🇸")
         ? "us-citizenship"
         : null;
-    const title = cleanText(roleCell);
-    const location = extractLocation(locationCell);
-    if (!title) continue;
-
+    const externalId = externalIdFromUrl(link);
     jobs.push({
       title,
       company,
       location,
+      raw_title: cleanText(roleCell),
+      raw_location: location,
       category: categorize(title),
       role_type: "internship",
       season: "Summer 2027",
       salary: null,
-      link: cleanLink(href),
-      source: "vanshb03",
+      link,
+      source: SOURCE.id,
+      source_url: SOURCE.homepage,
+      source_us_only: FEED.proven_us_only,
+      external_id: externalId,
+      requisition_id: requisitionIdFrom(title, externalId, link),
       sponsorship,
-      posted_date: parseMonthDay(dateCell, now),
+      posted_date: postedDate,
       dedupe_key: dedupeKey(company, title, location),
     });
   }
-  return jobs;
+
+  return createSnapshot(
+    SOURCE.id,
+    SOURCE.parser_version,
+    jobs,
+    {
+      raw_count: rows.length,
+      parsed_count: parsedCount,
+      accepted_count: jobs.length,
+    },
+    issues,
+  );
+}
+
+export async function fetchVanshSnapshot(): Promise<SourceSnapshot> {
+  const response = await fetchRegisteredFeed(FEED);
+  return parseVanshFeed(response.text);
+}
+
+/** Compatibility adapter for the current runner. */
+export async function fetchVansh(): Promise<NormalizedJob[]> {
+  return jobsFromHealthySnapshot(await fetchVanshSnapshot());
 }

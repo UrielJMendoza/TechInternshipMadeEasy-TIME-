@@ -34,45 +34,12 @@ export function TruncatedTooltip({
   const tooltipRef = useRef<HTMLSpanElement>(null);
   const hoverCloseTimerRef = useRef<number | null>(null);
   const tooltipId = useId();
-  const [isTruncated, setIsTruncated] = useState(false);
   const [isHovered, setIsHovered] = useState(false);
   const [isFocused, setIsFocused] = useState(false);
   const [isDismissed, setIsDismissed] = useState(false);
   const [position, setPosition] = useState<TooltipPosition | null>(null);
 
-  useLayoutEffect(() => {
-    const trigger = triggerRef.current;
-    if (!trigger) return;
-
-    const measureOverflow = () => {
-      const nextIsTruncated = trigger.scrollWidth > trigger.clientWidth;
-      setIsTruncated(nextIsTruncated);
-    };
-
-    measureOverflow();
-
-    let resizeObserver: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== "undefined") {
-      resizeObserver = new ResizeObserver(measureOverflow);
-      resizeObserver.observe(trigger);
-    } else {
-      window.addEventListener("resize", measureOverflow);
-    }
-
-    let cancelled = false;
-    void document.fonts?.ready.then(() => {
-      if (!cancelled) measureOverflow();
-    });
-
-    return () => {
-      cancelled = true;
-      resizeObserver?.disconnect();
-      window.removeEventListener("resize", measureOverflow);
-    };
-  }, [className, text]);
-
-  const showTooltip =
-    isTruncated && !isDismissed && (isHovered || isFocused);
+  const showTooltip = !isDismissed && (isHovered || isFocused);
 
   useLayoutEffect(() => {
     if (!showTooltip) return;
@@ -169,7 +136,7 @@ export function TruncatedTooltip({
     <>
       <span
         ref={triggerRef}
-        tabIndex={isTruncated ? 0 : undefined}
+        tabIndex={0}
         aria-describedby={showTooltip ? tooltipId : undefined}
         onMouseEnter={beginHover}
         onMouseLeave={endHover}

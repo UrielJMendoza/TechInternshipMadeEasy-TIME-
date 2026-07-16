@@ -34,6 +34,10 @@ test("board renders its initial server markup with the new tracking controls", (
   );
 
   assert.match(markup, /Example Labs/);
+  assert.match(
+    markup,
+    /tabindex="0"[^>]*>Cloud Infrastructure Engineering Intern with a deliberately long title<\/span>/,
+  );
   assert.match(markup, /Remote Only/);
   assert.match(markup, /Visa Sponsorship/);
   assert.match(markup, /Track/);

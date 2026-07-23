@@ -1,0 +1,36 @@
+import type { Metadata } from "next";
+import { AlertsWorkspace } from "@/components/AlertsWorkspace";
+import { fetchJobsSnapshot } from "@/lib/jobs";
+
+const title = "Search alerts";
+const description =
+  "Manage saved searches, local in-app alerts, and optional foreground browser notifications without an account.";
+
+export const metadata: Metadata = {
+  title,
+  description,
+  alternates: {
+    canonical: "/alerts",
+  },
+  robots: { index: false, follow: true },
+  openGraph: {
+    title: `${title} | Timley`,
+    description,
+    url: "/alerts",
+    type: "website",
+    images: ["/og.png"],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: `${title} | Timley`,
+    description,
+    images: ["/og.png"],
+  },
+};
+
+export const revalidate = 300;
+
+export default async function AlertsPage() {
+  const snapshot = await fetchJobsSnapshot();
+  return <AlertsWorkspace {...snapshot} />;
+}

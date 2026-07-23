@@ -38,7 +38,7 @@ export function compensationFor(job: Internship): Compensation {
   const reported = job.salary?.trim();
   if (reported) {
     const disclosure =
-      "Pay shown in the source listing; verify details before applying";
+      "Pay was explicitly included with the upstream listing and is stored as employer-listed evidence; confirm the current amount and terms on the application page";
     return {
       label: reported,
       kind: "source-listed",

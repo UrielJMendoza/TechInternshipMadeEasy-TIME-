@@ -15,6 +15,7 @@ interface BottomSheetProps {
   title: string;
   children: ReactNode;
   footer?: ReactNode;
+  presentation?: "bottom-sheet" | "detail-drawer";
 }
 
 const FOCUSABLE_SELECTOR = [
@@ -54,6 +55,7 @@ export function BottomSheet({
   title,
   children,
   footer,
+  presentation = "bottom-sheet",
 }: BottomSheetProps) {
   const panelRef = useRef<HTMLDivElement>(null);
   const previouslyFocusedRef = useRef<HTMLElement | null>(null);
@@ -90,10 +92,16 @@ export function BottomSheet({
 
     const keepFocusInside = (event: FocusEvent) => {
       const panel = panelRef.current;
+      const target =
+        event.target instanceof Element ? event.target : null;
+      const isOwnedPortal = Boolean(
+        target?.closest("[data-dialog-portal='true']"),
+      );
       if (
         panel &&
         event.target instanceof Node &&
-        !panel.contains(event.target)
+        !panel.contains(event.target) &&
+        !isOwnedPortal
       ) {
         focusInitialElement(panel);
       }
@@ -117,6 +125,12 @@ export function BottomSheet({
 
     const closeOnEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
+      if (
+        event.target instanceof Element &&
+        event.target.closest("[data-dialog-portal='true']")
+      ) {
+        return;
+      }
       event.preventDefault();
       onClose();
     };
@@ -157,7 +171,11 @@ export function BottomSheet({
 
   return createPortal(
     <div
-      className="fixed inset-0 z-[110] flex items-end justify-center bg-black/70"
+      className={`ui-dialog-overlay motion-overlay fixed inset-0 z-[var(--layer-dialog)] flex items-end justify-center ${
+        presentation === "detail-drawer"
+          ? "sm:items-stretch sm:justify-end"
+          : ""
+      }`}
       onPointerDown={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -169,7 +187,11 @@ export function BottomSheet({
         aria-labelledby={titleId}
         tabIndex={-1}
         onKeyDown={trapTabKey}
-        className="flex max-h-[85dvh] w-full max-w-2xl flex-col overflow-hidden rounded-t-3xl border border-b-0 border-border-strong bg-surface shadow-[0_-18px_60px_rgba(0,0,0,0.6)] focus:outline-none"
+        className={`ui-dialog flex w-full flex-col overflow-hidden rounded-b-none border-b-0 focus:outline-none ${
+          presentation === "detail-drawer"
+            ? "motion-detail-drawer max-h-[92dvh] max-w-2xl sm:h-dvh sm:max-h-dvh sm:max-w-[38rem] sm:rounded-none sm:border-y-0 sm:border-r-0"
+            : "motion-drawer max-h-[85dvh] max-w-2xl"
+        }`}
       >
         <div className="flex min-h-14 shrink-0 items-center justify-between gap-4 border-b border-border px-4 sm:px-6">
           <h2 id={titleId} className="text-base font-semibold text-fg">
@@ -179,7 +201,7 @@ export function BottomSheet({
             type="button"
             aria-label={`Close ${title}`}
             onClick={onClose}
-            className="flex size-11 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="ui-button ui-button--quiet ui-button--icon size-11 min-h-11 shrink-0 p-0"
           >
             <svg
               width="20"

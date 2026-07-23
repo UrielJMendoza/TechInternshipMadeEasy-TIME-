@@ -4,27 +4,50 @@ import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   APPLICATION_STAGE_LABELS,
-  APPLICATION_STAGES,
+  TRACKED_APPLICATION_STAGES,
   type ApplicationStage,
 } from "@/lib/applicationTracking";
 
 const STAGE_CLASSES: Record<ApplicationStage, string> = {
-  not_applied: "border-border bg-raised text-muted",
-  applied: "border-accent/35 bg-accent/12 text-[#72b8ff]",
-  oa: "border-[#bf5af2]/35 bg-[#bf5af2]/12 text-[#d99bff]",
-  interview: "border-hot/35 bg-hot-soft text-[#ffb340]",
-  rejected: "border-[#ff453a]/35 bg-[#ff453a]/12 text-[#ff8c85]",
-  offer: "border-new/35 bg-new-soft text-[#5ddd7f]",
+  not_applied: "border-border-strong bg-raised text-muted",
+  saved: "border-border-strong bg-raised text-muted",
+  preparing: "border-warning/35 bg-warning-soft text-warning",
+  applied: "border-accent/35 bg-accent-soft text-accent-hover",
+  assessment: "border-info/35 bg-info-soft text-info",
+  interview: "border-accent/35 bg-accent-soft text-accent-hover",
+  offer: "border-success/35 bg-success-soft text-success",
+  rejected: "border-error/35 bg-error-soft text-error",
+  withdrawn: "border-border-strong bg-raised text-muted",
+  archived: "border-border bg-raised text-faint",
 };
 
 const SHORT_LABELS: Record<ApplicationStage, string> = {
   not_applied: "Track",
+  saved: "Saved",
+  preparing: "Preparing",
   applied: "Applied",
-  oa: "OA",
+  assessment: "Assessment",
   interview: "Interview",
-  rejected: "Rejected",
   offer: "Offer",
+  rejected: "Rejected",
+  withdrawn: "Withdrawn",
+  archived: "Archived",
 };
+
+const STAGE_DOT_CLASSES: Record<ApplicationStage, string> = {
+  not_applied: "bg-faint",
+  saved: "bg-faint",
+  preparing: "bg-warning",
+  applied: "bg-accent",
+  assessment: "bg-info",
+  interview: "bg-accent-hover",
+  offer: "bg-success",
+  rejected: "bg-error",
+  withdrawn: "bg-muted",
+  archived: "bg-faint",
+};
+
+const STAGE_MENU_OPTIONS = TRACKED_APPLICATION_STAGES;
 
 interface MenuPosition {
   left: number;
@@ -42,19 +65,8 @@ export function StageDot({ stage }: { stage: ApplicationStage }) {
   return (
     <span
       aria-hidden
-      className={`size-2 shrink-0 rounded-full ${
-        stage === "not_applied"
-          ? "bg-faint"
-          : stage === "applied"
-            ? "bg-accent"
-            : stage === "oa"
-              ? "bg-[#bf5af2]"
-              : stage === "interview"
-                ? "bg-hot"
-                : stage === "rejected"
-                  ? "bg-[#ff453a]"
-                  : "bg-new"
-      }`}
+      data-stage={stage}
+      className={`motion-stage-dot size-2 shrink-0 rounded-full ${STAGE_DOT_CLASSES[stage]}`}
     />
   );
 }
@@ -68,7 +80,8 @@ export function ApplicationStageBadge({
 }) {
   return (
     <span
-      className={`inline-flex items-center gap-1.5 rounded-full border px-2 py-1 text-[11px] font-semibold whitespace-nowrap ${STAGE_CLASSES[stage]}`}
+      data-stage={stage}
+      className={`ui-badge motion-stage-transition ${STAGE_CLASSES[stage]}`}
     >
       <StageDot stage={stage} />
       {compact ? SHORT_LABELS[stage] : APPLICATION_STAGE_LABELS[stage]}
@@ -94,8 +107,10 @@ export function ApplicationStageMenu({
 
   useEffect(() => {
     if (!open) return;
-    const selectedIndex = APPLICATION_STAGES.indexOf(stage);
-    optionRefs.current[selectedIndex]?.focus();
+    const selectedIndex = STAGE_MENU_OPTIONS.indexOf(
+      stage as (typeof STAGE_MENU_OPTIONS)[number],
+    );
+    optionRefs.current[Math.max(0, selectedIndex)]?.focus();
 
     const onPointerDown = (event: PointerEvent) => {
       const target = event.target as Node;
@@ -191,8 +206,13 @@ export function ApplicationStageMenu({
     const currentIndex = optionRefs.current.findIndex(
       (option) => option === document.activeElement,
     );
-    const start = currentIndex < 0 ? APPLICATION_STAGES.indexOf(stage) : currentIndex;
-    const next = (start + direction + APPLICATION_STAGES.length) % APPLICATION_STAGES.length;
+    const selectedIndex = STAGE_MENU_OPTIONS.indexOf(
+      stage as (typeof STAGE_MENU_OPTIONS)[number],
+    );
+    const start = currentIndex < 0 ? Math.max(0, selectedIndex) : currentIndex;
+    const next =
+      (start + direction + STAGE_MENU_OPTIONS.length) %
+      STAGE_MENU_OPTIONS.length;
     optionRefs.current[next]?.focus();
   };
 
@@ -205,6 +225,7 @@ export function ApplicationStageMenu({
     >
       <button
         ref={triggerRef}
+        data-stage={stage}
         type="button"
         aria-label={`${APPLICATION_STAGE_LABELS[stage]} application stage for ${jobLabel}`}
         aria-haspopup="menu"
@@ -214,7 +235,7 @@ export function ApplicationStageMenu({
           if (!open) setPosition(null);
           setOpen((current) => !current);
         }}
-        className={`inline-flex min-h-11 items-center gap-1.5 rounded-full border px-2 text-[11px] font-semibold whitespace-nowrap transition-[border-color,background-color,color] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent sm:min-h-9 sm:px-2.5 ${STAGE_CLASSES[stage]}`}
+        className={`ui-button ui-button--sm motion-stage-transition min-h-11 px-2 text-[11px] sm:min-h-9 sm:px-2.5 ${STAGE_CLASSES[stage]}`}
       >
         <StageDot stage={stage} />
         <span className="sr-only sm:not-sr-only">{SHORT_LABELS[stage]}</span>
@@ -227,6 +248,7 @@ export function ApplicationStageMenu({
         createPortal(
           <div
             ref={menuRef}
+            data-dialog-portal="true"
             role="menu"
             aria-label={`Application stage for ${jobLabel}`}
             onClick={stopCardNavigation}
@@ -234,16 +256,22 @@ export function ApplicationStageMenu({
             onKeyDown={(event) => {
               if (event.key === "ArrowDown") moveFocus(event, 1);
               else if (event.key === "ArrowUp") moveFocus(event, -1);
-              else if (event.key === "Tab") setOpen(false);
+              else if (event.key === "Tab") {
+                event.preventDefault();
+                setOpen(false);
+                window.requestAnimationFrame(() =>
+                  triggerRef.current?.focus(),
+                );
+              }
               else if (event.key === "Home") {
                 event.preventDefault();
                 optionRefs.current[0]?.focus();
               } else if (event.key === "End") {
                 event.preventDefault();
-                optionRefs.current[APPLICATION_STAGES.length - 1]?.focus();
+                optionRefs.current[STAGE_MENU_OPTIONS.length - 1]?.focus();
               }
             }}
-            className="fixed isolate z-[45] w-52 rounded-2xl border border-border-strong bg-[#1f1f23] p-1.5 shadow-[0_18px_48px_rgba(0,0,0,0.82)] ring-1 ring-black/60"
+            className="ui-popover motion-filter-panel fixed isolate z-[var(--layer-tooltip)] max-h-[min(28rem,calc(100dvh-1rem))] w-56 overflow-y-auto p-1.5"
             style={{
               left: position?.left ?? -9999,
               top: position?.top ?? -9999,
@@ -253,7 +281,7 @@ export function ApplicationStageMenu({
             <p className="px-2.5 py-2 text-[10px] font-bold uppercase tracking-[0.12em] text-faint">
               Application stage
             </p>
-            {APPLICATION_STAGES.map((option, index) => (
+            {STAGE_MENU_OPTIONS.map((option, index) => (
               <button
                 key={option}
                 ref={(node) => {
@@ -262,14 +290,20 @@ export function ApplicationStageMenu({
                 type="button"
                 role="menuitemradio"
                 aria-checked={stage === option}
+                tabIndex={
+                  stage === option ||
+                  (stage === "not_applied" && index === 0)
+                    ? 0
+                    : -1
+                }
                 onClick={(event) => {
                   stopCardNavigation(event);
                   select(option);
                 }}
-                className={`flex min-h-10 w-full items-center justify-between gap-3 rounded-xl px-2.5 text-left text-sm transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
+                className={`motion-stage-transition flex min-h-10 w-full items-center justify-between gap-3 rounded-lg px-2.5 text-left text-sm ${
                   stage === option
-                    ? "bg-white/[0.08] text-fg"
-                    : "text-muted hover:bg-white/[0.05] hover:text-fg"
+                    ? "bg-accent-soft text-accent-hover"
+                    : "text-muted hover:bg-raised hover:text-fg"
                 }`}
               >
                 <span className="flex items-center gap-2">

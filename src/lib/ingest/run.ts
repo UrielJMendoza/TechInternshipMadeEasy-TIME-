@@ -89,12 +89,12 @@ export async function runIngest(secret: string): Promise<IngestResult> {
   const deduped = dedupeJobs(jobs);
 
   const { supabase } = await import("../supabase");
-  const { data, error } = await supabase().rpc("ingest_upsert_v2", {
+  const { data, error } = await supabase().rpc("ingest_upsert_v3", {
     payload: deduped,
     secret,
     source_results: sourceResults,
   });
-  if (error) throw new Error("ingest_upsert_v2 failed: " + error.message);
+  if (error) throw new Error("ingest_upsert_v3 failed: " + error.message);
 
   return {
     fetched,

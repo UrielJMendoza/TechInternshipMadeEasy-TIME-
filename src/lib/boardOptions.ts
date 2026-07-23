@@ -1,4 +1,8 @@
-import type { Freshness, SortKey } from "@/lib/boardFilterState";
+import type {
+  Freshness,
+  MinimumSalary,
+  SortKey,
+} from "@/lib/boardFilterState";
 
 export const SORT_OPTIONS: ReadonlyArray<readonly [SortKey, string]> = [
   ["featured", "Featured"],
@@ -15,4 +19,15 @@ export const FRESHNESS_OPTIONS: ReadonlyArray<
   ["all", "All"],
   ["hot", "Hot"],
   ["new", "New"],
+];
+
+export const MINIMUM_SALARY_OPTIONS: ReadonlyArray<
+  readonly [MinimumSalary, string]
+> = [
+  ["any", "Any listed pay"],
+  ["40000", "$40k+"],
+  ["60000", "$60k+"],
+  ["80000", "$80k+"],
+  ["100000", "$100k+"],
+  ["120000", "$120k+"],
 ];

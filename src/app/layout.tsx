@@ -1,36 +1,60 @@
 import type { Metadata, Viewport } from "next";
+import { ContinuityProvider } from "@/components/ContinuityProvider";
+import { SiteFooter } from "@/components/SiteFooter";
+import { SiteHeader } from "@/components/SiteHeader";
+import { StructuredData } from "@/components/StructuredData";
+import { OG_IMAGE, SITE_URL, siteIdentityJsonLd } from "@/lib/seo";
 import "./globals.css";
 
-const title = "Timley — live tech internship & new grad tracker";
+const title = "Timley — job discovery and application tracking";
 const description =
-  "Every 2027 US tech internship and new grad role in one place — deduped, tagged, and refreshed every 2 hours from maintained GitHub lists.";
+  "Find fresh internships and new-grad roles, inspect the available evidence, and track applications in one clean workspace.";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://timley.dev"),
-  title,
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: title,
+    template: "%s | Timley",
+  },
   description,
   openGraph: {
     title,
     description,
-    url: "https://timley.dev",
     siteName: "Timley",
     type: "website",
+    url: "/",
+    images: [OG_IMAGE],
   },
   twitter: {
     card: "summary_large_image",
     title,
     description,
+    images: ["/og.png"],
   },
 };
 
 export const viewport: Viewport = {
-  themeColor: "#000000",
+  themeColor: "#080D18",
+  colorScheme: "light dark",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <ContinuityProvider>
+          <StructuredData data={siteIdentityJsonLd()} />
+          <a
+            href="#main-content"
+            className="theme-application ui-button ui-button--primary fixed top-3 left-3 z-[var(--layer-skip-link)] -translate-y-24 focus:translate-y-0 motion-reduce:transition-none"
+          >
+            Skip to main content
+          </a>
+          <SiteHeader />
+          {children}
+          <SiteFooter />
+        </ContinuityProvider>
+      </body>
     </html>
   );
 }

@@ -1,0 +1,128 @@
+"use client";
+
+import Link from "next/link";
+import { useEffect, useRef } from "react";
+
+const NAV_ITEMS = [
+  { href: "/jobs", label: "Find Jobs" },
+  { href: "/discover", label: "Discover" },
+  { href: "/companies", label: "Companies" },
+  { href: "/tracker", label: "Tracker" },
+  { href: "/alerts", label: "Alerts" },
+  { href: "/account", label: "Account" },
+  { href: "/#how-it-works", label: "How It Works" },
+  { href: "/methodology", label: "Methodology" },
+] as const;
+
+export function SiteHeader() {
+  const mobileMenuRef = useRef<HTMLDetailsElement>(null);
+  const mobileTriggerRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== "Escape" || !mobileMenuRef.current?.open) return;
+      mobileMenuRef.current.open = false;
+      mobileTriggerRef.current?.focus();
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
+
+  const closeMobileMenu = () => {
+    if (mobileMenuRef.current) mobileMenuRef.current.open = false;
+  };
+
+  return (
+    <header className="theme-marketing site-header">
+      <div className="mx-auto flex min-h-[4.75rem] max-w-7xl items-center justify-between gap-5 px-4 sm:px-6 lg:px-8">
+        <Link
+          href="/"
+          aria-label="Timley home"
+          className="site-wordmark shrink-0 text-2xl font-extrabold tracking-[-0.05em] text-fg"
+        >
+          timley
+          <span className="text-[var(--token-marketing-color-primary-display)]">
+            .
+          </span>
+        </Link>
+
+        <nav
+          aria-label="Primary navigation"
+          className="hidden items-center gap-5 lg:flex"
+        >
+          {NAV_ITEMS.map((item) => (
+            <Link
+              key={item.href}
+              href={item.href}
+              className="text-sm font-semibold text-muted transition-colors hover:text-fg"
+            >
+              {item.label}
+            </Link>
+          ))}
+        </nav>
+
+        <div className="hidden items-center gap-3 lg:flex">
+          <Link
+            href="/status"
+            className="text-sm font-semibold text-muted transition-colors hover:text-fg"
+          >
+            Data Status
+          </Link>
+          <Link
+            href="/jobs"
+            className="ui-button ui-button--primary min-h-10 px-4"
+          >
+            Browse Jobs
+            <span aria-hidden>↗</span>
+          </Link>
+        </div>
+
+        <details
+          ref={mobileMenuRef}
+          className="site-mobile-menu relative lg:hidden"
+        >
+          <summary
+            ref={mobileTriggerRef}
+            aria-label="Open navigation menu"
+            className="site-mobile-menu__trigger ui-button ui-button--secondary ui-button--icon list-none"
+          >
+            <span aria-hidden className="site-mobile-menu__icon">
+              <span />
+              <span />
+            </span>
+          </summary>
+          <nav
+            aria-label="Mobile navigation"
+            className="site-mobile-menu__panel ui-popover absolute right-0 mt-2 w-[min(19rem,calc(100vw-2rem))] p-2"
+          >
+            {NAV_ITEMS.map((item) => (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={closeMobileMenu}
+                className="flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-muted hover:bg-raised hover:text-fg"
+              >
+                {item.label}
+              </Link>
+            ))}
+            <Link
+              href="/status"
+              onClick={closeMobileMenu}
+              className="flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-muted hover:bg-raised hover:text-fg"
+            >
+              Data Status
+            </Link>
+            <Link
+              href="/jobs"
+              onClick={closeMobileMenu}
+              className="ui-button ui-button--primary mt-2 w-full"
+            >
+              Browse Jobs
+              <span aria-hidden>↗</span>
+            </Link>
+          </nav>
+        </details>
+      </div>
+    </header>
+  );
+}

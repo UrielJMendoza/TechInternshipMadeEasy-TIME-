@@ -20,6 +20,13 @@ export type Collection = "all" | "saved";
 export type ViewMode = "card" | "table";
 export type MajorId = "all" | "computer-science" | "engineering" | "business";
 export type LocationOrder = "popular" | "alphabetical";
+export type MinimumSalary =
+  | "any"
+  | "40000"
+  | "60000"
+  | "80000"
+  | "100000"
+  | "120000";
 
 export interface BoardFilters {
   tab: RoleType;
@@ -34,6 +41,7 @@ export interface BoardFilters {
   stages: ApplicationStage[];
   remoteOnly: boolean;
   visaSponsorship: boolean;
+  minimumSalary: MinimumSalary;
 }
 
 export const BOARD_FILTER_STORAGE_KEY = "timley:filters:v1";
@@ -51,6 +59,7 @@ export const DEFAULT_BOARD_FILTERS: BoardFilters = {
   stages: [],
   remoteOnly: false,
   visaSponsorship: false,
+  minimumSalary: "any",
 };
 
 const MAJORS = new Set<MajorId>([
@@ -70,9 +79,17 @@ const SORTS = new Set<SortKey>([
   "application-stage",
 ]);
 const LOCATION_ORDERS = new Set<LocationOrder>(["popular", "alphabetical"]);
+const MINIMUM_SALARIES = new Set<MinimumSalary>([
+  "any",
+  "40000",
+  "60000",
+  "80000",
+  "100000",
+  "120000",
+]);
 const STAGES = new Set<ApplicationStage>(APPLICATION_STAGE_ORDER);
 
-const FILTER_QUERY_KEYS = [
+export const PUBLIC_BOARD_FILTER_QUERY_KEYS = [
   "tab",
   "q",
   "major",
@@ -80,11 +97,20 @@ const FILTER_QUERY_KEYS = [
   "locations",
   "location-order",
   "freshness",
-  "collection",
   "sort",
-  "stages",
   "remote",
   "visa",
+  "min-salary",
+] as const;
+
+export const PRIVATE_BOARD_FILTER_QUERY_KEYS = [
+  "collection",
+  "stages",
+] as const;
+
+const FILTER_QUERY_KEYS = [
+  ...PUBLIC_BOARD_FILTER_QUERY_KEYS,
+  ...PRIVATE_BOARD_FILTER_QUERY_KEYS,
 ] as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -115,6 +141,11 @@ function validatedFilters(value: unknown): BoardFilters {
   const locationOrder = LOCATION_ORDERS.has(value.locationOrder as LocationOrder)
     ? (value.locationOrder as LocationOrder)
     : DEFAULT_BOARD_FILTERS.locationOrder;
+  const minimumSalary = MINIMUM_SALARIES.has(
+    value.minimumSalary as MinimumSalary,
+  )
+    ? (value.minimumSalary as MinimumSalary)
+    : DEFAULT_BOARD_FILTERS.minimumSalary;
 
   return {
     tab,
@@ -131,10 +162,12 @@ function validatedFilters(value: unknown): BoardFilters {
     collection,
     sort,
     stages: cleanStrings(value.stages)
+      .map((stage) => (stage === "oa" ? "assessment" : stage))
       .filter((stage): stage is ApplicationStage => STAGES.has(stage as ApplicationStage))
       .sort((a, b) => APPLICATION_STAGE_ORDER.indexOf(a) - APPLICATION_STAGE_ORDER.indexOf(b)),
     remoteOnly: value.remoteOnly === true,
     visaSponsorship: value.visaSponsorship === true,
+    minimumSalary,
   };
 }
 
@@ -162,14 +195,23 @@ export function parseBoardFilters(
   storedRaw: string | null = null,
 ): BoardFilters {
   const hasUrlState = hasBoardFilterParams(search);
+  const stored = parseStoredBoardFilters(storedRaw);
   const base = hasUrlState
-    ? { ...DEFAULT_BOARD_FILTERS }
-    : parseStoredBoardFilters(storedRaw);
+    ? {
+        ...DEFAULT_BOARD_FILTERS,
+        collection: stored.collection,
+        stages: stored.stages,
+        sort:
+          stored.sort === "application-stage"
+            ? stored.sort
+            : DEFAULT_BOARD_FILTERS.sort,
+      }
+    : stored;
   const params = new URLSearchParams(search);
   if (!hasUrlState) return base;
 
-  const rawStages = csv(params.get("stages"));
   const rawLocations = csv(params.get("locations"));
+  const requestedSort = params.get("sort");
   return validatedFilters({
     ...base,
     tab: params.get("tab") === "new-grad" ? "new_grad" : "internship",
@@ -179,11 +221,13 @@ export function parseBoardFilters(
     locationIds: rawLocations,
     locationOrder: params.get("location-order") === "az" ? "alphabetical" : "popular",
     freshness: params.get("freshness") ?? "all",
-    collection: params.get("collection") ?? "all",
-    sort: params.get("sort") ?? "featured",
-    stages: rawStages,
+    sort:
+      requestedSort && requestedSort !== "application-stage"
+        ? requestedSort
+        : base.sort,
     remoteOnly: params.get("remote") === "1",
     visaSponsorship: params.get("visa") === "1",
+    minimumSalary: params.get("min-salary") ?? "any",
   });
 }
 
@@ -196,12 +240,58 @@ export function serializeBoardFilters(filters: BoardFilters): URLSearchParams {
   if (filters.locationIds.length) params.set("locations", filters.locationIds.join(","));
   if (filters.locationOrder === "alphabetical") params.set("location-order", "az");
   if (filters.freshness !== "all") params.set("freshness", filters.freshness);
-  if (filters.collection !== "all") params.set("collection", filters.collection);
-  if (filters.sort !== "featured") params.set("sort", filters.sort);
-  if (filters.stages.length) params.set("stages", filters.stages.join(","));
+  if (filters.sort !== "featured" && filters.sort !== "application-stage") {
+    params.set("sort", filters.sort);
+  }
   if (filters.remoteOnly) params.set("remote", "1");
   if (filters.visaSponsorship) params.set("visa", "1");
+  if (filters.minimumSalary !== "any") {
+    params.set("min-salary", filters.minimumSalary);
+  }
   return params;
+}
+
+/**
+ * A deterministic, share-safe jobs URL. Tracker stages and saved-only state
+ * stay in browser storage and can never enter this public URL.
+ */
+export function publicBoardUrl(
+  filters: BoardFilters,
+  pathname = "/jobs",
+): string {
+  const shareSafeFilters = {
+    ...filters,
+    locationIds: [...filters.locationIds].sort(),
+    collection: DEFAULT_BOARD_FILTERS.collection,
+    stages: [],
+    sort:
+      filters.sort === "application-stage"
+        ? DEFAULT_BOARD_FILTERS.sort
+        : filters.sort,
+  };
+  const query = serializeBoardFilters(shareSafeFilters).toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
+
+/**
+ * Normalizes an untrusted saved or shared URL to Timley's public job-filter
+ * allowlist. Unknown parameters, fragments, and private tracker filters drop.
+ */
+export function normalizePublicJobsUrl(value: string): string | null {
+  try {
+    const url = new URL(value, "https://timley.local");
+    if (
+      url.origin !== "https://timley.local" ||
+      url.pathname !== "/jobs" ||
+      url.hash
+    ) {
+      return null;
+    }
+    const filters = parseBoardFilters(url.search);
+    return publicBoardUrl(filters);
+  } catch {
+    return null;
+  }
 }
 
 export function boardUrl(
@@ -226,6 +316,24 @@ export function activeFilterCount(filters: BoardFilters): number {
     (filters.sort !== "featured" ? 1 : 0) +
     filters.stages.length +
     (filters.remoteOnly ? 1 : 0) +
-    (filters.visaSponsorship ? 1 : 0)
+    (filters.visaSponsorship ? 1 : 0) +
+    (filters.minimumSalary !== "any" ? 1 : 0)
+  );
+}
+
+export function publicBoardFilterCount(filters: BoardFilters): number {
+  return (
+    (filters.tab !== DEFAULT_BOARD_FILTERS.tab ? 1 : 0) +
+    (filters.query.trim() ? 1 : 0) +
+    (filters.major !== "all" || filters.niche !== "all" ? 1 : 0) +
+    filters.locationIds.length +
+    (filters.locationOrder !== DEFAULT_BOARD_FILTERS.locationOrder ? 1 : 0) +
+    (filters.freshness !== "all" ? 1 : 0) +
+    (filters.sort !== "featured" && filters.sort !== "application-stage"
+      ? 1
+      : 0) +
+    (filters.remoteOnly ? 1 : 0) +
+    (filters.visaSponsorship ? 1 : 0) +
+    (filters.minimumSalary !== "any" ? 1 : 0)
   );
 }

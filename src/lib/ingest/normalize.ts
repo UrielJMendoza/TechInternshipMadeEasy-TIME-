@@ -1,4 +1,8 @@
-import type { Category, NormalizedJob } from "../types";
+import type {
+  Category,
+  NormalizedJob,
+  SponsorshipStatus,
+} from "../types";
 import { sanitizeUsLocation } from "../usLocations";
 
 /** Strip emoji, flag markers, markdown bold and stray whitespace. */
@@ -122,28 +126,39 @@ function slug(s: string): string {
     .replace(/^-|-$/g, "");
 }
 
-// The same job appears across sources with cosmetic differences ("Varda" vs
-// "Varda Space", "San Mateo, CA" vs "San Mateo, California, United States",
-// "(Fall 2026)" vs "- Fall 2026"). The dedupe key aggressively normalizes all
-// three parts; display fields keep the original text.
-
+// Legal suffixes are safe to remove. Product or industry words are not: for
+// example, "Acme Labs" and "Acme" may be different employers.
 const COMPANY_SUFFIXES = new Set([
-  "inc", "llc", "corp", "co", "ltd", "plc", "company", "corporation",
-  "capital", "management", "trading", "group", "holdings", "partners",
-  "technologies", "technology", "labs", "space", "industries",
+  "inc", "incorporated", "llc", "llp", "corp", "corporation", "co", "company",
+  "ltd", "limited", "plc", "gmbh", "sa", "ag",
 ]);
 
-function companyKey(company: string): string {
+const COMPANY_ALIASES: Record<string, string> = {
+  "alphabet": "google",
+  "alphabet-google": "google",
+  "facebook": "meta",
+  "meta-platforms": "meta",
+  "amazon-web-services": "amazon",
+  "aws": "amazon",
+  "jpmorgan-chase": "jpmorgan",
+  "jp-morgan": "jpmorgan",
+  "jp-morgan-chase": "jpmorgan",
+  "the-walt-disney-company": "disney",
+};
+
+export function canonicalCompanyIdentity(company: string): string {
   const tokens = slug(company).split("-");
   while (tokens.length > 1 && COMPANY_SUFFIXES.has(tokens[tokens.length - 1])) {
     tokens.pop();
   }
-  return tokens.join("-");
+  const normalized = tokens.join("-");
+  return COMPANY_ALIASES[normalized] ?? normalized;
 }
 
-function titleKey(title: string): string {
+export function normalizedTitle(title: string): string {
   return slug(
     title
+      .replace(/\b(req(?:uisition)?|job)\s*(?:id|#|no\.?)?\s*[:#-]?\s*[a-z]*\d[\w-]*\b/gi, " ")
       .replace(/\b(summer|fall|spring|winter)\b/gi, " ")
       .replace(/\b20\d{2}\b/g, " "),
   );
@@ -180,7 +195,7 @@ const GEO_DROP = new Set([
   "washington", "west virginia", "wisconsin", "wyoming",
 ]);
 
-function locationKey(location: string): string {
+export function normalizedLocation(location: string): string {
   // First listed location only — sources disagree on how many they list.
   const first = location.split(";")[0].split("+")[0].replace(/[()]/g, ",");
   const segments = first
@@ -196,29 +211,238 @@ function locationKey(location: string): string {
 }
 
 export function dedupeKey(company: string, title: string, location: string): string {
-  return `${companyKey(company)}|${titleKey(title)}|${locationKey(location)}`;
+  return `${canonicalCompanyIdentity(company)}|${normalizedTitle(title)}|${normalizedLocation(location)}`;
 }
 
-/** Drop the tracking params some lists append to apply URLs. */
-export function cleanLink(url: string): string {
+const TRACKING_PARAMS = new Set([
+  "ref",
+  "src",
+  "source",
+  "sourceid",
+  "source_id",
+  "referrer",
+  "referral",
+  "lever-source",
+  "gh_src",
+  "gh_jid_source",
+  "campaign",
+  "campaignid",
+  "fbclid",
+  "gclid",
+  "mc_cid",
+  "mc_eid",
+]);
+
+const LOCALE_SEGMENT = /^[a-z]{2}(?:-[a-z]{2})?$/i;
+
+function isTrackingParam(name: string): boolean {
+  const lower = name.toLowerCase();
+  return lower.startsWith("utm_") || TRACKING_PARAMS.has(lower);
+}
+
+/**
+ * Produce a clean application destination while preserving parameters that
+ * may identify the requisition. Known ATS detail/apply and locale variants are
+ * collapsed only when the resulting URL remains a valid job page.
+ */
+export function canonicalizeApplicationUrl(url: string): string {
   try {
     const u = new URL(url);
     for (const p of [...u.searchParams.keys()]) {
-      if (p.startsWith("utm_") || p === "ref" || p === "src") u.searchParams.delete(p);
+      if (isTrackingParam(p)) u.searchParams.delete(p);
     }
+    u.hash = "";
+    u.hostname = u.hostname.toLowerCase().replace(/^www\./, "");
+
+    const segments = u.pathname.split("/").filter(Boolean);
+    const hostname = u.hostname;
+
+    if (
+      hostname === "boards.greenhouse.io" ||
+      hostname === "job-boards.greenhouse.io"
+    ) {
+      u.hostname = "job-boards.greenhouse.io";
+      if (segments.at(-1)?.toLowerCase() === "apply") segments.pop();
+      u.pathname = `/${segments.map((part, index) => index === 0 ? part.toLowerCase() : part).join("/")}`;
+    } else if (hostname === "jobs.lever.co") {
+      if (segments.at(-1)?.toLowerCase() === "apply") segments.pop();
+      u.pathname = `/${segments.map((part, index) => index === 0 ? part.toLowerCase() : part).join("/")}`;
+    } else if (hostname === "jobs.ashbyhq.com") {
+      if (segments.at(-1)?.toLowerCase() === "application") segments.pop();
+      u.pathname = `/${segments.map((part, index) => index === 0 ? part.toLowerCase() : part).join("/")}`;
+    } else if (hostname.endsWith(".myworkdayjobs.com")) {
+      const withoutLocale = segments.filter(
+        (part, index) => !(index === 0 && LOCALE_SEGMENT.test(part)),
+      );
+      u.pathname = `/${withoutLocale.join("/")}`;
+    }
+
+    u.pathname = u.pathname.replace(/\/{2,}/g, "/").replace(/\/$/, "") || "/";
+    u.searchParams.sort();
     return u.toString().replace(/\?$/, "");
   } catch {
-    return url;
+    return url.trim();
   }
 }
 
-function linkKey(link: string): string {
+/** Backward-compatible adapter name. */
+export function cleanLink(url: string): string {
+  return canonicalizeApplicationUrl(url);
+}
+
+export function applicationUrlKey(link: string): string {
+  try {
+    const u = new URL(canonicalizeApplicationUrl(link));
+    const knownAts =
+      u.hostname === "job-boards.greenhouse.io" ||
+      u.hostname === "jobs.lever.co" ||
+      u.hostname === "jobs.ashbyhq.com" ||
+      u.hostname.endsWith(".myworkdayjobs.com");
+    const path = knownAts ? u.pathname.toLowerCase() : u.pathname;
+    return `${u.hostname}${path}${u.search}`;
+  } catch {
+    return link.trim();
+  }
+}
+
+const EXTERNAL_ID_QUERY_KEYS = [
+  "gh_jid",
+  "job_id",
+  "jobid",
+  "jobId",
+  "postingId",
+  "positionId",
+];
+const REQUISITION_QUERY_KEYS = [
+  "requisitionId",
+  "requisition_id",
+  "reqId",
+  "req_id",
+];
+
+function cleanIdentifier(value: string | null | undefined): string | null {
+  const cleaned = value?.trim().replace(/[^a-z0-9._-]/gi, "");
+  return cleaned && cleaned.length >= 3 ? cleaned.toLowerCase() : null;
+}
+
+export function extractJobIdentifiers(link: string, title = ""): {
+  externalJobId: string | null;
+  requisitionId: string | null;
+} {
+  let externalJobId: string | null = null;
+  let requisitionId: string | null = null;
+
   try {
     const u = new URL(link);
-    return `${u.host.toLowerCase()}${u.pathname.replace(/\/$/, "")}${u.search}`;
+    for (const key of EXTERNAL_ID_QUERY_KEYS) {
+      externalJobId ??= cleanIdentifier(u.searchParams.get(key));
+    }
+    for (const key of REQUISITION_QUERY_KEYS) {
+      requisitionId ??= cleanIdentifier(u.searchParams.get(key));
+    }
+
+    const parts = u.pathname.split("/").filter(Boolean);
+    if (/greenhouse\.io$/i.test(u.hostname)) {
+      const jobsIndex = parts.findIndex((part) => part.toLowerCase() === "jobs");
+      externalJobId ??= cleanIdentifier(jobsIndex >= 0 ? parts[jobsIndex + 1] : null);
+    } else if (/jobs\.lever\.co$/i.test(u.hostname)) {
+      externalJobId ??= cleanIdentifier(parts[1]);
+    } else if (/jobs\.ashbyhq\.com$/i.test(u.hostname)) {
+      externalJobId ??= cleanIdentifier(parts[1]);
+    } else if (/\.myworkdayjobs\.com$/i.test(u.hostname)) {
+      const workdayId = u.pathname.match(/[_/-]([a-z]{0,4}\d{3,}[a-z0-9-]*)\/?$/i)?.[1];
+      requisitionId ??= cleanIdentifier(workdayId);
+    }
   } catch {
-    return link;
+    // Invalid URLs remain usable as display values but supply no identity.
   }
+
+  const titleReq = title.match(
+    /\b(?:req(?:uisition)?|job)\s*(?:id|#|no\.?)?\s*[:#-]?\s*([a-z]{0,4}\d{3,}[a-z0-9-]*)\b/i,
+  )?.[1];
+  requisitionId ??= cleanIdentifier(titleReq);
+
+  return { externalJobId, requisitionId };
+}
+
+function hashIdentity(input: string): string {
+  const fnv = (value: string, seed: number): string => {
+    let hash = seed;
+    for (let index = 0; index < value.length; index += 1) {
+      hash ^= value.charCodeAt(index);
+      hash = Math.imul(hash, 0x01000193);
+    }
+    return (hash >>> 0).toString(36).padStart(7, "0");
+  };
+  let reversed = "";
+  for (let index = input.length - 1; index >= 0; index -= 1) {
+    reversed += input[index];
+  }
+  return `${fnv(input, 0x811c9dc5)}${fnv(reversed, 0x9e3779b9)}`;
+}
+
+function sponsorshipEvidence(value: string | null): {
+  status: SponsorshipStatus;
+  confidence: number | null;
+} {
+  const normalized = value?.trim().toLowerCase() ?? "";
+  if (!normalized) return { status: "unknown", confidence: null };
+  if (/citizen|clearance|work authorization restriction/.test(normalized)) {
+    return { status: "restricted", confidence: 1 };
+  }
+  if (/does not|no[- ]sponsorship|not sponsor|without sponsorship/.test(normalized)) {
+    return { status: "not-offered", confidence: 1 };
+  }
+  if (/offers?|sponsor|h-?1b|visa/.test(normalized)) {
+    return { status: "confirmed", confidence: 1 };
+  }
+  return { status: "unknown", confidence: null };
+}
+
+function enrichTrustFields(job: NormalizedJob): NormalizedJob {
+  const canonicalUrl = canonicalizeApplicationUrl(job.link);
+  const canonicalCompany = canonicalCompanyIdentity(job.company);
+  const title = normalizedTitle(job.title);
+  const location = normalizedLocation(job.location);
+  const identifiers = extractJobIdentifiers(canonicalUrl, job.title);
+  const sponsorship = sponsorshipEvidence(job.sponsorship);
+  const urlKey = applicationUrlKey(canonicalUrl);
+  const postingIdentity =
+    job.posted_date && !identifiers.externalJobId && !identifiers.requisitionId
+      ? `${canonicalCompany}|${title}|${location}|${job.posted_date}`
+      : null;
+  const strongestIdentity =
+    (identifiers.requisitionId
+      ? `req|${canonicalCompany}|${identifiers.requisitionId}`
+      : null) ??
+    (identifiers.externalJobId
+      ? `external|${canonicalCompany}|${identifiers.externalJobId}`
+      : null) ??
+    (urlKey ? `url|${urlKey}` : null) ??
+    (postingIdentity ? `posting|${postingIdentity}` : null) ??
+    `source|${job.source}|${canonicalCompany}|${title}|${location}`;
+  const canonicalRecordKey = `job_${hashIdentity(strongestIdentity)}`;
+
+  return {
+    ...job,
+    link: canonicalUrl,
+    canonical_company: canonicalCompany,
+    canonical_url: canonicalUrl,
+    external_job_id: identifiers.externalJobId,
+    requisition_id: identifiers.requisitionId,
+    normalized_title: title,
+    normalized_location: location,
+    content_fingerprint: job.content_fingerprint ?? null,
+    verification_status: "source-observed",
+    pay_evidence: job.salary?.trim() ? "employer-listed" : "unknown",
+    sponsorship_status: sponsorship.status,
+    sponsorship_source:
+      sponsorship.status === "unknown" ? null : job.source,
+    sponsorship_confidence: sponsorship.confidence,
+    duplicate_group: `dup_${hashIdentity(strongestIdentity)}`,
+    canonical_record_key: canonicalRecordKey,
+    dedupe_key: canonicalRecordKey,
+  };
 }
 
 /**
@@ -229,7 +453,10 @@ function linkKey(link: string): string {
  */
 export function dedupeJobs(jobs: NormalizedJob[]): NormalizedJob[] {
   const byLink = new Map<string, NormalizedJob>();
-  const byKey = new Map<string, NormalizedJob>();
+  const byExternalId = new Map<string, NormalizedJob>();
+  const byRequisition = new Map<string, NormalizedJob>();
+  const byFingerprint = new Map<string, NormalizedJob>();
+  const byPostingIdentity = new Map<string, NormalizedJob>();
   const out: NormalizedJob[] = [];
 
   const merge = (into: NormalizedJob, from: NormalizedJob) => {
@@ -237,17 +464,55 @@ export function dedupeJobs(jobs: NormalizedJob[]): NormalizedJob[] {
     into.season ??= from.season;
     into.sponsorship ??= from.sponsorship;
     into.posted_date ??= from.posted_date;
+    into.content_fingerprint ??= from.content_fingerprint;
   };
 
-  for (const job of jobs) {
-    const link = linkKey(job.link);
-    const existing = byLink.get(link) ?? byKey.get(job.dedupe_key);
+  for (const input of jobs) {
+    const job = enrichTrustFields(input);
+    const company = job.canonical_company!;
+    const link = applicationUrlKey(job.canonical_url!);
+    const externalKey = job.external_job_id
+      ? `${company}|${job.external_job_id}`
+      : null;
+    const requisitionKey = job.requisition_id
+      ? `${company}|${job.requisition_id}`
+      : null;
+    const fingerprintKey = job.content_fingerprint
+      ? `${company}|${job.content_fingerprint}`
+      : null;
+    const postingKey =
+      job.posted_date && !externalKey && !requisitionKey
+        ? `${company}|${job.normalized_title}|${job.normalized_location}|${job.posted_date}`
+        : null;
+
+    const linkMatch = byLink.get(link);
+    const conflictingExternalIds =
+      linkMatch?.external_job_id &&
+      job.external_job_id &&
+      linkMatch.external_job_id !== job.external_job_id;
+    const conflictingRequisitionIds =
+      linkMatch?.requisition_id &&
+      job.requisition_id &&
+      linkMatch.requisition_id !== job.requisition_id;
+    const compatibleLinkMatch =
+      conflictingExternalIds || conflictingRequisitionIds
+        ? undefined
+        : linkMatch;
+    const existing =
+      compatibleLinkMatch ??
+      (externalKey ? byExternalId.get(externalKey) : undefined) ??
+      (requisitionKey ? byRequisition.get(requisitionKey) : undefined) ??
+      (fingerprintKey ? byFingerprint.get(fingerprintKey) : undefined) ??
+      (postingKey ? byPostingIdentity.get(postingKey) : undefined);
     if (existing) {
       merge(existing, job);
       continue;
     }
     byLink.set(link, job);
-    byKey.set(job.dedupe_key, job);
+    if (externalKey) byExternalId.set(externalKey, job);
+    if (requisitionKey) byRequisition.set(requisitionKey, job);
+    if (fingerprintKey) byFingerprint.set(fingerprintKey, job);
+    if (postingKey) byPostingIdentity.set(postingKey, job);
     out.push(job);
   }
   return out;
@@ -277,11 +542,10 @@ export function applyPostFilters(jobs: NormalizedJob[]): NormalizedJob[] {
 
     const location = sanitized.display;
     return [
-      {
+      enrichTrustFields({
         ...job,
         location,
-        dedupe_key: dedupeKey(job.company, job.title, location),
-      },
+      }),
     ];
   });
 }

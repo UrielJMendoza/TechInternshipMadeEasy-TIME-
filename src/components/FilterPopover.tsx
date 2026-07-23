@@ -41,6 +41,9 @@ export function FilterPopover({
     const onPointerDown = (event: PointerEvent) => {
       if (!rootRef.current?.contains(event.target as Node)) close();
     };
+    const onFocusIn = (event: FocusEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) close();
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       event.preventDefault();
@@ -48,9 +51,11 @@ export function FilterPopover({
       triggerRef.current?.focus();
     };
     document.addEventListener("pointerdown", onPointerDown);
+    document.addEventListener("focusin", onFocusIn);
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("pointerdown", onPointerDown);
+      document.removeEventListener("focusin", onFocusIn);
       document.removeEventListener("keydown", onKeyDown);
     };
   }, [open]);
@@ -66,15 +71,18 @@ export function FilterPopover({
         aria-expanded={open}
         aria-controls={open ? id : undefined}
         onClick={() => setOpen((current) => !current)}
-        className={`inline-flex min-h-10 items-center gap-2 rounded-xl border px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent disabled:cursor-not-allowed disabled:opacity-45 ${
+        className={`ui-button ui-button--sm min-h-10 font-semibold ${
           activeCount > 0
-            ? "border-accent/45 bg-accent/10 text-accent"
-            : "border-border bg-surface text-muted hover:border-border-strong hover:text-fg"
+            ? "ui-selected"
+            : "ui-button--secondary"
         }`}
       >
         <span>{label}</span>
         {activeCount > 0 && (
-          <span className="inline-flex size-5 items-center justify-center rounded-full bg-accent text-[11px] font-bold text-white">
+          <span
+            key={activeCount}
+            className="motion-value-update inline-flex size-5 items-center justify-center rounded-md bg-accent text-[11px] font-bold text-on-accent"
+          >
             {activeCount}
           </span>
         )}
@@ -85,7 +93,7 @@ export function FilterPopover({
           id={id}
           role="dialog"
           aria-label={label}
-          className="absolute left-0 top-[calc(100%+0.5rem)] z-[80] min-w-64 rounded-2xl border border-border-strong bg-raised p-2 shadow-[0_18px_50px_rgba(0,0,0,0.72)]"
+          className="ui-popover motion-filter-panel absolute right-0 top-[calc(100%+0.5rem)] z-[var(--layer-popover)] min-w-64 max-w-[calc(100vw-2rem)] p-2"
         >
           {children(close)}
         </div>

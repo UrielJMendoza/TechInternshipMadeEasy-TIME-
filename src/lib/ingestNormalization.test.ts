@@ -29,8 +29,10 @@ test("post filters sanitize mixed locations and recompute keys without mutating 
   assert.equal(input.location, "London, UK; Chicago, IL");
   assert.equal(input.dedupe_key, "old-key");
   assert.equal(result.location, "Chicago, IL");
+  assert.match(result.dedupe_key, /^job_/);
+  assert.equal(result.canonical_record_key, result.dedupe_key);
   assert.equal(
-    result.dedupe_key,
+    `${result.canonical_company}|${result.normalized_title}|${result.normalized_location}`,
     dedupeKey(result.company, result.title, "Chicago, IL"),
   );
 });

@@ -36,34 +36,29 @@ export function QuickToggle({
         aria-checked={checked}
         aria-describedby={description ? descriptionId : undefined}
         onClick={() => onChange(!checked)}
-        className={`inline-flex min-h-10 items-center gap-2 rounded-full border px-3 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
+        className={`ui-button ui-button--sm min-h-10 ${
           checked
-            ? "border-accent/45 bg-accent/10 text-accent"
-            : "border-border bg-surface text-muted hover:border-border-strong hover:text-fg"
+            ? "ui-selected"
+            : "ui-button--secondary"
         }`}
       >
         <span
           aria-hidden
-          className={`relative h-4 w-7 rounded-full transition-colors motion-reduce:transition-none ${
-            checked ? "bg-accent" : "bg-border-strong"
-          }`}
-        >
-          <span
-            className={`absolute top-0.5 size-3 rounded-full bg-white transition-transform motion-reduce:transition-none ${
-              checked ? "translate-x-3.5" : "translate-x-0.5"
-            }`}
-          />
-        </span>
+          data-checked={checked}
+          className="ui-switch motion-reduce:transition-none"
+        />
         <span>{label}</span>
         {typeof count === "number" && (
-          <span className="font-medium text-current/65">{count}</span>
+          <span key={count} className="motion-value-update font-medium text-current">
+            {count}
+          </span>
         )}
       </button>
       {description && (
         <span
           id={descriptionId}
           role="tooltip"
-          className="pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-[95] hidden w-64 rounded-xl border border-border-strong bg-raised px-3 py-2 text-xs font-medium leading-relaxed text-fg shadow-[0_14px_38px_rgba(0,0,0,0.7)] group-hover/help:block group-focus-within/help:block lg:left-1/2 lg:right-auto lg:-translate-x-1/2"
+          className="ui-popover pointer-events-none absolute right-0 top-[calc(100%+0.5rem)] z-[var(--layer-tooltip)] hidden w-64 px-3 py-2 text-xs font-medium leading-relaxed group-hover/help:block group-focus-within/help:block lg:left-1/2 lg:right-auto lg:-translate-x-1/2"
         >
           {description}
         </span>
@@ -96,7 +91,7 @@ export function LocationFilterMenu({
     >
       {() => (
         <>
-          <div className="mb-2 flex rounded-xl bg-surface p-1" role="group" aria-label="Order locations">
+          <div className="ui-tabs mb-2 flex w-full" role="group" aria-label="Order locations">
             {(
               [
                 ["popular", "Most jobs"],
@@ -108,9 +103,7 @@ export function LocationFilterMenu({
                 type="button"
                 aria-pressed={order === value}
                 onClick={() => onOrderChange(value)}
-                className={`min-h-8 flex-1 rounded-lg px-2 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
-                  order === value ? "bg-raised text-fg" : "text-muted hover:text-fg"
-                }`}
+                className="ui-tab min-h-8 flex-1 px-2 text-xs"
               >
                 {label}
               </button>
@@ -122,10 +115,10 @@ export function LocationFilterMenu({
               return (
                 <label
                   key={option.id}
-                  className={`flex min-h-10 items-center gap-2.5 rounded-xl px-2.5 text-sm ${
+                  className={`flex min-h-10 items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors focus-within:bg-raised focus-within:text-fg ${
                     option.disabled
-                      ? "cursor-not-allowed text-faint/65"
-                      : "cursor-pointer text-muted hover:bg-white/[0.05] hover:text-fg"
+                      ? "cursor-not-allowed text-faint"
+                      : "cursor-pointer text-muted hover:bg-raised hover:text-fg"
                   }`}
                 >
                   <input
@@ -136,7 +129,12 @@ export function LocationFilterMenu({
                     className="size-4 accent-[var(--accent)]"
                   />
                   <span className="min-w-0 flex-1 truncate">{option.label}</span>
-                  <span className="text-xs font-medium text-faint">{option.count}</span>
+                  <span
+                    key={option.count}
+                    className="motion-value-update text-xs font-medium text-faint"
+                  >
+                    {option.count}
+                  </span>
                 </label>
               );
             })}
@@ -145,7 +143,7 @@ export function LocationFilterMenu({
             <button
               type="button"
               onClick={() => selected.forEach(onToggle)}
-              className="mt-2 min-h-9 w-full rounded-xl text-xs font-semibold text-muted hover:bg-white/[0.05] hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+              className="ui-button ui-button--quiet ui-button--sm mt-2 w-full"
             >
               Clear locations
             </button>
@@ -176,7 +174,7 @@ export function StageFilterMenu({
             {APPLICATION_STAGES.map((stage) => (
               <label
                 key={stage}
-                className="flex min-h-10 cursor-pointer items-center gap-2.5 rounded-xl px-2.5 text-sm text-muted hover:bg-white/[0.05] hover:text-fg"
+                className="flex min-h-10 cursor-pointer items-center gap-2.5 rounded-lg px-2.5 text-sm text-muted transition-colors hover:bg-raised hover:text-fg focus-within:bg-raised focus-within:text-fg"
               >
                 <input
                   type="checkbox"
@@ -188,7 +186,12 @@ export function StageFilterMenu({
                 <span className="min-w-0 flex-1 truncate">
                   {APPLICATION_STAGE_LABELS[stage]}
                 </span>
-                <span className="text-xs font-medium text-faint">{counts[stage]}</span>
+                <span
+                  key={counts[stage]}
+                  className="motion-value-update text-xs font-medium text-faint"
+                >
+                  {counts[stage]}
+                </span>
               </label>
             ))}
           </div>
@@ -196,7 +199,7 @@ export function StageFilterMenu({
             <button
               type="button"
               onClick={() => selected.forEach(onToggle)}
-              className="mt-2 min-h-9 w-full rounded-xl text-xs font-semibold text-muted hover:bg-white/[0.05] hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+              className="ui-button ui-button--quiet ui-button--sm mt-2 w-full"
             >
               Clear stages
             </button>
@@ -209,13 +212,13 @@ export function StageFilterMenu({
 
 export function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className="inline-flex min-h-8 items-center gap-1 rounded-full border border-border bg-surface pl-2.5 pr-1 text-xs font-semibold text-muted">
+    <span className="inline-flex min-h-8 items-center gap-1 rounded-lg border border-border bg-surface pl-2.5 pr-1 text-xs font-semibold text-muted shadow-[var(--shadow-control)]">
       {label}
       <button
         type="button"
         aria-label={`Remove ${label} filter`}
         onClick={onRemove}
-        className="flex size-7 items-center justify-center rounded-full text-faint hover:bg-raised hover:text-fg focus-visible:outline-2 focus-visible:outline-accent"
+        className="ui-button ui-button--quiet size-7 min-h-7 rounded-md p-0 text-faint"
       >
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
           <path d="M6 6l12 12M18 6 6 18" />

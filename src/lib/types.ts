@@ -1,5 +1,21 @@
 export type RoleType = "internship" | "new_grad";
 
+export type VerificationStatus =
+  | "source-observed"
+  | "destination-reachable"
+  | "destination-closed"
+  | "unchecked";
+
+export type ExpirationStatus = "active" | "possibly-closed" | "expired";
+
+export type PayEvidence = "employer-listed" | "timley-estimate" | "unknown";
+
+export type SponsorshipStatus =
+  | "confirmed"
+  | "not-offered"
+  | "restricted"
+  | "unknown";
+
 export type Category =
   | "software"
   | "cloud"
@@ -36,6 +52,20 @@ export interface NormalizedJob {
   sponsorship: string | null;
   posted_date: string | null; // ISO yyyy-mm-dd
   dedupe_key: string;
+  canonical_company?: string;
+  canonical_url?: string;
+  external_job_id?: string | null;
+  requisition_id?: string | null;
+  normalized_title?: string;
+  normalized_location?: string;
+  content_fingerprint?: string | null;
+  verification_status?: VerificationStatus;
+  pay_evidence?: PayEvidence;
+  sponsorship_status?: SponsorshipStatus;
+  sponsorship_source?: string | null;
+  sponsorship_confidence?: number | null;
+  duplicate_group?: string;
+  canonical_record_key?: string;
 }
 
 export interface Internship {
@@ -53,7 +83,25 @@ export interface Internship {
   posted_date: string | null;
   first_seen_at: string;
   last_seen_at: string;
+  last_verified_at?: string | null;
   is_active: boolean;
+  original_source?: string;
+  canonical_company?: string;
+  canonical_url?: string;
+  external_job_id?: string | null;
+  requisition_id?: string | null;
+  normalized_title?: string;
+  normalized_location?: string;
+  content_fingerprint?: string | null;
+  verification_status?: VerificationStatus;
+  expiration_status?: ExpirationStatus;
+  closed_at?: string | null;
+  pay_evidence?: PayEvidence;
+  sponsorship_status?: SponsorshipStatus;
+  sponsorship_source?: string | null;
+  sponsorship_confidence?: number | null;
+  duplicate_group?: string | null;
+  canonical_record_key?: string | null;
 }
 
 export const CATEGORY_LABELS: Record<Category, string> = {

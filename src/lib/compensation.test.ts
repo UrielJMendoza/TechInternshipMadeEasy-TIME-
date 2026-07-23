@@ -24,7 +24,7 @@ function fixtureJob(overrides: Partial<Internship> = {}): Internship {
   };
 }
 
-test("source-listed pay keeps the source value without claiming verification", () => {
+test("employer-listed pay keeps the supplied value and requires destination confirmation", () => {
   const compensation = compensationFor(
     fixtureJob({ salary: "  $42/hr  " }),
   );
@@ -34,10 +34,10 @@ test("source-listed pay keeps the source value without claiming verification", (
   assert.equal(compensation.estimated, false);
   assert.equal(
     compensation.disclosure,
-    "Pay shown in the source listing; verify details before applying",
+    "Pay was explicitly included with the upstream listing and is stored as employer-listed evidence; confirm the current amount and terms on the application page",
   );
   assert.equal(compensation.title, compensation.disclosure);
-  assert.doesNotMatch(compensation.disclosure, /verified|employer.reported/i);
+  assert.match(compensation.disclosure, /confirm/i);
 });
 
 test("missing pay is explicitly marked as a broad category estimate", () => {

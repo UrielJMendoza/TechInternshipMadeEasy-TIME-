@@ -1,6 +1,12 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
+import { AdvancedFilterPanel } from "@/components/AdvancedFilterPanel";
 import {
   APPLICATION_STAGE_LABELS,
   APPLICATION_STAGES,
@@ -9,22 +15,28 @@ import {
 } from "@/lib/applicationTracking";
 import {
   activeFilterCount,
+  publicBoardFilterCount,
+  publicBoardUrl,
   type BoardFilters,
-  type Collection,
   type MajorId,
   type SortKey,
   type ViewMode,
 } from "@/lib/boardFilterState";
-import { SORT_OPTIONS } from "@/lib/boardOptions";
 import {
-  filterAndSortJobs,
-} from "@/lib/jobFilters";
+  MINIMUM_SALARY_OPTIONS,
+  SORT_OPTIONS,
+} from "@/lib/boardOptions";
+import { filterAndSortJobs } from "@/lib/jobFilters";
 import {
   PHYSICAL_LOCATION_FACETS,
   buildLocationFacetOptions,
   countRemoteJobs,
   type PhysicalLocationFacetId,
 } from "@/lib/jobLocations";
+import {
+  missingJobEvidence,
+  similarJobsFor,
+} from "@/lib/jobPresentation";
 import { MAJORS, MAJORS_BY_ID } from "@/lib/jobTaxonomy";
 import {
   HOT_DAYS,
@@ -43,10 +55,20 @@ import {
   FilterChip,
   LocationFilterMenu,
   QuickToggle,
-  StageFilterMenu,
 } from "@/components/BoardFilterControls";
-import { JobCard, JOB_GRID } from "@/components/JobCard";
+import { JobCard } from "@/components/JobCard";
+import { JobDetailsDrawer } from "@/components/JobDetailsDrawer";
+import { JobTable } from "@/components/JobTable";
 import { MobileFilterSheet } from "@/components/MobileFilterSheet";
+import { SavedSearchButton } from "@/components/SavedSearchButton";
+import { ShareControls } from "@/components/ShareControls";
+import {
+  trackFilter,
+  trackJobOpened,
+  trackJobSaved,
+  trackSearch,
+  trackStageChanged,
+} from "@/lib/analytics";
 
 const PAGE_SIZE = 30;
 const LOCATION_LABELS = new Map<PhysicalLocationFacetId, string>(
@@ -60,14 +82,17 @@ function isViewMode(value: string): value is ViewMode {
 export function Board({
   jobs,
   loadError,
+  partialData,
   generatedAt,
   updatedAt,
 }: {
   jobs: Internship[];
   loadError: boolean;
+  partialData: boolean;
   generatedAt: string;
   updatedAt: string | null;
 }) {
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const now = useMemo(() => new Date(generatedAt).getTime(), [generatedAt]);
   const { filters, ready: filtersReady, updateFilters, clearFilters } =
     useBoardFilters();
@@ -77,12 +102,14 @@ export function Board({
     isViewMode,
   );
   const [saved, toggleSaved] = usePersistentSet("timley:saved");
-  const { records, updateStage } = useApplicationTracking();
+  const { records, updateStage, ensureSaved } = useApplicationTracking(jobs);
   const [pagination, setPagination] = useState({
     key: "",
     count: PAGE_SIZE,
   });
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
+  const [selectedSnapshot, setSelectedSnapshot] =
+    useState<Internship | null>(null);
   const [stageAnnouncement, setStageAnnouncement] = useState("");
   const mobileSearchRef = useRef<HTMLInputElement>(null);
   const desktopSearchRef = useRef<HTMLInputElement>(null);
@@ -100,6 +127,7 @@ export function Board({
     stages,
     remoteOnly,
     visaSponsorship,
+    minimumSalary,
   } = filters;
 
   useEffect(() => {
@@ -112,8 +140,10 @@ export function Board({
         target?.getAttribute("contenteditable") === "true";
       if (event.key === "/" && !isTyping) {
         event.preventDefault();
-        const visibleSearch = [mobileSearchRef.current, desktopSearchRef.current]
-          .find((input) => input && input.getClientRects().length > 0);
+        const visibleSearch = [
+          mobileSearchRef.current,
+          desktopSearchRef.current,
+        ].find((input) => input && input.getClientRects().length > 0);
         visibleSearch?.focus();
       }
     };
@@ -181,38 +211,54 @@ export function Board({
     [records, tabJobs],
   );
 
-  const filtered = useMemo(() => {
-    return filterAndSortJobs(tabJobs, {
-      query,
-      locationIds,
-      remoteOnly,
-      visaSponsorship,
-      stages,
-      freshness,
+  const filtered = useMemo(
+    () =>
+      filterAndSortJobs(tabJobs, {
+        query,
+        locationIds,
+        remoteOnly,
+        visaSponsorship,
+        minimumSalary,
+        stages,
+        freshness,
+        collection,
+        sort,
+        saved,
+        applications: records,
+        now,
+        matchesMajor: activeMajor.matches,
+        matchesNiche: activeNiche.matches,
+      }),
+    [
+      activeMajor,
+      activeNiche,
       collection,
-      sort,
-      saved,
-      applications: records,
+      freshness,
+      locationIds,
+      minimumSalary,
       now,
-      matchesMajor: activeMajor.matches,
-      matchesNiche: activeNiche.matches,
-    });
-  }, [
-    activeMajor,
-    activeNiche,
-    collection,
-    freshness,
-    locationIds,
-    now,
-    query,
-    records,
-    remoteOnly,
-    saved,
-    sort,
-    stages,
-    tabJobs,
-    visaSponsorship,
-  ]);
+      query,
+      records,
+      remoteOnly,
+      saved,
+      sort,
+      stages,
+      tabJobs,
+      visaSponsorship,
+    ],
+  );
+
+  useEffect(() => {
+    if (!filtersReady || !query.trim()) return;
+    const timeout = window.setTimeout(() => {
+      trackSearch({
+        roleType: tab,
+        queryLength: query.trim().length,
+        resultCount: filtered.length,
+      });
+    }, 650);
+    return () => window.clearTimeout(timeout);
+  }, [filtered.length, filtersReady, query, tab]);
 
   const paginationKey = useMemo(
     () => filtered.map((job) => job.id).join("\u001f"),
@@ -230,12 +276,71 @@ export function Board({
   const savedInTab = tabJobs.filter((job) => saved.has(job.link)).length;
   const filterCount = activeFilterCount(filters);
   const dense = view === "table";
+  const partialListingCount = useMemo(
+    () => jobs.filter((job) => missingJobEvidence(job).length > 0).length,
+    [jobs],
+  );
+
+  const selectedJob = useMemo(() => {
+    if (!selectedSnapshot) return null;
+    return (
+      jobs.find((job) => job.id === selectedSnapshot.id) ?? {
+        ...selectedSnapshot,
+        is_active: false,
+      }
+    );
+  }, [jobs, selectedSnapshot]);
+  const similarJobs = useMemo(
+    () => (selectedJob ? similarJobsFor(selectedJob, jobs) : []),
+    [jobs, selectedJob],
+  );
 
   const update = (
     changes: Partial<BoardFilters>,
     mode: "push" | "replace" = "push",
-  ) => updateFilters(changes, mode);
-
+  ) => {
+    updateFilters(changes, mode);
+    const keys = Object.keys(changes) as Array<keyof BoardFilters>;
+    const tracked = new Set<string>();
+    for (const key of keys) {
+      if (key === "query") continue;
+      const filter =
+        key === "tab"
+          ? "role-type"
+          : key === "major" || key === "niche"
+            ? "taxonomy"
+            : key === "locationIds" || key === "locationOrder"
+              ? "location"
+              : key === "remoteOnly"
+                ? "remote"
+                : key === "visaSponsorship"
+                  ? "sponsorship"
+                  : key === "minimumSalary"
+                    ? "pay"
+                    : key === "freshness"
+                      ? "freshness"
+                      : key === "sort"
+                        ? "sort"
+                        : key === "collection"
+                          ? "saved-only"
+                          : key === "stages"
+                            ? "application-stage"
+                            : null;
+      if (!filter || tracked.has(filter)) continue;
+      tracked.add(filter);
+      const value = changes[key];
+      const selectionCount = Array.isArray(value)
+        ? value.length
+        : value === false || value === null || value === undefined
+          ? 0
+          : 1;
+      trackFilter({
+        filter,
+        enabled: selectionCount > 0,
+        selectionCount,
+      });
+    }
+  };
   const switchTab = (nextTab: RoleType) => update({ tab: nextTab });
   const selectMajor = (nextMajor: MajorId) =>
     update({ major: nextMajor, niche: "all" });
@@ -252,7 +357,46 @@ export function Board({
         : [...stages, stage],
     });
   const setRemoteOnly = (next: boolean) =>
-    update({ remoteOnly: next, locationIds: next ? [] : locationIds });
+    update({
+      remoteOnly: next,
+      locationIds: next ? [] : locationIds,
+    });
+  const changeStage = (job: Internship, stage: ApplicationStage) => {
+    const previousStage = getApplicationStage(records, job.link);
+    updateStage(job.link, stage, job);
+    if (stage === "saved" && !saved.has(job.link)) toggleSaved(job.link);
+    setStageAnnouncement(
+      `${job.company} moved to ${APPLICATION_STAGE_LABELS[stage]}.`,
+    );
+    trackStageChanged({
+      surface: "job-board",
+      from: previousStage,
+      to: stage,
+    });
+  };
+  const toggleJobSaved = (job: Internship) => {
+    const nextSaved = !saved.has(job.link);
+    if (nextSaved) ensureSaved(job.link, job);
+    toggleSaved(job.link);
+    trackJobSaved({
+      surface: "job-board",
+      roleType: job.role_type,
+      category: job.category,
+      saved: nextSaved,
+    });
+  };
+  const openDetails = (job: Internship) => {
+    setSelectedSnapshot(job);
+    trackJobOpened({
+      surface: "job-board",
+      roleType: job.role_type,
+      category: job.category,
+    });
+  };
+  const refresh = () => {
+    setIsRefreshing(true);
+    window.setTimeout(() => window.location.reload(), 80);
+  };
 
   const onRoleTabKeyDown = (
     event: React.KeyboardEvent<HTMLButtonElement>,
@@ -278,34 +422,56 @@ export function Board({
   );
 
   return (
-    <div>
-      <header className="flex flex-wrap items-end justify-between gap-3">
+    <div className="jobs-app">
+      <header className="flex flex-wrap items-start justify-between gap-4 border-b border-border pb-5">
         <div>
-          <h1 className="text-3xl font-extrabold tracking-tight">
-            timley<span className="text-accent">.</span>
+          <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-accent-hover">
+            Job discovery
+          </p>
+          <h1 className="mt-1.5 text-3xl font-extrabold tracking-[-0.04em] text-fg sm:text-4xl">
+            Browse opportunities
           </h1>
-          <p className="mt-1.5 text-[15px] text-muted">
-            Every 2027 tech internship &amp; new grad role in the US — live,
-            deduped, refreshed every 2 hours.
+          <p className="mt-1.5 max-w-2xl text-sm leading-relaxed text-muted">
+            Search active internship and new-grad listings, inspect the source
+            evidence, and keep applications organized.
           </p>
         </div>
-        <p className="text-[13px] font-medium text-faint">
-          {jobs.length} open roles
-          {updatedAt && <> · updated {relativeTimestamp(updatedAt, now)}</>}
-        </p>
+        <div className="flex items-center gap-2">
+          <div className="ui-card hidden min-w-44 px-3.5 py-2.5 text-xs font-semibold text-faint sm:block">
+            <p>
+              <span
+                key={jobs.length}
+                className="motion-value-update font-extrabold text-fg"
+              >
+                {jobs.length}
+              </span>{" "}
+              active listings
+            </p>
+            <p className="mt-0.5">
+              {updatedAt
+                ? `Last source observation ${relativeTimestamp(updatedAt, now)}`
+                : "Source observation unavailable"}
+            </p>
+          </div>
+          <button
+            type="button"
+            aria-busy={isRefreshing}
+            onClick={refresh}
+            className="ui-button ui-button--secondary"
+          >
+            <RefreshIcon />
+            <span>{isRefreshing ? "Refreshing" : "Refresh"}</span>
+          </button>
+        </div>
       </header>
 
       <div
         data-sticky-toolbar
         data-testid="job-toolbar"
-        className="sticky top-0 z-50 isolate -mx-4 mt-8 border-b border-border/60 bg-bg px-4 pt-3 pb-3 shadow-[0_14px_28px_rgba(0,0,0,0.82)] sm:-mx-6 sm:px-6"
+        className="sticky top-[4.75rem] z-[var(--layer-sticky)] isolate -mx-4 mt-5 border-y border-border bg-bg/95 px-4 py-3 shadow-[var(--shadow-sticky)] backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"
       >
-        <div className="flex items-center justify-between gap-2">
-          <div
-            className="inline-flex min-w-0 rounded-full border border-border bg-surface p-1"
-            role="tablist"
-            aria-label="Role type"
-          >
+        <div className="flex items-center justify-between gap-3">
+          <div className="ui-tabs" role="tablist" aria-label="Role type">
             {(
               [
                 ["internship", "Internships", internCount],
@@ -322,96 +488,54 @@ export function Board({
                 aria-controls="job-results"
                 onKeyDown={(event) => onRoleTabKeyDown(event, key)}
                 onClick={() => switchTab(key)}
-                className={`rounded-full px-3 py-1.5 text-sm font-semibold whitespace-nowrap transition-colors focus-visible:outline-2 focus-visible:outline-accent sm:px-4 ${
-                  tab === key ? "bg-fg text-bg" : "text-muted hover:text-fg"
-                }`}
+                className="ui-tab whitespace-nowrap sm:px-4"
               >
                 {label}
-                <span
-                  className={`ml-1.5 text-xs font-medium ${
-                    tab === key ? "text-bg/60" : "text-faint"
-                  }`}
-                >
+                <span className="ml-1.5 text-xs font-medium text-current">
                   {count}
                 </span>
               </button>
             ))}
           </div>
-
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="hidden rounded-full border border-border bg-surface p-1 lg:inline-flex">
-              {(
-                [
-                  ["all", "All", null],
-                  ["hot", `Hot ${hotCount}`, "hot"],
-                  ["new", `New ${newCount}`, "new"],
-                ] as const
-              ).map(([key, label, tone]) => (
-                <button
-                  key={key}
-                  type="button"
-                  aria-pressed={freshness === key}
-                  onClick={() => update({ freshness: key })}
-                  className={`rounded-full px-3.5 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
-                    freshness === key
-                      ? tone === "hot"
-                        ? "bg-hot-soft text-hot"
-                        : tone === "new"
-                          ? "bg-new-soft text-new"
-                          : "bg-raised text-fg"
-                      : "text-muted hover:text-fg"
-                  }`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
-            <span className="hidden lg:inline-flex">
-              <ViewToggle view={view} onChange={setView} />
-            </span>
-          </div>
+          <p className="hidden text-xs font-medium text-faint md:block">
+            Press <kbd className="rounded border border-border bg-surface px-1.5 py-0.5 font-mono">/</kbd>{" "}
+            to search
+          </p>
         </div>
 
-        <div className="mt-3 flex items-center gap-2 lg:hidden">
+        <div className="mt-3 lg:hidden">
           <SearchInput
             inputRef={mobileSearchRef}
             value={query}
             onChange={(value) => update({ query: value }, "replace")}
+            large
           />
-          <button
-            type="button"
-            onClick={() => setMobileFiltersOpen(true)}
-            className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-xl border px-3 text-xs font-bold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${
-              filterCount > 0
-                ? "border-accent/45 bg-accent/10 text-accent"
-                : "border-border bg-surface text-muted"
-            }`}
-          >
-            <FilterIcon /> Filters
-            {filterCount > 0 && (
-              <span className="inline-flex size-5 items-center justify-center rounded-full bg-accent text-[10px] text-white">
-                {filterCount}
-              </span>
-            )}
-          </button>
+          <div className="mt-2 flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setMobileFiltersOpen(true)}
+              className={`ui-button min-h-11 flex-1 ${
+                filterCount > 0 ? "ui-selected" : "ui-button--secondary"
+              }`}
+            >
+              <FilterIcon />
+              Filters
+              {filterCount > 0 && (
+                <span className="inline-flex size-5 items-center justify-center rounded-md bg-accent text-[10px] text-on-accent">
+                  {filterCount}
+                </span>
+              )}
+            </button>
+            <QuickToggle
+              label="Remote"
+              checked={remoteOnly}
+              count={remoteCount}
+              onChange={setRemoteOnly}
+            />
+          </div>
         </div>
 
-        <div className="mt-2 flex items-center gap-2 lg:hidden">
-          <QuickToggle
-            label="Remote Only"
-            checked={remoteOnly}
-            count={remoteCount}
-            onChange={setRemoteOnly}
-          />
-          <QuickToggle
-            label="Visa Sponsorship"
-            checked={visaSponsorship}
-            description="Only shows roles explicitly marked as offering visa sponsorship."
-            onChange={(value) => update({ visaSponsorship: value })}
-          />
-        </div>
-
-        <div className="mt-3 hidden flex-wrap items-center gap-2.5 lg:flex">
+        <div className="mt-3 hidden grid-cols-[minmax(18rem,1fr)_auto_auto_auto_auto_auto] items-end gap-2 lg:grid">
           <SearchInput
             inputRef={desktopSearchRef}
             value={query}
@@ -425,141 +549,71 @@ export function Board({
             onToggle={toggleLocation}
             onOrderChange={(value) => update({ locationOrder: value })}
           />
-          <select
-            value={sort}
-            onChange={(event) => update({ sort: event.target.value as SortKey })}
-            aria-label="Sort jobs"
-            className="h-10 rounded-xl border border-border bg-surface px-3 text-sm text-muted focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
-          >
-            {SORT_OPTIONS.map(([key, label]) => (
-              <option key={key} value={key}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <div
-            className="inline-flex rounded-xl border border-border bg-surface p-1"
-            role="group"
-            aria-label="Job collection"
-          >
-            {(
-              [
-                ["all", "All"],
-                ["saved", `Saved ${savedInTab || ""}`.trim()],
-              ] as Array<[Collection, string]>
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                type="button"
-                aria-pressed={collection === key}
-                onClick={() => update({ collection: key })}
-                className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
-                  collection === key
-                    ? "bg-raised text-fg"
-                    : "text-muted hover:text-fg"
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <StageFilterMenu
-            selected={stages}
-            counts={stageCounts}
-            onToggle={toggleStageFilter}
+          <CompactSelect
+            label="Major"
+            value={major}
+            onChange={(value) => selectMajor(value as MajorId)}
+            options={MAJORS.map(
+              (option) => [option.id, option.label] as const,
+            )}
+          />
+          <CompactSelect
+            label="Specialization"
+            value={niche}
+            onChange={(value) => update({ niche: value })}
+            options={activeMajor.niches.map(
+              (option) =>
+                [
+                  option.id,
+                  option.label,
+                  option.id !== "all" &&
+                    (nicheCounts.get(option.id) ?? 0) === 0,
+                ] as const,
+            )}
           />
           <QuickToggle
-            label="Remote Only"
+            label="Remote"
             checked={remoteOnly}
             count={remoteCount}
             onChange={setRemoteOnly}
           />
-          <QuickToggle
-            label="Visa Sponsorship"
-            checked={visaSponsorship}
-            description="Only shows roles explicitly marked as offering visa sponsorship."
-            onChange={(value) => update({ visaSponsorship: value })}
+          <AdvancedFilterPanel
+            filters={filters}
+            hotCount={hotCount}
+            newCount={newCount}
+            savedCount={savedInTab}
+            stageCounts={stageCounts}
+            onUpdate={(changes) => update(changes)}
+            onToggleStage={toggleStageFilter}
           />
-          <span
-            aria-label={`${filterCount} active filters`}
-            className={`inline-flex min-h-8 items-center rounded-full border px-2.5 text-[11px] font-bold ${
-              filterCount > 0
-                ? "border-accent/35 bg-accent/10 text-accent"
-                : "border-border bg-surface text-faint"
-            }`}
-          >
-            Filters {filterCount}
-          </span>
-        </div>
-
-        <div className="mt-4 hidden overflow-x-auto border-b border-border/70 lg:block">
-          <div
-            className="-mb-px flex min-w-max items-center gap-1 pb-px"
-            role="group"
-            aria-label="Browse internships by major"
-          >
-            {MAJORS.map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                aria-pressed={major === option.id}
-                onClick={() => selectMajor(option.id)}
-                className={`rounded-t-xl px-3 py-2 text-sm font-medium whitespace-nowrap transition-[color,background-color,box-shadow] duration-150 focus-visible:outline-2 focus-visible:outline-accent ${
-                  major === option.id
-                    ? "bg-[linear-gradient(135deg,rgba(255,255,255,0.1),rgba(231,201,139,0.1))] text-champagne shadow-[inset_0_1px_0_rgba(255,255,255,0.12)] ring-1 ring-champagne/20 backdrop-blur-md"
-                    : "text-muted hover:bg-white/[0.04] hover:text-fg"
-                }`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
-        <div className="mt-3 hidden min-w-0 items-center gap-2 lg:flex">
-          <div
-            className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1"
-            role="group"
-            aria-label={`${activeMajor.label} specializations`}
-          >
-            {activeMajor.niches.map((option) => {
-              const available = (nicheCounts.get(option.id) ?? 0) > 0;
-              const selected = niche === option.id;
-              const unavailableMessage = `${option.label} has no live roles yet`;
-              return (
-                <button
-                  key={option.id}
-                  type="button"
-                  aria-pressed={selected}
-                  aria-label={available ? option.label : unavailableMessage}
-                  disabled={!available}
-                  title={available ? option.label : unavailableMessage}
-                  onClick={() => update({ niche: option.id })}
-                  className={`rounded-full border px-3.5 py-1.5 text-xs font-semibold whitespace-nowrap transition-[color,background-color,border-color] duration-150 focus-visible:outline-2 focus-visible:outline-accent ${
-                    selected
-                      ? "border-border-strong bg-raised text-fg shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]"
-                      : available
-                        ? "border-border bg-surface text-muted hover:border-border-strong hover:text-fg"
-                        : "cursor-not-allowed border-border/60 bg-surface/60 text-faint/70"
-                  }`}
-                >
-                  {option.label}
-                </button>
-              );
-            })}
-          </div>
         </div>
 
         {(filterCount > 0 || query) && (
-          <div className="mt-2 flex min-w-0 items-center gap-2">
-            <div className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1">
+          <div className="mt-3 flex min-w-0 items-center gap-2 border-t border-border/70 pt-2.5">
+            <div
+              className="flex min-w-0 flex-1 gap-1.5 overflow-x-auto pb-1"
+              aria-label="Active filters"
+            >
               {remoteOnly && (
-                <FilterChip label="Remote Only" onRemove={() => setRemoteOnly(false)} />
+                <FilterChip
+                  label="Remote"
+                  onRemove={() => setRemoteOnly(false)}
+                />
               )}
               {visaSponsorship && (
                 <FilterChip
                   label="Visa Sponsorship"
                   onRemove={() => update({ visaSponsorship: false })}
+                />
+              )}
+              {minimumSalary !== "any" && (
+                <FilterChip
+                  label={
+                    MINIMUM_SALARY_OPTIONS.find(
+                      ([value]) => value === minimumSalary,
+                    )?.[1] ?? "Listed pay"
+                  }
+                  onRemove={() => update({ minimumSalary: "any" })}
                 />
               )}
               {locationIds.map((id, index) => (
@@ -583,21 +637,26 @@ export function Board({
                 />
               )}
               {collection === "saved" && (
-                <FilterChip label="Saved" onRemove={() => update({ collection: "all" })} />
+                <FilterChip
+                  label="Saved"
+                  onRemove={() => update({ collection: "all" })}
+                />
               )}
               {(major !== "all" || niche !== "all") && (
                 <FilterChip
                   label={
-                    niche !== "all"
-                      ? activeNiche.label
-                      : activeMajor.label
+                    niche !== "all" ? activeNiche.label : activeMajor.label
                   }
-                  onRemove={() => update({ major: "all", niche: "all" })}
+                  onRemove={() =>
+                    update({ major: "all", niche: "all" })
+                  }
                 />
               )}
               {sort !== "featured" && (
                 <FilterChip
-                  label={SORT_OPTIONS.find(([key]) => key === sort)?.[1] ?? sort}
+                  label={
+                    SORT_OPTIONS.find(([key]) => key === sort)?.[1] ?? sort
+                  }
                   onRemove={() => update({ sort: "featured" })}
                 />
               )}
@@ -605,7 +664,7 @@ export function Board({
             <button
               type="button"
               onClick={clearFilters}
-              className="shrink-0 px-2 py-1 text-xs font-semibold text-faint underline underline-offset-2 hover:text-muted focus-visible:outline-2 focus-visible:outline-accent"
+              className="ui-button ui-button--quiet ui-button--sm shrink-0 underline underline-offset-2"
             >
               Clear all
             </button>
@@ -629,71 +688,179 @@ export function Board({
         role="tabpanel"
         tabIndex={-1}
         aria-labelledby={`role-tab-${tab}`}
-        className="focus:outline-none"
+        aria-busy={isRefreshing}
+        className="scroll-mt-56 rounded-lg"
       >
-        <div className="mt-6 flex flex-wrap items-center justify-between gap-x-4 gap-y-1.5">
-          <p className="text-xs font-medium text-faint" aria-live="polite">
-            {filtered.length === 0
-              ? `0 of ${tabJobs.length} roles`
-              : `Showing ${visibleJobs.length} of ${filtered.length} ${
-                  filtered.length === 1 ? "role" : "roles"
-                }`}
-          </p>
-          <p className="text-[11px] leading-snug text-faint">
-            Pay guide: amounts without “Est.” come from source listings; estimates
-            are broad US category ranges.
-          </p>
+        <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
+          <div>
+            <h2
+              key={`${visibleJobs.length}-${filtered.length}-${tabJobs.length}`}
+              className="motion-value-update text-sm font-extrabold text-fg"
+              aria-live="polite"
+            >
+              {filtered.length === 0
+                ? `0 of ${tabJobs.length} roles`
+                : `Showing ${visibleJobs.length} of ${filtered.length} ${
+                    filtered.length === 1 ? "role" : "roles"
+                  }`}
+            </h2>
+            <p className="mt-0.5 text-[11px] text-faint">
+              Select a role to review its source, pay, and sponsorship evidence.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            <SavedSearchButton filters={filters} />
+            <ShareControls
+              path={publicBoardUrl(filters)}
+              title="Timley filtered job collection"
+              kind="filter"
+              publicFilterCount={publicBoardFilterCount(filters)}
+              compact
+            />
+            <label className="hidden items-center gap-2 text-xs font-bold text-faint lg:flex">
+              <span>Sort</span>
+              <select
+                value={sort}
+                onChange={(event) =>
+                  update({ sort: event.target.value as SortKey })
+                }
+                aria-label="Sort jobs"
+                className="ui-control ui-input h-10 min-h-10 text-muted"
+              >
+                {SORT_OPTIONS.map(([key, label]) => (
+                  <option key={key} value={key}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <span className="hidden xl:inline-flex">
+              <ViewToggle view={view} onChange={setView} />
+            </span>
+          </div>
         </div>
 
-        {dense && filtered.length > 0 && (
+        {isRefreshing && (
           <div
-            className={`${JOB_GRID} mt-3 hidden px-5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-faint lg:grid`}
+            role="status"
+            className="mt-3 flex items-center gap-2 rounded-lg border border-info/25 bg-info-soft px-3.5 py-2.5 text-xs font-semibold text-info"
           >
-            <span />
-            <span>Company / Role</span>
-            <span>Category</span>
-            <span>Location</span>
-            <span>Comp</span>
-            <span className="text-right">Age</span>
-            <span className="text-right">Actions</span>
+            <span className="ui-inline-spinner" aria-hidden />
+            Refreshing listings while keeping current results visible…
           </div>
         )}
 
-        <ul
-          data-job-list
-          className={dense ? "mt-1 space-y-1" : "mt-3 space-y-2.5"}
-        >
-          {visibleJobs.map((job) => (
-            <JobCard
-              key={job.id}
-              job={job}
-              now={now}
-              dense={dense}
-              saved={saved.has(job.link)}
-              stage={getApplicationStage(records, job.link)}
-              onToggleSaved={() => toggleSaved(job.link)}
-              onStageChange={(stage) => {
-                updateStage(job.link, stage);
-                setStageAnnouncement(
-                  `${job.company} moved to ${APPLICATION_STAGE_LABELS[stage]}.`,
-                );
-              }}
-            />
-          ))}
-          {filtered.length === 0 && (
-            <li className="rounded-2xl border border-border bg-surface px-4 py-16 text-center text-sm text-muted">
-              <EmptyState
-                loadError={loadError}
-                jobs={jobs}
-                filters={filters}
-                locationLabels={selectedLocationLabels}
-              />
-            </li>
-          )}
-        </ul>
+        {loadError && (
+          <div
+            role="alert"
+            className="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-error/30 bg-error-soft px-4 py-3"
+          >
+            <div>
+              <p className="text-sm font-extrabold text-error">
+                Listings are temporarily unavailable
+              </p>
+              <p className="mt-0.5 text-xs text-muted">
+                Timley could not read the active feed. Try again in a moment.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={refresh}
+              className="ui-button ui-button--secondary ui-button--sm"
+            >
+              Try again
+            </button>
+          </div>
+        )}
+
+        {partialData && (
+          <div
+            role="status"
+            className="mt-3 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3"
+          >
+            <p className="text-sm font-extrabold text-warning">
+              Partial feed loaded
+            </p>
+            <p className="mt-0.5 text-xs text-muted">
+              A later data page could not be read. Available roles remain
+              usable, but the result count may be incomplete.
+            </p>
+          </div>
+        )}
+
+        {!loadError && !partialData && partialListingCount > 0 && (
+          <p className="mt-3 text-[11px] leading-relaxed text-faint">
+            Some source listings omit pay, sponsorship, start period, or
+            original posting dates. Missing evidence stays unavailable or is
+            labeled as an estimate.
+          </p>
+        )}
 
         {filtered.length > 0 && (
-          <div className="mt-8 flex flex-col items-center gap-3 border-t border-border/70 pt-6">
+          <>
+            {dense ? (
+              <>
+                <ul data-job-list className="mt-3 space-y-2.5 xl:hidden">
+                  {visibleJobs.map((job) => (
+                    <JobCard
+                      key={job.id}
+                      job={job}
+                      now={now}
+                      dense
+                      saved={saved.has(job.link)}
+                      stage={getApplicationStage(records, job.link)}
+                      onOpenDetails={() => openDetails(job)}
+                      onToggleSaved={() => toggleJobSaved(job)}
+                      onStageChange={(stage) => changeStage(job, stage)}
+                    />
+                  ))}
+                </ul>
+                <div className="mt-3 hidden xl:block">
+                  <JobTable
+                    jobs={visibleJobs}
+                    now={now}
+                    saved={saved}
+                    applications={records}
+                    onOpenDetails={openDetails}
+                    onToggleSaved={toggleJobSaved}
+                    onStageChange={changeStage}
+                  />
+                </div>
+              </>
+            ) : (
+              <ul data-job-list className="mt-3 space-y-2.5">
+                {visibleJobs.map((job) => (
+                  <JobCard
+                    key={job.id}
+                    job={job}
+                    now={now}
+                    dense={false}
+                    saved={saved.has(job.link)}
+                    stage={getApplicationStage(records, job.link)}
+                    onOpenDetails={() => openDetails(job)}
+                    onToggleSaved={() => toggleJobSaved(job)}
+                    onStageChange={(stage) => changeStage(job, stage)}
+                  />
+                ))}
+              </ul>
+            )}
+          </>
+        )}
+
+        {filtered.length === 0 && (
+          <div className="ui-card mt-3 px-4 py-14 text-center">
+            <EmptyState
+              loadError={loadError}
+              jobs={jobs}
+              filters={filters}
+              locationLabels={selectedLocationLabels}
+              onClear={clearFilters}
+            />
+          </div>
+        )}
+
+        {filtered.length > 0 && (
+          <div className="mt-7 flex flex-col items-center gap-3 border-t border-border/70 pt-6">
             {remainingCount > 0 ? (
               <button
                 data-load-more
@@ -709,16 +876,16 @@ export function Board({
                     ),
                   })
                 }
-                className="inline-flex min-h-11 items-center gap-2 rounded-full border border-accent/45 bg-accent/10 px-5 py-2.5 text-sm font-semibold text-accent transition-[color,background-color,border-color,box-shadow] hover:border-accent hover:bg-accent hover:text-white hover:shadow-[0_8px_24px_rgba(10,132,255,0.22)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+                className="ui-button ui-button--secondary min-h-11 px-5"
               >
                 <span>Load {nextPageCount} more</span>
-                <span className="text-xs font-medium opacity-70">
+                <span className="text-xs font-medium text-faint">
                   {remainingCount} remaining
                 </span>
               </button>
             ) : (
               <p className="inline-flex items-center gap-2 text-xs font-medium text-faint">
-                <span className="size-1.5 rounded-full bg-new" />
+                <span className="size-1.5 rounded-full bg-success" aria-hidden />
                 All {filtered.length} {filtered.length === 1 ? "role" : "roles"}{" "}
                 loaded
               </p>
@@ -727,11 +894,25 @@ export function Board({
         )}
       </section>
 
+      {selectedJob && (
+        <JobDetailsDrawer
+          job={selectedJob}
+          now={now}
+          saved={saved.has(selectedJob.link)}
+          stage={getApplicationStage(records, selectedJob.link)}
+          similarJobs={similarJobs}
+          onClose={() => setSelectedSnapshot(null)}
+          onToggleSaved={() => toggleJobSaved(selectedJob)}
+          onStageChange={(stage) => changeStage(selectedJob, stage)}
+          onSelectSimilar={openDetails}
+        />
+      )}
+
       {stageAnnouncement && (
         <div
           role="status"
           aria-live="polite"
-          className="fixed right-4 bottom-4 z-[130] max-w-[calc(100vw-2rem)] rounded-xl border border-border-strong bg-raised px-4 py-3 text-sm font-semibold text-fg shadow-[0_18px_48px_rgba(0,0,0,0.75)]"
+          className="ui-popover motion-toast fixed right-4 bottom-4 z-[var(--layer-toast)] max-w-[calc(100vw-2rem)] px-4 py-3 text-sm font-semibold"
         >
           {stageAnnouncement}
         </div>
@@ -744,21 +925,59 @@ function SearchInput({
   inputRef,
   value,
   onChange,
+  large = false,
 }: {
   inputRef: React.RefObject<HTMLInputElement | null>;
   value: string;
   onChange: (value: string) => void;
+  large?: boolean;
 }) {
   return (
-    <input
-      ref={inputRef}
-      type="search"
-      value={value}
-      onChange={(event) => onChange(event.target.value)}
-      placeholder="Search company, role, or city…  ( / )"
-      aria-label="Search company, role, or city"
-      className="h-10 min-w-0 flex-1 rounded-xl border border-border bg-surface px-3.5 text-sm outline-none placeholder:text-faint focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent lg:w-full lg:max-w-xs lg:flex-none"
-    />
+    <label className="relative block min-w-0">
+      <span className="sr-only">Search company, role, or city</span>
+      <SearchIcon />
+      <input
+        ref={inputRef}
+        type="search"
+        value={value}
+        onChange={(event) => onChange(event.target.value)}
+        placeholder="Search company, role, or city…"
+        aria-label="Search company, role, or city"
+        className={`ui-control ui-input w-full pl-10 outline-none ${
+          large ? "h-12 text-base" : "h-10"
+        }`}
+      />
+    </label>
+  );
+}
+
+function CompactSelect({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: ReadonlyArray<readonly [string, string, boolean?]>;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label className="block min-w-32">
+      <span className="sr-only">{label}</span>
+      <select
+        value={value}
+        aria-label={label}
+        onChange={(event) => onChange(event.target.value)}
+        className="ui-control ui-input h-10 max-w-44 text-muted"
+      >
+        {options.map(([option, optionLabel, disabled]) => (
+          <option key={option} value={option} disabled={disabled}>
+            {optionLabel}
+          </option>
+        ))}
+      </select>
+    </label>
   );
 }
 
@@ -770,28 +989,23 @@ function ViewToggle({
   onChange: (view: ViewMode) => void;
 }) {
   return (
-    <div
-      className="inline-flex rounded-full border border-border bg-surface p-1"
-      role="group"
-      aria-label="View density"
-    >
+    <div className="ui-tabs" role="group" aria-label="Results view">
       {(
         [
-          ["card", "Card view", <CardIcon key="card" />],
-          ["table", "Table view", <TableIcon key="table" />],
+          ["card", "Cards", <CardIcon key="card" />],
+          ["table", "Table", <TableIcon key="table" />],
         ] as Array<[ViewMode, string, React.ReactNode]>
       ).map(([key, label, icon]) => (
         <button
           key={key}
           type="button"
-          aria-label={label}
+          aria-label={`${label} view`}
           aria-pressed={view === key}
           onClick={() => onChange(key)}
-          className={`rounded-full p-1.5 transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
-            view === key ? "bg-raised text-fg" : "text-faint hover:text-fg"
-          }`}
+          className="ui-tab gap-1.5 px-2.5 text-xs"
         >
           {icon}
+          {label}
         </button>
       ))}
     </div>
@@ -803,42 +1017,124 @@ function EmptyState({
   jobs,
   filters,
   locationLabels,
+  onClear,
 }: {
   loadError: boolean;
   jobs: Internship[];
   filters: BoardFilters;
   locationLabels: string[];
+  onClear: () => void;
 }) {
-  if (loadError) return <>Couldn&apos;t load listings — try refreshing in a minute.</>;
-  if (filters.collection === "saved") {
-    return <>No saved roles match these filters — save a role with the star button.</>;
+  let title = "No matching roles";
+  let body = "Nothing matches those filters. Try clearing one or two.";
+  let canClear = true;
+
+  if (loadError) {
+    title = "Listings could not be loaded";
+    body = "Use Try again above to request the active feed.";
+    canClear = false;
+  } else if (filters.collection === "saved") {
+    title = "No saved roles here";
+    body = "No saved roles match these filters. Save a role with the star button.";
+  } else if (filters.stages.length > 0) {
+    title = "No roles in these stages";
+    body = "No jobs are currently in the selected application stages.";
+  } else if (filters.remoteOnly) {
+    title = "No remote matches";
+    body = "No explicitly remote roles match the other selected filters.";
+  } else if (filters.visaSponsorship) {
+    title = "No explicit sponsorship matches";
+    body =
+      "No roles explicitly marked as sponsoring match the other filters.";
+  } else if (locationLabels.length > 0) {
+    title = "No location matches";
+    body = `No roles match ${locationLabels.join(
+      " or ",
+    )}. Try another location or clear the location filter.`;
+  } else if (jobs.length === 0) {
+    title = "No active listings yet";
+    body = "The first successful ingestion run has not landed.";
+    canClear = false;
   }
-  if (filters.stages.length > 0) {
-    return <>No jobs are currently in the selected application stages.</>;
-  }
-  if (filters.remoteOnly) {
-    return <>No explicitly remote roles match the other selected filters.</>;
-  }
-  if (filters.visaSponsorship) {
-    return <>No roles explicitly marked as sponsoring match the other filters.</>;
-  }
-  if (locationLabels.length > 0) {
-    return (
-      <>
-        No roles match {locationLabels.join(" or ")}. Try another location or
-        clear the location filter.
-      </>
-    );
-  }
-  if (jobs.length === 0) {
-    return <>No listings yet — the first ingestion run hasn&apos;t landed.</>;
-  }
-  return <>Nothing matches those filters. Try clearing one or two.</>;
+
+  return (
+    <div className="mx-auto max-w-md">
+      <span
+        aria-hidden
+        className="mx-auto flex size-10 items-center justify-center rounded-lg border border-border bg-raised text-faint"
+      >
+        <SearchIcon positioned={false} />
+      </span>
+      <h2 className="mt-3 text-base font-extrabold text-fg">{title}</h2>
+      <p className="mt-1.5 text-sm leading-relaxed text-muted">{body}</p>
+      {canClear && (
+        <button
+          type="button"
+          onClick={onClear}
+          className="ui-button ui-button--secondary mt-4"
+        >
+          Clear filters
+        </button>
+      )}
+    </div>
+  );
+}
+
+function SearchIcon({ positioned = true }: { positioned?: boolean }) {
+  return (
+    <svg
+      width="17"
+      height="17"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      aria-hidden
+      className={
+        positioned
+          ? "pointer-events-none absolute top-1/2 left-3.5 z-10 -translate-y-1/2 text-faint"
+          : "text-faint"
+      }
+    >
+      <circle cx="11" cy="11" r="7" />
+      <path d="m20 20-3.5-3.5" />
+    </svg>
+  );
+}
+
+function RefreshIcon() {
+  return (
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
+      <path d="M20 11a8 8 0 1 0 2 5.5" />
+      <path d="M20 4v7h-7" />
+    </svg>
+  );
 }
 
 function FilterIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      width="15"
+      height="15"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       <line x1="4" y1="6" x2="20" y2="6" />
       <line x1="7" y1="12" x2="17" y2="12" />
       <line x1="10" y1="18" x2="14" y2="18" />
@@ -848,7 +1144,17 @@ function FilterIcon() {
 
 function CardIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       <rect x="3" y="4" width="18" height="7" rx="2" />
       <rect x="3" y="14" width="18" height="6" rx="2" />
     </svg>
@@ -857,7 +1163,17 @@ function CardIcon() {
 
 function TableIcon() {
   return (
-    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden
+    >
       <line x1="3" y1="6" x2="21" y2="6" />
       <line x1="3" y1="12" x2="21" y2="12" />
       <line x1="3" y1="18" x2="21" y2="18" />

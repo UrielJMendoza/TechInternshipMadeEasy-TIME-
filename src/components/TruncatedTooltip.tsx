@@ -145,7 +145,7 @@ export function TruncatedTooltip({
           setIsFocused(true);
         }}
         onBlur={() => setIsFocused(false)}
-        className={`block min-w-0 truncate focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent ${className}`}
+        className={`block min-w-0 truncate rounded-sm ${className}`}
       >
         {text}
       </span>
@@ -158,7 +158,7 @@ export function TruncatedTooltip({
             role="tooltip"
             onMouseEnter={beginHover}
             onMouseLeave={endHover}
-            className="pointer-events-auto fixed z-[120] w-max max-w-[calc(100vw-1rem)] rounded-lg border border-border-strong bg-raised px-3 py-2 text-xs leading-snug text-fg shadow-[0_12px_32px_rgba(0,0,0,0.55)] [overflow-wrap:anywhere]"
+            className="ui-popover motion-panel pointer-events-auto fixed z-[var(--layer-tooltip)] w-max max-w-[calc(100vw-1rem)] px-3 py-2 text-xs leading-snug [overflow-wrap:anywhere]"
             style={{
               left: position?.left ?? -9999,
               top: position?.top ?? -9999,

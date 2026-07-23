@@ -17,9 +17,13 @@ import {
   type Collection,
   type Freshness,
   type MajorId,
+  type MinimumSalary,
   type SortKey,
 } from "@/lib/boardFilterState";
-import { SORT_OPTIONS } from "@/lib/boardOptions";
+import {
+  MINIMUM_SALARY_OPTIONS,
+  SORT_OPTIONS,
+} from "@/lib/boardOptions";
 import { MAJORS, MAJORS_BY_ID } from "@/lib/jobTaxonomy";
 import type {
   LocationFacetOrder,
@@ -105,7 +109,7 @@ export function MobileFilterSheet({
               onApply(cleared);
               onClose();
             }}
-            className="flex-1 rounded-xl border border-border text-sm font-semibold text-muted hover:border-border-strong hover:text-fg focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="ui-button ui-button--secondary flex-1"
           >
             Clear all
           </button>
@@ -115,7 +119,7 @@ export function MobileFilterSheet({
               onApply(draft);
               onClose();
             }}
-            className="flex-[1.4] rounded-xl bg-accent text-sm font-bold text-white hover:bg-[#2997ff] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+            className="ui-button ui-button--primary flex-[1.4]"
           >
             Apply filters
           </button>
@@ -180,6 +184,23 @@ export function MobileFilterSheet({
           />
         </FilterSection>
 
+        <FilterSection
+          title="Employer-listed pay"
+          description="Selecting a minimum excludes roles without employer-listed compensation."
+        >
+          <SelectControl
+            label="Minimum listed pay"
+            value={draft.minimumSalary}
+            onChange={(minimumSalary) =>
+              patch({ minimumSalary: minimumSalary as MinimumSalary })
+            }
+            options={MINIMUM_SALARY_OPTIONS.map(([value, label]) => [
+              value,
+              label,
+            ])}
+          />
+        </FilterSection>
+
         <FilterSection title="Major and role">
           <div className="grid gap-2 sm:grid-cols-2">
             <SelectControl
@@ -219,10 +240,11 @@ export function MobileFilterSheet({
             {locationOptions.map((option) => (
               <label
                 key={option.id}
-                className={`flex min-h-11 items-center gap-2.5 rounded-xl border border-border px-3 text-sm ${
+                aria-disabled={option.disabled || draft.remoteOnly}
+                className={`ui-control flex min-h-11 items-center gap-2.5 px-3 text-sm focus-within:border-focus ${
                   option.disabled || draft.remoteOnly
-                    ? "cursor-not-allowed text-faint/60"
-                    : "cursor-pointer text-muted hover:border-border-strong hover:text-fg"
+                    ? "cursor-not-allowed bg-raised text-faint"
+                    : "cursor-pointer text-muted hover:border-muted hover:text-fg"
                 }`}
               >
                 <input
@@ -244,7 +266,7 @@ export function MobileFilterSheet({
             {APPLICATION_STAGES.map((stage) => (
               <label
                 key={stage}
-                className="flex min-h-11 cursor-pointer items-center gap-2.5 rounded-xl border border-border px-3 text-sm text-muted hover:border-border-strong hover:text-fg"
+                className="ui-control flex min-h-11 cursor-pointer items-center gap-2.5 px-3 text-sm text-muted hover:border-muted hover:text-fg focus-within:border-focus"
               >
                 <input
                   type="checkbox"
@@ -303,16 +325,15 @@ function SegmentedButtons<T extends string>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="inline-flex max-w-full flex-wrap rounded-xl border border-border bg-bg p-1" role="group">
+    <div className="ui-tabs max-w-full flex-wrap" role="group">
       {options.map(([option, label]) => (
         <button
           key={option}
           type="button"
           aria-pressed={value === option}
           onClick={() => onChange(option)}
-          className={`min-h-9 rounded-lg px-3 text-xs font-semibold transition-colors focus-visible:outline-2 focus-visible:outline-accent ${
-            value === option ? "bg-raised text-fg" : "text-muted hover:text-fg"
-          }`}
+          data-selected={value === option}
+          className="ui-tab min-h-9 px-3 text-xs"
         >
           {label}
         </button>
@@ -338,7 +359,7 @@ function SelectControl({
       <select
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className="mt-1.5 h-11 w-full rounded-xl border border-border bg-bg px-3 text-sm font-medium text-muted focus:border-accent focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent"
+        className="ui-control ui-input mt-1.5 h-11 w-full font-medium text-muted"
       >
         {options.map(([option, optionLabel]) => (
           <option key={option} value={option}>

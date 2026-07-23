@@ -35,18 +35,22 @@ test("application stages sort in the required pipeline order", () => {
     "rejected",
     "applied",
     "offer",
-    "oa",
+    "assessment",
     "interview",
+    "saved",
+    "archived",
   ];
   assert.deepEqual(stages.sort(compareApplicationStages), [
-    "offer",
-    "interview",
-    "oa",
+    "saved",
     "applied",
+    "assessment",
+    "interview",
+    "offer",
     "rejected",
+    "archived",
     "not_applied",
   ]);
-  assert.equal(applicationStageRank("offer"), 0);
+  assert.equal(applicationStageRank("saved"), 0);
 });
 
 test("job search includes normalized canonical locations and categories", () => {
@@ -110,6 +114,7 @@ test("compound remote, visa, and multi-stage filters use AND across groups", () 
     locationIds: [],
     remoteOnly: true,
     visaSponsorship: true,
+    minimumSalary: "any",
     stages: ["interview", "offer"],
     freshness: "all",
     collection: "all",
@@ -146,6 +151,7 @@ test("physical locations use OR semantics and application-stage sorting is stabl
     locationIds: ["denver-co", "new-york-ny"],
     remoteOnly: false,
     visaSponsorship: false,
+    minimumSalary: "any",
     stages: [],
     freshness: "all",
     collection: "all",
@@ -166,7 +172,7 @@ test("physical locations use OR semantics and application-stage sorting is stabl
     matchesNiche: () => true,
   });
 
-  assert.deepEqual(result.map((job) => job.id), ["new-york", "denver"]);
+  assert.deepEqual(result.map((job) => job.id), ["denver", "new-york"]);
 });
 
 test("salary sorting uses source-listed pay and never category estimates", () => {
@@ -185,6 +191,7 @@ test("salary sorting uses source-listed pay and never category estimates", () =>
     locationIds: [],
     remoteOnly: false,
     visaSponsorship: false,
+    minimumSalary: "any",
     stages: [],
     freshness: "all",
     collection: "all",
@@ -197,4 +204,29 @@ test("salary sorting uses source-listed pay and never category estimates", () =>
   });
 
   assert.deepEqual(result.map((job) => job.id), ["listed", "estimated"]);
+});
+
+test("minimum salary uses employer-listed compensation and excludes unknown pay", () => {
+  const high = fixtureJob("high", { salary: "$55/hr" });
+  const low = fixtureJob("low", { salary: "$20/hr" });
+  const unknown = fixtureJob("unknown", { salary: null });
+
+  const result = filterAndSortJobs([unknown, low, high], {
+    query: "",
+    locationIds: [],
+    remoteOnly: false,
+    visaSponsorship: false,
+    minimumSalary: "100000",
+    stages: [],
+    freshness: "all",
+    collection: "all",
+    sort: "featured",
+    saved: new Set(),
+    applications: {},
+    now: FILTER_NOW,
+    matchesMajor: () => true,
+    matchesNiche: () => true,
+  });
+
+  assert.deepEqual(result.map((job) => job.id), ["high"]);
 });

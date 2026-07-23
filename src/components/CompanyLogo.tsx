@@ -4,20 +4,19 @@ import { useState } from "react";
 import Image from "next/image";
 import { companyDomain } from "@/lib/companyDomain";
 
-// Deterministic avatar color per company, drawn from the iOS dark palette —
-// used for the letter fallback when no logo loads.
+// Deterministic, quiet fallback colors for companies without a usable logo.
 const AVATAR_COLORS = [
-  "10, 132, 255", // blue
-  "100, 210, 255", // teal
-  "191, 90, 242", // purple
-  "255, 214, 10", // yellow
-  "255, 159, 10", // orange
-  "48, 209, 88", // green
-  "255, 55, 95", // pink
-  "172, 142, 104", // brown
-];
+  { background: "#E8F0FF", foreground: "#1F57C9" },
+  { background: "#EAF0F6", foreground: "#405B78" },
+  { background: "#E7F2F6", foreground: "#356474" },
+  { background: "#EEF0F8", foreground: "#4C587B" },
+  { background: "#EDF1F6", foreground: "#596579" },
+  { background: "#E9F0F3", foreground: "#44616D" },
+  { background: "#E4F0F5", foreground: "#2F6276" },
+  { background: "#F0F1EC", foreground: "#5E6250" },
+] as const;
 
-function avatarColor(company: string): string {
+function avatarColor(company: string): (typeof AVATAR_COLORS)[number] {
   let h = 0;
   for (let i = 0; i < company.length; i++) h = (h * 31 + company.charCodeAt(i)) | 0;
   return AVATAR_COLORS[Math.abs(h) % AVATAR_COLORS.length];
@@ -55,7 +54,7 @@ function CompanyLogoImage({
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(() => !src);
 
-  const rgb = avatarColor(company);
+  const avatar = avatarColor(company);
   const radius = Math.round(size * 0.28);
 
   // The letter circle always renders as the base layer. When a real logo
@@ -70,8 +69,9 @@ function CompanyLogoImage({
         height: size,
         borderRadius: radius,
         fontSize: size * 0.4,
-        background: `rgba(${rgb}, 0.15)`,
-        color: `rgb(${rgb})`,
+        background: avatar.background,
+        color: avatar.foreground,
+        boxShadow: "inset 0 0 0 1px var(--border)",
       }}
     >
       {company.charAt(0).toUpperCase()}
@@ -88,7 +88,7 @@ function CompanyLogoImage({
           referrerPolicy="no-referrer"
           onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
-          className="absolute inset-0 bg-white object-contain transition-opacity duration-200"
+          className="absolute inset-0 bg-white object-contain transition-opacity"
           style={{ padding: size * 0.12, opacity: loaded ? 1 : 0 }}
         />
       )}

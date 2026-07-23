@@ -21,6 +21,7 @@ import {
 import type {
   Collection,
   Freshness,
+  MinimumSalary,
   SortKey,
 } from "./boardFilterState";
 import { annualSalary } from "./compensation";
@@ -142,6 +143,7 @@ export interface JobFilterOptions {
   locationIds: readonly PhysicalLocationFacetId[];
   remoteOnly: boolean;
   visaSponsorship: boolean;
+  minimumSalary: MinimumSalary;
   stages: readonly ApplicationStage[];
   freshness: Freshness;
   collection: Collection;
@@ -177,6 +179,12 @@ export function filterAndSortJobs(
         job.sponsorship,
         options.visaSponsorship,
       )
+    ) {
+      return false;
+    }
+    if (
+      options.minimumSalary !== "any" &&
+      annualSalary(job.salary) < Number(options.minimumSalary)
     ) {
       return false;
     }

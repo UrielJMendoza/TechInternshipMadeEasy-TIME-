@@ -18,7 +18,7 @@ export function LandingPage({
   generatedAt,
 }: LandingPageProps) {
   return (
-    <main id="main-content">
+    <main id="main-content" className="landing-page">
       <LandingHero
         jobs={jobs}
         showcaseJob={showcaseJob}
@@ -38,7 +38,7 @@ export function LandingPage({
               id="final-cta-title"
               className="max-w-3xl text-4xl leading-[1] font-extrabold tracking-[-0.05em] sm:text-5xl"
             >
-              Ready when the next role opens.
+              Ready for what opens next.
             </h2>
           </div>
           <div className="flex shrink-0 flex-col gap-3 sm:flex-row">

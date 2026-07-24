@@ -6,7 +6,7 @@ import { StructuredData } from "@/components/StructuredData";
 import { OG_IMAGE, SITE_URL, siteIdentityJsonLd } from "@/lib/seo";
 import "./globals.css";
 
-const title = "Timley — job discovery and application tracking";
+const title = "Timley | job discovery and application tracking";
 const description =
   "Fresh internships and new-grad roles, with a built-in application tracker. No account required.";
 
@@ -34,8 +34,8 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#080D18",
-  colorScheme: "light dark",
+  themeColor: "#F4F0E7",
+  colorScheme: "light",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

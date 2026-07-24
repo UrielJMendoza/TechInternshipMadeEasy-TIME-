@@ -20,7 +20,7 @@ function DiscoveryListing({
 
   return (
     <article className="landing-search-result">
-      <CompanyLogo company={job.company} size={42} />
+      <CompanyLogo company={job.company} size={42} curatedOnly />
       <div className="landing-search-result__identity">
         <p>{job.company}</p>
         <h3>{job.title}</h3>
@@ -52,13 +52,13 @@ export function DiscoveryShowcase({
       <div className="landing-reveal mx-auto grid max-w-[90rem] gap-14 px-4 py-20 sm:px-6 sm:py-24 lg:grid-cols-[minmax(0,0.72fr)_minmax(36rem,1.28fr)] lg:items-center lg:gap-20 lg:px-8 lg:py-32">
         <div className="landing-showcase-copy">
           <h2 id="job-discovery-title">
-            Search the signal.
+            Find what fits.
             <br />
-            Keep the context.
+            Keep the details.
           </h2>
           <p>
-            Search by role, major, location, freshness, pay, and sponsorship—then
-            save the jobs worth pursuing.
+            Search by role, major, location, freshness, pay, and sponsorship.
+            Save the jobs worth pursuing.
           </p>
           <p className="landing-showcase-copy__note">
             The details that matter stay beside each role.
@@ -80,7 +80,7 @@ export function DiscoveryShowcase({
                 <strong>Find your next role</strong>
                 <span>Internships and new-grad opportunities</span>
               </div>
-              <span>Freshest first</span>
+              <span>Featured current roles</span>
             </div>
 
             <div className="landing-search-control">

@@ -4,16 +4,16 @@ import { useState } from "react";
 import Image from "next/image";
 import { companyDomain, knownCompanyDomain } from "@/lib/companyDomain";
 
-// Deterministic, quiet fallback colors for companies without a usable logo.
+// Deterministic, warm fallback colors for companies without a usable logo.
 const AVATAR_COLORS = [
-  { background: "#E8F0FF", foreground: "#1F57C9" },
-  { background: "#EAF0F6", foreground: "#405B78" },
-  { background: "#E7F2F6", foreground: "#356474" },
-  { background: "#EEF0F8", foreground: "#4C587B" },
-  { background: "#EDF1F6", foreground: "#596579" },
-  { background: "#E9F0F3", foreground: "#44616D" },
-  { background: "#E4F0F5", foreground: "#2F6276" },
-  { background: "#F0F1EC", foreground: "#5E6250" },
+  { background: "#F7E8DE", foreground: "#943A22" },
+  { background: "#F1EBDD", foreground: "#5F5A52" },
+  { background: "#E5E8DB", foreground: "#4D6245" },
+  { background: "#F4E2D5", foreground: "#85442A" },
+  { background: "#EDE4D8", foreground: "#5C5145" },
+  { background: "#E7E2DB", foreground: "#625E57" },
+  { background: "#F0DFD7", foreground: "#873823" },
+  { background: "#EEE8DD", foreground: "#575149" },
 ] as const;
 
 function avatarColor(company: string): (typeof AVATAR_COLORS)[number] {
@@ -26,8 +26,22 @@ function logoUrl(domain: string): string {
   return `https://favicon.vemetric.com/${encodeURIComponent(domain)}?size=128&format=png`;
 }
 
-export function CompanyLogo({ company, size = 40 }: { company: string; size?: number }) {
-  const domain = companyDomain(company);
+interface CompanyLogoProps {
+  company: string;
+  size?: number;
+  curatedOnly?: boolean;
+  priority?: boolean;
+}
+
+export function CompanyLogo({
+  company,
+  size = 40,
+  curatedOnly = false,
+  priority = false,
+}: CompanyLogoProps) {
+  const domain = curatedOnly
+    ? (knownCompanyDomain(company) ?? "")
+    : companyDomain(company);
 
   // Keying the stateful image makes a reused row start cleanly when its company
   // changes, without permanently caching a transient network/provider failure.
@@ -37,6 +51,7 @@ export function CompanyLogo({ company, size = 40 }: { company: string; size?: nu
       company={company}
       domain={domain}
       size={size}
+      priority={priority}
     />
   );
 }
@@ -78,10 +93,12 @@ function CompanyLogoImage({
   company,
   domain,
   size,
+  priority,
 }: {
   company: string;
   domain: string;
   size: number;
+  priority: boolean;
 }) {
   const src = domain ? logoUrl(domain) : null;
   const [loaded, setLoaded] = useState(false);
@@ -91,8 +108,8 @@ function CompanyLogoImage({
   const radius = Math.round(size * 0.28);
 
   // The letter circle always renders as the base layer. When a real logo
-  // loads it fades in on top; while it's pending or if it errors, the letter
-  // shows through — so there's never a broken-image flash.
+  // loads it fades in on top. While it is pending or if it errors, the letter
+  // shows through, so there is never a broken-image flash.
   return (
     <span
       aria-hidden
@@ -115,7 +132,8 @@ function CompanyLogoImage({
           alt=""
           width={size}
           height={size}
-          loading="lazy"
+          loading={priority ? undefined : "lazy"}
+          priority={priority}
           unoptimized
           decoding="async"
           referrerPolicy="no-referrer"

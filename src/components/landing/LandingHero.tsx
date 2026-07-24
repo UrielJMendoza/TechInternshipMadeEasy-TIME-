@@ -1,267 +1,144 @@
 import Link from "next/link";
 import { CompanyLogo } from "@/components/CompanyLogo";
+import { CompanyMarquee } from "@/components/landing/CompanyMarquee";
 import { compensationFor } from "@/lib/compensation";
-import { relativeTimestamp } from "@/lib/jobTime";
-import type { LandingStats } from "@/lib/landingData";
-import {
-  CATEGORY_LABELS,
-  SOURCE_LABELS,
-  type Internship,
-} from "@/lib/types";
+import type { Internship } from "@/lib/types";
 
 interface LandingHeroProps {
+  jobs: Internship[];
   showcaseJob: Internship | null;
-  stats: LandingStats;
-  generatedAt: string;
+  companies: string[];
 }
 
-function sponsorshipLabel(value: string | null): string {
-  if (!value) return "Sponsorship not stated";
-  if (value === "offers-sponsorship") return "Sponsorship offered";
-  if (value === "no-sponsorship") return "No sponsorship";
-  if (value === "citizens-only") return "Citizenship restriction";
-  return "Sponsorship details listed";
+function HeroResult({ job }: { job: Internship }) {
+  const compensation = compensationFor(job);
+
+  return (
+    <article className="landing-hero-result">
+      <CompanyLogo company={job.company} size={36} />
+      <div className="min-w-0">
+        <p className="truncate font-extrabold text-fg">{job.company}</p>
+        <p className="truncate text-xs text-muted">{job.title}</p>
+      </div>
+      <div className="landing-hero-result__meta">
+        <span>{job.location || "Location unavailable"}</span>
+        <strong className={compensation.estimated ? "text-warning" : "text-info"}>
+          {compensation.label}
+        </strong>
+      </div>
+    </article>
+  );
 }
 
 export function LandingHero({
+  jobs,
   showcaseJob,
-  stats,
-  generatedAt,
+  companies,
 }: LandingHeroProps) {
-  const now = Date.parse(generatedAt);
-  const compensation = showcaseJob ? compensationFor(showcaseJob) : null;
-  const sourceName = showcaseJob
-    ? (SOURCE_LABELS[showcaseJob.source] ?? showcaseJob.source)
-    : null;
+  const heroJobs = jobs.slice(0, 2);
 
   return (
     <section
       aria-labelledby="landing-title"
       className="theme-marketing landing-hero"
     >
-      <div className="mx-auto grid max-w-7xl gap-12 px-4 pt-16 pb-14 sm:px-6 sm:pt-20 sm:pb-16 lg:grid-cols-[minmax(0,0.9fr)_minmax(30rem,1.1fr)] lg:items-center lg:gap-14 lg:px-8 lg:pt-24 lg:pb-20">
-        <div className="motion-section-reveal">
-          <p className="landing-eyebrow">
-            <span aria-hidden className="landing-eyebrow__dot" />
-            Fresh roles. Clear evidence. One workspace.
-          </p>
-          <h1
-            id="landing-title"
-            className="mt-7 max-w-3xl text-[clamp(3.4rem,7.4vw,6.8rem)] leading-[0.91] font-extrabold tracking-[-0.065em] text-fg"
-          >
-            Your next opportunity{" "}
-            <span className="text-[var(--token-marketing-color-primary-display)]">
-              shouldn&apos;t be buried.
-            </span>
-          </h1>
-          <p className="mt-7 max-w-2xl text-lg leading-relaxed text-muted sm:text-xl">
-            Find fresh internships and new-grad roles, verify the details, and
-            track every application from one clean workspace.
-          </p>
-
-          <div className="mt-9 flex flex-col gap-3 sm:flex-row">
-            <Link
-              href="/jobs"
-              className="ui-button ui-button--primary min-h-12 px-5"
-            >
-              Browse Jobs
-              <span aria-hidden>↗</span>
-            </Link>
-            <Link
-              href="/tracker"
-              className="ui-button ui-button--secondary min-h-12 px-5"
-            >
-              Open Tracker
-              <span aria-hidden>→</span>
-            </Link>
+      <div className="landing-hero__glow" aria-hidden />
+      <div className="mx-auto max-w-[90rem] px-4 sm:px-6 lg:px-8">
+        <div className="landing-hero__grid">
+          <div className="motion-section-reveal landing-hero__copy">
+            <h1 id="landing-title">
+              Find it early.
+              <br />
+              Track it <span>cleanly.</span>
+            </h1>
+            <p>
+              Fresh internships and new-grad roles, with a built-in application
+              tracker. No account required.
+            </p>
+            <div className="landing-hero__actions">
+              <Link
+                href="/jobs"
+                className="ui-button ui-button--primary min-h-12 px-6"
+              >
+                Find Jobs
+                <span aria-hidden>↗</span>
+              </Link>
+              <Link
+                href="/tracker"
+                className="ui-button ui-button--secondary min-h-12 px-6"
+              >
+                Open Tracker
+                <span aria-hidden>→</span>
+              </Link>
+            </div>
           </div>
 
-          {stats.openRoles === null ? (
-            <p className="mt-8 max-w-xl rounded-xl border border-border bg-surface px-4 py-3 text-sm text-muted">
-              Live listing totals are temporarily unavailable. The job board
-              will retry when you open it.
-            </p>
-          ) : (
-            <dl className="landing-hero-stats mt-10 grid grid-cols-2 gap-x-6 gap-y-5 border-t border-border pt-6 sm:grid-cols-4 lg:grid-cols-2 xl:grid-cols-4">
-              <div>
-                <dt>Open roles</dt>
-                <dd className="motion-value-update">
-                  {stats.openRoles.toLocaleString()}
-                </dd>
-              </div>
-              <div>
-                <dt>Added in 14 days</dt>
-                <dd className="motion-value-update">
-                  {stats.recentlyAdded?.toLocaleString()}
-                </dd>
-              </div>
-              <div>
-                <dt>Sources represented</dt>
-                <dd className="motion-value-update">
-                  {stats.sourcesRepresented}
-                </dd>
-              </div>
-              <div>
-                <dt>Latest observation</dt>
-                <dd className="motion-value-update landing-hero-stats__time">
-                  {stats.updatedAt
-                    ? relativeTimestamp(stats.updatedAt, now)
-                    : "Unavailable"}
-                </dd>
-              </div>
-            </dl>
-          )}
-        </div>
+          <div className="motion-section-reveal motion-delay-1 landing-hero-product">
+            {showcaseJob ? (
+              <>
+                <div className="theme-application landing-hero-results">
+                  <div className="landing-hero-results__top">
+                    <strong>timley / jobs</strong>
+                    <span>{jobs.length > 0 ? "Current listings" : "Jobs"}</span>
+                  </div>
+                  <div className="landing-hero-search">
+                    <span aria-hidden>⌕</span>
+                    Search company, role, or city
+                    <kbd>/</kbd>
+                  </div>
+                  <div className="landing-hero-results__filters">
+                    <span>Internships</span>
+                    <span>New grad</span>
+                    <span>Freshest first</span>
+                  </div>
+                  <div className="landing-hero-results__list">
+                    {heroJobs.map((job) => (
+                      <HeroResult key={job.id} job={job} />
+                    ))}
+                  </div>
+                </div>
 
-        <div className="motion-section-reveal motion-delay-1">
-          <div
-            className="theme-application landing-product-demo"
-            aria-label="Timley product preview using a current listing"
-          >
-            <div className="landing-product-demo__bar">
-              <div className="flex items-center gap-2" aria-hidden>
-                <span />
-                <span />
-                <span />
-              </div>
-              <p>timley / jobs</p>
-              <span className="landing-product-demo__live">
-                <span aria-hidden />
-                Live workspace
-              </span>
-            </div>
-
-            <div className="landing-product-demo__canvas">
-              <div className="landing-product-demo__search">
-                <span aria-hidden className="text-faint">
-                  ○
-                </span>
-                <span>Search company, role, or city</span>
-                <kbd>/</kbd>
-              </div>
-
-              <div className="landing-product-demo__filters" aria-label="Example filters">
-                <span className="ui-selected">Internships</span>
-                <span>New</span>
-                <span>Software</span>
-                <span>Remote</span>
-              </div>
-
-              {showcaseJob ? (
-                <article className="landing-demo-job">
-                  <div className="landing-demo-job__main">
-                    <CompanyLogo company={showcaseJob.company} size={44} />
+                <article className="theme-application landing-hero-detail">
+                  <div className="landing-hero-detail__company">
+                    <CompanyLogo company={showcaseJob.company} size={42} />
                     <div className="min-w-0">
-                      <div className="flex min-w-0 items-center gap-2">
-                        <h2 className="truncate text-sm font-extrabold text-fg">
-                          {showcaseJob.company}
-                        </h2>
-                        <span className="landing-fresh-badge">
-                          <span aria-hidden />
-                          Fresh
-                        </span>
-                      </div>
-                      <p className="mt-0.5 truncate text-sm text-muted">
-                        {showcaseJob.title}
-                      </p>
+                      <p>{showcaseJob.company}</p>
+                      <span>{showcaseJob.location || "Location unavailable"}</span>
                     </div>
-                    <span
-                      aria-hidden
-                      className="landing-demo-save"
-                      title="Save role"
-                    >
-                      ★
-                    </span>
                   </div>
-
-                  <div className="landing-demo-job__meta">
-                    <span className={`cat cat-${showcaseJob.category}`}>
-                      {CATEGORY_LABELS[showcaseJob.category]}
+                  <h2>{showcaseJob.title}</h2>
+                  <div className="landing-hero-detail__actions">
+                    <span className="landing-hero-save">Saved</span>
+                    <span className="ui-button ui-button--apply ui-button--sm">
+                      Apply
                     </span>
-                    <span>{showcaseJob.location || "Location unavailable"}</span>
-                    {compensation ? (
-                      <span
-                        className={
-                          compensation.estimated
-                            ? "text-warning"
-                            : "text-info"
-                        }
-                      >
-                        {compensation.label}
-                      </span>
-                    ) : null}
-                  </div>
-
-                  <div className="landing-demo-evidence">
-                    <div>
-                      <p>Source evidence</p>
-                      <strong>
-                        <span
-                          aria-hidden
-                          className="landing-demo-evidence__dot"
-                        />
-                        Active in current results
-                      </strong>
-                    </div>
-                    <div>
-                      <p>Found via</p>
-                      <strong>{sourceName}</strong>
-                    </div>
-                    <div>
-                      <p>Sponsorship</p>
-                      <strong>{sponsorshipLabel(showcaseJob.sponsorship)}</strong>
-                    </div>
                   </div>
                 </article>
-              ) : (
-                <div className="landing-demo-unavailable">
-                  <span aria-hidden>↻</span>
-                  <div>
-                    <p className="font-bold text-fg">
-                      Live listing preview unavailable
-                    </p>
-                    <p className="mt-1 text-sm text-muted">
-                      No example company or role is substituted.
-                    </p>
-                  </div>
-                </div>
-              )}
 
-              <div className="landing-demo-tracker">
-                <div className="flex items-center justify-between gap-4">
-                  <div>
-                    <p className="text-[10px] font-extrabold tracking-[0.12em] text-faint uppercase">
-                      Tracker preview
-                    </p>
-                    <p className="mt-1 text-sm font-bold text-fg">
-                      From shortlist to outcome
-                    </p>
-                  </div>
-                  <span className="landing-demo-local">Stored in this browser</span>
+                <div
+                  className="theme-application landing-hero-pipeline"
+                  aria-label="Application moves from Saved to Applied"
+                >
+                  {["Saved", "Applied", "Interview"].map((stage, index) => (
+                    <div
+                      key={stage}
+                      className={index === 1 ? "is-active" : ""}
+                    >
+                      <span aria-hidden />
+                      <p>{stage}</p>
+                    </div>
+                  ))}
                 </div>
-                <div className="landing-demo-stages">
-                  {["Saved", "Applied", "Interview", "Offer"].map(
-                    (stage, index) => (
-                      <div
-                        key={stage}
-                        className={
-                          index === 1 ? "landing-demo-stage--active" : ""
-                        }
-                      >
-                        <span aria-hidden />
-                        <p>{stage}</p>
-                      </div>
-                    ),
-                  )}
-                </div>
+              </>
+            ) : (
+              <div className="theme-application landing-hero-results landing-hero-results--empty">
+                <p>Current listings will appear here when the job feed returns.</p>
               </div>
-            </div>
+            )}
           </div>
-          <p className="mt-4 text-center text-xs leading-relaxed text-faint">
-            Product preview uses a current active listing when data is available.
-            Motion is presentation-only and never changes your tracker.
-          </p>
         </div>
+
+        <CompanyMarquee companies={companies} />
       </div>
     </section>
   );

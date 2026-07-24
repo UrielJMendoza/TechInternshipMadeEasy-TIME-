@@ -1,76 +1,59 @@
 import type { Internship } from "@/lib/types";
+import { knownCompanyDomain } from "@/lib/companyDomain";
 
 export const RECENTLY_ADDED_DAYS = 14;
 
-export interface LandingStats {
-  openRoles: number | null;
-  recentlyAdded: number | null;
-  sourcesRepresented: number | null;
-  sourceListedPay: number | null;
-  sponsorshipKnown: number | null;
-  updatedAt: string | null;
-}
-
-function isWithinDays(iso: string, now: number, days: number): boolean {
-  const timestamp = Date.parse(iso);
-  if (!Number.isFinite(timestamp)) return false;
-  const age = Math.max(0, now - timestamp);
-  return age <= days * 86_400_000;
-}
-
-export function deriveLandingStats(
-  jobs: Internship[],
-  updatedAt: string | null,
-  now: number,
-  loadError: boolean,
-): LandingStats {
-  if (loadError) {
-    return {
-      openRoles: null,
-      recentlyAdded: null,
-      sourcesRepresented: null,
-      sourceListedPay: null,
-      sponsorshipKnown: null,
-      updatedAt: null,
-    };
-  }
-
-  return {
-    openRoles: jobs.length,
-    recentlyAdded: jobs.filter((job) =>
-      isWithinDays(job.first_seen_at, now, RECENTLY_ADDED_DAYS),
-    ).length,
-    sourcesRepresented: new Set(
-      jobs.map((job) => job.source.trim()).filter(Boolean),
-    ).size,
-    sourceListedPay: jobs.filter((job) => Boolean(job.salary?.trim())).length,
-    sponsorshipKnown: jobs.filter((job) => Boolean(job.sponsorship?.trim()))
-      .length,
-    updatedAt:
-      updatedAt && Number.isFinite(Date.parse(updatedAt)) ? updatedAt : null,
-  };
-}
-
 export function selectListingCompanies(
   jobs: Internship[],
-  limit = 14,
+  limit = 12,
 ): string[] {
   if (limit <= 0) return [];
 
-  const selected: string[] = [];
-  const seen = new Set<string>();
+  const priorityDomains = [
+    "google.com",
+    "amazon.com",
+    "nvidia.com",
+    "tiktok.com",
+    "boeing.com",
+    "cloudflare.com",
+    "hp.com",
+    "chevron.com",
+    "goldmansachs.com",
+    "accenture.com",
+    "lockheedmartin.com",
+    "thetradedesk.com",
+    "citadel.com",
+    "apple.com",
+    "microsoft.com",
+    "meta.com",
+  ] as const;
+  const companiesByDomain = new Map<string, string>();
 
   for (const job of jobs) {
     if (job.is_active === false) continue;
     const company = job.company.trim();
-    const key = company.toLocaleLowerCase();
-    if (!company || seen.has(key)) continue;
-    seen.add(key);
-    selected.push(company);
-    if (selected.length === limit) break;
+    const domain = company ? knownCompanyDomain(company) : null;
+    if (!domain || companiesByDomain.has(domain)) continue;
+    companiesByDomain.set(domain, company);
   }
 
-  return selected;
+  return [...companiesByDomain]
+    .sort(([domainA, companyA], [domainB, companyB]) => {
+      const priorityA = priorityDomains.indexOf(
+        domainA as (typeof priorityDomains)[number],
+      );
+      const priorityB = priorityDomains.indexOf(
+        domainB as (typeof priorityDomains)[number],
+      );
+      if (priorityA !== -1 || priorityB !== -1) {
+        if (priorityA === -1) return 1;
+        if (priorityB === -1) return -1;
+        return priorityA - priorityB;
+      }
+      return companyA.localeCompare(companyB);
+    })
+    .slice(0, limit)
+    .map(([, company]) => company);
 }
 
 export function selectShowcaseJob(

@@ -17,13 +17,13 @@ export const metadata: Metadata = {
     description,
     url: "/account",
     type: "website",
-    images: ["/og.png"],
+    images: ["/og-v2.png"],
   },
   twitter: {
     card: "summary_large_image",
     title: `${title} | Timley`,
     description,
-    images: ["/og.png"],
+    images: ["/og-v2.png"],
   },
 };
 

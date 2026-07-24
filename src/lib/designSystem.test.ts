@@ -252,7 +252,6 @@ test("reusable motion contracts use tokens and transform-safe keyframes", () => 
 test("reduced motion disables movement and keeps marquee content available", () => {
   const reducedMotion = stylesheet.slice(
     stylesheet.indexOf("@media (prefers-reduced-motion: reduce)"),
-    stylesheet.indexOf("/* Category badges"),
   );
   assert.match(reducedMotion, /html\s*\{[\s\S]*?scroll-behavior:\s*auto;/);
   assert.match(reducedMotion, /\*,\s*\n\s*\*::before,\s*\n\s*\*::after\s*\{/);
@@ -270,6 +269,10 @@ test("reduced motion disables movement and keeps marquee content available", () 
   );
   assert.match(
     reducedMotion,
-    /\.landing-demo-job,[\s\S]*?animation:\s*none\s*!important;/,
+    /\.landing-hero-save,[\s\S]*?animation:\s*none\s*!important;/,
+  );
+  assert.match(
+    reducedMotion,
+    /\.landing-pipeline-card--moving\s*\{[\s\S]*?animation:\s*none\s*!important;/,
   );
 });

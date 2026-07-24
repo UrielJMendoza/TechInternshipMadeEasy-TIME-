@@ -18,16 +18,13 @@ test("shared header and footer expose every working primary destination", () => 
   for (const href of [
     "/",
     "/jobs",
+    "/companies",
     "/tracker",
     "/alerts",
     "/account",
-    "/#how-it-works",
-    "/methodology",
-    "/status",
     "/changelog",
     "/privacy",
     "/terms",
-    "/methodology#sources",
   ]) {
     assert.match(
       markup,

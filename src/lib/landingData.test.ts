@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  deriveLandingStats,
   selectListingCompanies,
   selectShowcaseJob,
 } from "./landingData";
@@ -33,54 +32,17 @@ function job(
   };
 }
 
-test("landing statistics are derived only from the active snapshot", () => {
-  const jobs = [
-    job("a", { salary: "$42/hr", sponsorship: "offers-sponsorship" }),
-    job("b", {
-      source: "source-b",
-      first_seen_at: "2026-06-01T12:00:00.000Z",
-    }),
-    job("c", { source: "source-a", first_seen_at: "invalid" }),
-  ];
-
-  assert.deepEqual(
-    deriveLandingStats(
-      jobs,
-      "2026-07-22T10:00:00.000Z",
-      NOW,
-      false,
-    ),
-    {
-      openRoles: 3,
-      recentlyAdded: 1,
-      sourcesRepresented: 2,
-      sourceListedPay: 1,
-      sponsorshipKnown: 1,
-      updatedAt: "2026-07-22T10:00:00.000Z",
-    },
-  );
-});
-
-test("a failed snapshot never renders invented zero totals", () => {
-  const stats = deriveLandingStats([], null, NOW, true);
-  assert.equal(stats.openRoles, null);
-  assert.equal(stats.recentlyAdded, null);
-  assert.equal(stats.sourcesRepresented, null);
-  assert.equal(stats.sourceListedPay, null);
-  assert.equal(stats.sponsorshipKnown, null);
-  assert.equal(stats.updatedAt, null);
-});
-
 test("company selection is unique, active, deterministic, and bounded", () => {
   const jobs = [
-    job("a", { company: "Acme" }),
-    job("b", { company: " acme " }),
+    job("a", { company: "NVIDIA" }),
+    job("b", { company: " nvidia " }),
     job("c", { company: "Inactive", is_active: false }),
-    job("d", { company: "Beta" }),
-    job("e", { company: "Gamma" }),
+    job("d", { company: "Amazon" }),
+    job("e", { company: "Apple" }),
+    job("f", { company: "Unknown Startup" }),
   ];
 
-  assert.deepEqual(selectListingCompanies(jobs, 2), ["Acme", "Beta"]);
+  assert.deepEqual(selectListingCompanies(jobs, 2), ["Amazon", "NVIDIA"]);
   assert.deepEqual(selectListingCompanies([], 12), []);
   assert.deepEqual(selectListingCompanies(jobs, 0), []);
 });

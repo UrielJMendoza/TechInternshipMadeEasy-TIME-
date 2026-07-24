@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { LandingPage } from "@/components/landing/LandingPage";
 import { fetchJobsSnapshot } from "@/lib/jobs";
 import {
-  deriveLandingStats,
   selectListingCompanies,
   selectShowcaseJob,
 } from "@/lib/landingData";
@@ -12,17 +11,17 @@ export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: {
-    absolute: "Timley — fresh jobs, clearly organized",
+    absolute: "Timley — find jobs early, track them cleanly",
   },
   description:
-    "Find fresh internships and new-grad roles, inspect the available evidence, and track every application from one clean workspace.",
+    "Fresh internships and new-grad roles, with a built-in application tracker. No account required.",
   alternates: {
     canonical: "/",
   },
   openGraph: {
-    title: "Your next opportunity shouldn’t be buried. | Timley",
+    title: "Find it early. Track it cleanly. | Timley",
     description:
-      "Find fresh internships and new-grad roles, inspect the available evidence, and track every application from one clean workspace.",
+      "Fresh internships and new-grad roles, with a built-in application tracker. No account required.",
     url: "/",
     siteName: "Timley",
     type: "website",
@@ -30,9 +29,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Timley — fresh jobs, clearly organized",
+    title: "Find it early. Track it cleanly. | Timley",
     description:
-      "Find fresh internships and new-grad roles, inspect the available evidence, and track every application from one clean workspace.",
+      "Fresh internships and new-grad roles, with a built-in application tracker. No account required.",
     images: [OG_IMAGE.url],
   },
 };
@@ -40,19 +39,12 @@ export const metadata: Metadata = {
 export default async function HomePage() {
   const snapshot = await fetchJobsSnapshot();
   const now = Date.parse(snapshot.generatedAt);
-  const stats = deriveLandingStats(
-    snapshot.jobs,
-    snapshot.updatedAt,
-    now,
-    snapshot.loadError,
-  );
 
   return (
     <LandingPage
       jobs={snapshot.jobs.slice(0, 12)}
       companies={selectListingCompanies(snapshot.jobs)}
       showcaseJob={selectShowcaseJob(snapshot.jobs, now)}
-      stats={stats}
       generatedAt={snapshot.generatedAt}
     />
   );

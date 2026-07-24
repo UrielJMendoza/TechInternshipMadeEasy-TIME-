@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 import { publicPageMetadata } from "@/lib/seo";
 
 const title = "Terms";
@@ -167,21 +168,15 @@ export default function TermsPage() {
         <div className="mt-10 rounded-xl border border-border bg-raised p-6 sm:p-8">
           <h2 className="text-xl font-bold">Questions about the data?</h2>
           <p className="mt-3 max-w-2xl leading-7 text-muted">
-            Review the{" "}
-            <a
-              href="/methodology"
+            Browse the{" "}
+            <Link
+              href="/jobs"
               className="font-semibold text-accent underline decoration-border-strong underline-offset-4 hover:text-accent-hover"
             >
-              methodology
-            </a>{" "}
-            for source and labeling rules, and the{" "}
-            <a
-              href="/status"
-              className="font-semibold text-accent underline decoration-border-strong underline-offset-4 hover:text-accent-hover"
-            >
-              data status
-            </a>{" "}
-            page for the current visible snapshot.
+              current job listings
+            </Link>{" "}
+            to inspect source, freshness, pay, sponsorship, and verification
+            details on each role.
           </p>
         </div>
       </section>

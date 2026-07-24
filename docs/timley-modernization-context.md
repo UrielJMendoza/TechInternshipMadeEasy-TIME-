@@ -1,6 +1,6 @@
 # Timley modernization context
 
-Updated 2026-07-23 after module 7 (public discovery, company pages, safe sharing, and privacy-conscious analytics).
+Updated 2026-07-23 after module 8 (landing-page refinement).
 
 ## Product guardrails
 
@@ -19,14 +19,24 @@ Timley is a job-discovery and application-tracking utility, not a career-AI plat
 - `/tracker`: 5-minute ISR shell for the complete browser-local application workspace, with list and board views, actions, reminders, editing, exports, and restore joined to the current active feed.
 - `/alerts`: 5-minute ISR shell for local saved-search evaluation, inspectable in-app/browser delivery history, channel and frequency controls, filter editing, and optional foreground browser notices. While this page is open, it requests a coalesced server-component refresh about every five minutes and when focus or visibility returns.
 - `/account`: public optional-continuity workspace. Anonymous/local use remains available when the provider is absent; configured deployments expose sign-up, sign-in, recovery, category-selected sync, sign-out, and separated account/local-data deletion.
-- `/methodology`: source coverage, checked-in daily refresh cadence, normalization, filtering, identity/deduplication, pay, sponsorship, source verification, expiration, reporting, and known limits.
-- `/status`: current post-filter listing counts, source-verified counts, and last source-verification timestamps by represented source. It explicitly does not infer ingest-run health or destination reachability.
+- `/methodology` and `/status`: retired public pages that redirect cleanly to `/jobs`; neither appears in navigation, metadata, internal links, or the sitemap.
 - `/changelog`, `/privacy`, and `/terms`: working footer destinations.
 - `/api/ingest`: unchanged secret-gated GET/POST ingestion route with a 60-second limit.
 - `/api/account`: conditionally available authenticated account deletion. It validates the caller with the configured Supabase project and requires a server-only service credential; without complete server configuration it fails closed.
 - `/robots.txt` allows public pages, disallows `/api/`, and advertises `/sitemap.xml`. The sitemap always includes useful static pages and adds only complete-snapshot, adequately populated collection/company pages plus legitimate active UUID job pages.
 - `src/proxy.ts`: root-only legacy redirect. Any known board query key on `/` redirects to `/jobs`; unrelated attribution survives, but private saved-only and application-stage query keys are removed.
 - `vercel.json` still schedules the checked-in ingestion route daily at 12:00 UTC. The repository does not prove any faster external schedule.
+
+## Landing refinement (module 8)
+
+- Prompt 1 shortened `/` to the header, hero, active-company marquee, search showcase, tracker showcase, compact CTA, and global footer. The problem, trust/freshness, workflow, statistics, and FAQ marketing sections and their component imports were removed.
+- Primary navigation now contains Find Jobs, Companies, Tracker, Alerts, Account, and one Browse Jobs action. Discover duplication, How It Works, Methodology, and Data Status navigation were removed from desktop, mobile, and footer surfaces.
+- `/methodology` and `/status` now redirect to `/jobs`; both were removed from the sitemap, metadata-bearing page implementations, and internal public links. Technical source and data documentation remains in the repository, while listing-level freshness, pay, sponsorship, verification, and source details remain intact.
+- Prompt 2 rebuilt the hero around “Find it early. Track it cleanly.” and the account-free product promise. It uses layered current-listing, job-detail, and tracker surfaces on an original midnight-blue field, with blue Find Jobs and Open Tracker actions and no badge, statistics, evidence table, or technical disclaimer.
+- The company marquee now lives inside the hero, uses transparent logo/name lockups with a continuous fade-masked loop, pauses on hover/focus, becomes a static single accessible row for reduced motion, and hides failed images. Companies are selected only from active listings that match curated company-domain aliases; recognizable active companies are prioritized before other curated active employers.
+- Prompt 3 replaced the checklist-based discovery section with a large typographic search showcase and current result rows. It replaced the three generic tracker columns with the full Saved, Applied, Assessment, Interview, and Offer pipeline plus restrained next-action and note surfaces. Both sections use one deliberate motion moment and keep content present without animation.
+- Prompt 4 removed stale landing components, imports, links, statistics helpers, navigation expectations, and deleted-section tests. The production browser audit found no horizontal overflow at 390×844, 768×1024, 1024×768, 1440×900, or the 200%-zoom reflow approximation; desktop/mobile navigation, `/jobs`, `/tracker`, and both retired-route redirects worked.
+- The live audit rendered current-listing hero/search rows and 12 prioritized active-company logo lockups with no failed images. Landmark structure, heading order, accessible mobile disclosure, duplicate-marquee hiding, focus pause, reduced-motion CSS, and color contrast tests remain covered. `public/og-v2.png` is the finished 1200×630 Timley social card.
 
 ## Job data
 
@@ -48,7 +58,7 @@ Company identity reuses the ingestion normalizer and explicit aliases. Company p
 
 `serializeBoardFilters()` and `publicBoardUrl()` now serialize public search criteria only. `collection=saved`, application stages, and application-stage sorting stay in browser storage. Shared locations sort deterministically; restored saved-alert links are re-sanitized; unknown, cross-origin, fragmented, and private query state is rejected or removed. Copy link is always offered and native share is offered when supported. Filtered `/jobs` variants canonicalize to `/jobs` and use `noindex`; the server-rendered collection paths provide matching social previews. No tracker note, contact, saved-search name, or application identity is accepted by a public share URL.
 
-Technical SEO is centralized in `src/lib/seo.ts`: unique title/description helpers, self-canonicals, full Open Graph image metadata, route-specific Twitter copy, index controls, `Organization`, `WebSite` plus search action, `ItemList`, visible-breadcrumb `BreadcrumbList`, and active-detail-only `JobPosting`. The global canonical was removed so a new route cannot silently inherit `/`. The 1200×630 `public/og.png` remains the truthful generic social image.
+Technical SEO is centralized in `src/lib/seo.ts`: unique title/description helpers, self-canonicals, full Open Graph image metadata, route-specific Twitter copy, index controls, `Organization`, `WebSite` plus search action, `ItemList`, visible-breadcrumb `BreadcrumbList`, and active-detail-only `JobPosting`. The global canonical was removed so a new route cannot silently inherit `/`. The 1200×630 `public/og-v2.png` is the current truthful generic social image.
 
 ## Privacy-conscious analytics
 
@@ -73,14 +83,10 @@ The contract cannot accept raw query text, saved-search names, titles, company n
 
 ## Landing page truth rules
 
-- Active role totals come from the post-filter snapshot used by `/jobs`.
-- “Added in 14 days” uses `first_seen_at`, not the source posting date.
-- “Sources represented” counts distinct source IDs retained on active rows; it is not labeled as sources successfully checked.
-- Pay metrics count only explicit upstream salary values and call them employer-listed pay. Timley category estimates remain clearly prefixed with `Est.`.
-- Sponsorship metrics count only explicit non-empty source values. Unknown information is never inferred.
-- The hero product preview and discovery rows use current active listings. Empty/error states do not substitute fictional roles, companies, or statistics.
-- The company marquee is deduplicated from active listing companies, uses fixed-size real favicon requests with a deterministic letter fallback, hides its cloned accessibility copy, pauses on hover/focus, and becomes a static wrapping list under reduced motion.
-- The label says companies have active listings on Timley and explicitly disclaims partnerships or endorsements.
+- The hero and search preview use current active listings. Empty/error states do not substitute fictional roles, companies, or statistics.
+- The marquee deduplicates current active employers, keeps only curated company-domain matches, prioritizes recognizable active companies, and removes a failed logo instead of rendering a letter fallback.
+- The marquee label says only that fresh roles come from companies including those shown; it does not imply an employer relationship, partnership, customer, or endorsement.
+- Result-card pay, freshness, location, sponsorship, source, and verification semantics remain owned by the product routes. The shorter landing page does not change or weaken those fields.
 
 ## Persistence and tracker
 
@@ -142,10 +148,10 @@ This path requires deployment work rather than invented defaults: apply the cont
 
 - `src/app/globals.css` remains the design-system source of truth: deep-ink marketing and cool-light application tokens, one-pixel borders, restrained radii/shadows, visible focus treatment, and explicit responsive behavior.
 - `.theme-application` now fully resets semantic aliases so light product previews remain correct when nested inside dark marketing surfaces.
-- The global translucent header adds Discover and Companies to Jobs, Tracker, Alerts, Account, How It Works, Methodology, Data Status, and Browse Jobs. Its native mobile disclosure supports keyboard use, Escape-to-close, focus return, and close-on-navigation.
-- The global footer includes jobs, discovery, new-this-week, locations, seasons, companies, campus collections, product workspaces, methodology, status, changelog, privacy, terms, repository feedback, and source acknowledgements. There are no placeholder social links.
+- The global translucent header contains Find Jobs, Companies, Tracker, Alerts, Account, and one Browse Jobs action. Its native mobile disclosure supports keyboard use, Escape-to-close, focus return, and close-on-navigation.
+- The compact footer groups core product links, useful discovery collections, changelog, privacy, terms, and repository feedback. There are no placeholder social links or links to retired public pages.
 - Landing motion covers short product-state sequencing, section reveal, and the company marquee. Content is visible without JavaScript, animations use transform/opacity where possible, and reduced motion disables loops and movement while preserving content.
-- Route-specific canonical, title, description, robots, Open Graph, and Twitter metadata are present. Utility/account workspaces are `noindex,follow`; filtered jobs URLs canonicalize to `/jobs`; thin and recently removed pages are noindex. `public/og.png` is a bespoke 1200×630 Timley social card using the finished palette and product motif, with no companies, statistics, or relationship claims.
+- Route-specific canonical, title, description, robots, Open Graph, and Twitter metadata are present. Utility/account workspaces are `noindex,follow`; filtered jobs URLs canonicalize to `/jobs`; thin and recently removed pages are noindex. `public/og-v2.png` is the bespoke 1200×630 Timley social card using the finished palette and layered product motif, with no companies, statistics, or relationship claims.
 
 ## Tests and verification
 
@@ -158,7 +164,7 @@ npm test
 npm run build -- --webpack
 ```
 
-Module 7 verification should include:
+Module 8 verification completed:
 
 - ESLint passed with zero warnings.
 - Strict TypeScript passed.
@@ -166,7 +172,7 @@ Module 7 verification should include:
 - URL-state coverage verifies deterministic public serialization, removal of saved-only/stage state, stored private-state survival, legacy redirect sanitization, and restored-alert URL sanitization.
 - Public-catalog coverage verifies real-count/company-diversity/freshness eligibility, exact seven-day first-seen logic, allowlisted seasons, stable UUID paths, active-detail eligibility, role-level company evidence, employer-listed pay only, and adequate multi-month history.
 - SEO coverage verifies canonical/robots/social metadata, internal `ItemList` URLs, visible breadcrumb ordering, global `Organization`/`WebSite`, active-detail-only `JobPosting`, crawl controls, complete-snapshot sitemap gates, and expired-record exclusion.
-- Growth coverage verifies copy/native share wiring, company follows and clear-data coverage, data-backed discovery/company/campus routes, fresh-role digest links, the existing changelog/status pages, and the active-listing-driven company marquee.
+- Growth coverage verifies copy/native share wiring, company follows and clear-data coverage, data-backed discovery/company/campus routes, fresh-role digest links, the changelog, and the active-listing-driven company marquee.
 - Analytics coverage verifies the exact event set, coarse buckets, event-specific APIs, wiring across board/tracker/saved-search flows, and absence of private payload field names.
 - Saved-search persistence coverage verifies full-filter round trips, strict parsing, bounds, tombstones, deterministic conflict handling, local defaults, safe IDs, and monotonic update times.
 - Alert-engine coverage verifies frequency gates, paused searches, zero-channel skipping, browser-only deferral until global delivery is available, global role deduplication, public matching criteria, canonical results links, match explanations, corrupt-state recovery, role-identity fallbacks, and storage bounds.
@@ -193,17 +199,17 @@ Existing landing, tracker, filtering, compensation, location, legacy routing, UR
 - Email alerts are not implemented. Supabase authentication emails are a separate provider concern and require real SMTP and redirect configuration before production use.
 - Optional continuity currently stores one versioned snapshot per account rather than a server-side change log. Cloud-first writes protect the local copy on failure, but simultaneous edits on separate devices still require deterministic merge and a successful subsequent save.
 - Account deletion requires a server-only Supabase service credential and matching database cascade. It intentionally cannot work from browser credentials alone.
-- `ingest_source_runs` has RLS enabled without a checked-in public read policy, so `/status` reports visible source representation rather than ingest success.
+- `ingest_source_runs` has RLS enabled without a checked-in public read policy. The retired status route no longer exposes a public summary.
 - Every ingest adapter is marked as a complete snapshot; a silent partial parse can deactivate valid rows.
-- `Verified at source` is intentionally limited to feed presence. A comprehensive destination dead-link/closure checker is not active, so methodology and details require users to confirm the external application page.
+- `Verified at source` is intentionally limited to feed presence. A comprehensive destination dead-link/closure checker is not active, so listing details still require users to confirm the external application page.
 - The anonymous ingestion RPC is necessary for the current publishable-key server client and is protected by the cron secret, narrowed grants, and `search_path`; Supabase still correctly flags anonymous `SECURITY DEFINER` access. A later deployment-hardening module should use a server-only credential or private database function and revoke anonymous execution.
 - Full datasets are serialized and filtered in-browser; scale may eventually require server-side querying.
-- Generated company domains are best-effort; the fixed letter fallback remains the truthful failure state.
+- Generated company domains remain best-effort for product result cards, where the fixed letter fallback is truthful. The marketing marquee uses curated domains only and hides failed images.
 - Company follows are browser-local state, not a server-backed digest subscription. Users can save a company-filtered search for foreground fresh-role alerts.
 - The analytics module has no configured delivery provider. A deployment that connects one must disclose the vendor, consent basis, access, and retention while preserving the documented field allowlist.
 - Dynamic sitemap entries depend on a complete five-minute snapshot; load or pagination failure deliberately leaves only the useful static sitemap rather than publishing a misleading partial dynamic inventory.
-- Automated browser interaction and visual-regression coverage are not configured. Repeat the 390/768/1024/1440 production-browser matrix when a browser executable is available.
+- Automated visual-regression snapshots are not checked into the repository. The 390/768/1024/1440 production-browser matrix was completed manually for module 8 and should be repeated after major landing changes.
 
 ## Remaining modernization modules
 
-Module 8 is pending its supplied prompt. Update this file after that module and keep it concise.
+Module 8 is complete. No additional supplied modernization module is pending in this context.

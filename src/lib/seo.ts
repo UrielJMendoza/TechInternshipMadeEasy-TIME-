@@ -5,7 +5,7 @@ import type { Internship } from "@/lib/types";
 
 export const SITE_URL = "https://timley.dev";
 export const OG_IMAGE = {
-  url: "/og.png",
+  url: "/og-v2.png",
   width: 1200,
   height: 630,
   alt: "Timley job discovery and application tracking",

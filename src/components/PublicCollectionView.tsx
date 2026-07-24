@@ -133,12 +133,6 @@ export function PublicCollectionView({
               imply employer endorsement, partnership, or a comprehensive
               inventory of openings.
             </p>
-            <Link
-              href="/methodology"
-              className="mt-4 inline-block text-sm font-bold text-accent-hover hover:underline"
-            >
-              Read the methodology
-            </Link>
           </section>
 
           <section className="ui-card p-5" aria-labelledby="collection-digest">

@@ -271,12 +271,6 @@ export default async function PublicJobPage({
               Timley saw this record in a named public source. That is not
               comprehensive destination verification or employer endorsement.
             </p>
-            <Link
-              href="/methodology"
-              className="mt-4 inline-block text-sm font-bold text-accent-hover hover:underline"
-            >
-              Read methodology
-            </Link>
           </section>
           <section className="ui-card p-5" aria-labelledby="detail-privacy">
             <h2 id="detail-privacy" className="text-base font-extrabold">

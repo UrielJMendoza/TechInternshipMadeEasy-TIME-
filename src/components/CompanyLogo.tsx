@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
-import { companyDomain } from "@/lib/companyDomain";
+import { companyDomain, knownCompanyDomain } from "@/lib/companyDomain";
 
 // Deterministic, quiet fallback colors for companies without a usable logo.
 const AVATAR_COLORS = [
@@ -38,6 +38,39 @@ export function CompanyLogo({ company, size = 40 }: { company: string; size?: nu
       domain={domain}
       size={size}
     />
+  );
+}
+
+export function MarketingCompanyLogo({
+  company,
+  priority = false,
+}: {
+  company: string;
+  priority?: boolean;
+}) {
+  const domain = knownCompanyDomain(company);
+  const [failed, setFailed] = useState(() => !domain);
+
+  if (!domain || failed) return null;
+
+  return (
+    <span className="marketing-company-logo" aria-label={`${company} logo`}>
+      <Image
+        src={logoUrl(domain)}
+        alt=""
+        width={32}
+        height={32}
+        priority={priority}
+        unoptimized
+        decoding="async"
+        referrerPolicy="no-referrer"
+        onError={(event) => {
+          event.currentTarget.closest(".landing-company-logo")?.setAttribute("hidden", "");
+          setFailed(true);
+        }}
+      />
+      <span aria-hidden>{company}</span>
+    </span>
   );
 }
 

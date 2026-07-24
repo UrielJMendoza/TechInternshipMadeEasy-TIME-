@@ -5,13 +5,10 @@ import { useEffect, useRef } from "react";
 
 const NAV_ITEMS = [
   { href: "/jobs", label: "Find Jobs" },
-  { href: "/discover", label: "Discover" },
   { href: "/companies", label: "Companies" },
   { href: "/tracker", label: "Tracker" },
   { href: "/alerts", label: "Alerts" },
   { href: "/account", label: "Account" },
-  { href: "/#how-it-works", label: "How It Works" },
-  { href: "/methodology", label: "Methodology" },
 ] as const;
 
 export function SiteHeader() {
@@ -63,12 +60,6 @@ export function SiteHeader() {
 
         <div className="hidden items-center gap-3 lg:flex">
           <Link
-            href="/status"
-            className="text-sm font-semibold text-muted transition-colors hover:text-fg"
-          >
-            Data Status
-          </Link>
-          <Link
             href="/jobs"
             className="ui-button ui-button--primary min-h-10 px-4"
           >
@@ -105,13 +96,6 @@ export function SiteHeader() {
                 {item.label}
               </Link>
             ))}
-            <Link
-              href="/status"
-              onClick={closeMobileMenu}
-              className="flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-muted hover:bg-raised hover:text-fg"
-            >
-              Data Status
-            </Link>
             <Link
               href="/jobs"
               onClick={closeMobileMenu}

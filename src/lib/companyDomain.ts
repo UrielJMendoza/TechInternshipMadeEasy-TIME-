@@ -91,6 +91,7 @@ const CURATED: Record<string, string> = {
   "cadence design systems": "cadence.com",
   "asm international": "asm.com",
   sandisk: "sandisk.com",
+  google: "google.com",
   nvidia: "nvidia.com",
   intel: "intel.com",
   "samsung research america": "samsung.com",
@@ -101,6 +102,13 @@ const CURATED: Record<string, string> = {
   tencent: "tencent.com",
   apple: "apple.com",
   amazon: "amazon.com",
+  cloudflare: "cloudflare.com",
+  hp: "hp.com",
+  "hp inc": "hp.com",
+  chevron: "chevron.com",
+  accenture: "accenture.com",
+  "lockheed martin": "lockheedmartin.com",
+  "the trade desk": "thetradedesk.com",
   meta: "meta.com",
   microsoft: "microsoft.com",
   oracle: "oracle.com",
@@ -184,4 +192,9 @@ function guess(name: string): string {
 export function companyDomain(company: string): string {
   const key = norm(company);
   return CURATED[key] ?? guess(company);
+}
+
+/** Curated domains are safe for the public marketing marquee. */
+export function knownCompanyDomain(company: string): string | null {
+  return CURATED[norm(company)] ?? null;
 }

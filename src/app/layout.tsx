@@ -8,7 +8,7 @@ import "./globals.css";
 
 const title = "Timley — job discovery and application tracking";
 const description =
-  "Find fresh internships and new-grad roles, inspect the available evidence, and track applications in one clean workspace.";
+  "Fresh internships and new-grad roles, with a built-in application tracker. No account required.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -29,7 +29,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title,
     description,
-    images: ["/og.png"],
+    images: [OG_IMAGE.url],
   },
 };
 

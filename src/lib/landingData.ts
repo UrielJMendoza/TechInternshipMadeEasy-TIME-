@@ -3,30 +3,38 @@ import { knownCompanyDomain } from "@/lib/companyDomain";
 
 export const RECENTLY_ADDED_DAYS = 14;
 
+const PRIORITY_DOMAINS = [
+  "google.com",
+  "amazon.com",
+  "nvidia.com",
+  "tiktok.com",
+  "boeing.com",
+  "cloudflare.com",
+  "apple.com",
+  "microsoft.com",
+  "meta.com",
+  "goldmansachs.com",
+  "accenture.com",
+  "lockheedmartin.com",
+  "thetradedesk.com",
+  "citadel.com",
+  "hp.com",
+  "chevron.com",
+] as const;
+
+function priorityForDomain(domain: string): number {
+  const priority = PRIORITY_DOMAINS.indexOf(
+    domain as (typeof PRIORITY_DOMAINS)[number],
+  );
+  return priority === -1 ? PRIORITY_DOMAINS.length : priority;
+}
+
 export function selectListingCompanies(
   jobs: Internship[],
   limit = 12,
 ): string[] {
   if (limit <= 0) return [];
 
-  const priorityDomains = [
-    "google.com",
-    "amazon.com",
-    "nvidia.com",
-    "tiktok.com",
-    "boeing.com",
-    "cloudflare.com",
-    "hp.com",
-    "chevron.com",
-    "goldmansachs.com",
-    "accenture.com",
-    "lockheedmartin.com",
-    "thetradedesk.com",
-    "citadel.com",
-    "apple.com",
-    "microsoft.com",
-    "meta.com",
-  ] as const;
   const companiesByDomain = new Map<string, string>();
 
   for (const job of jobs) {
@@ -39,21 +47,59 @@ export function selectListingCompanies(
 
   return [...companiesByDomain]
     .sort(([domainA, companyA], [domainB, companyB]) => {
-      const priorityA = priorityDomains.indexOf(
-        domainA as (typeof priorityDomains)[number],
-      );
-      const priorityB = priorityDomains.indexOf(
-        domainB as (typeof priorityDomains)[number],
-      );
-      if (priorityA !== -1 || priorityB !== -1) {
-        if (priorityA === -1) return 1;
-        if (priorityB === -1) return -1;
+      const priorityA = priorityForDomain(domainA);
+      const priorityB = priorityForDomain(domainB);
+      if (priorityA !== priorityB) {
         return priorityA - priorityB;
       }
       return companyA.localeCompare(companyB);
     })
     .slice(0, limit)
     .map(([, company]) => company);
+}
+
+export function selectLandingPreviewJobs(
+  jobs: Internship[],
+  limit = 6,
+): Internship[] {
+  if (limit <= 0) return [];
+
+  const candidates = jobs
+    .flatMap((job) => {
+      if (job.is_active === false) return [];
+      const domain = knownCompanyDomain(job.company.trim());
+      return domain ? [{ domain, job }] : [];
+    })
+    .sort((candidateA, candidateB) => {
+      const priorityDifference =
+        priorityForDomain(candidateA.domain) -
+        priorityForDomain(candidateB.domain);
+      if (priorityDifference !== 0) return priorityDifference;
+
+      const timeA = Date.parse(candidateA.job.first_seen_at);
+      const timeB = Date.parse(candidateB.job.first_seen_at);
+      const freshnessDifference =
+        (Number.isFinite(timeB) ? timeB : 0) -
+        (Number.isFinite(timeA) ? timeA : 0);
+      if (freshnessDifference !== 0) return freshnessDifference;
+
+      const companyDifference = candidateA.job.company.localeCompare(
+        candidateB.job.company,
+      );
+      return companyDifference || candidateA.job.id.localeCompare(candidateB.job.id);
+    });
+
+  const selected: Internship[] = [];
+  const seenDomains = new Set<string>();
+
+  for (const candidate of candidates) {
+    if (seenDomains.has(candidate.domain)) continue;
+    seenDomains.add(candidate.domain);
+    selected.push(candidate.job);
+    if (selected.length === limit) break;
+  }
+
+  return selected;
 }
 
 export function selectShowcaseJob(

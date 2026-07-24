@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { LandingPage } from "@/components/landing/LandingPage";
 import { fetchJobsSnapshot } from "@/lib/jobs";
 import {
+  selectLandingPreviewJobs,
   selectListingCompanies,
   selectShowcaseJob,
 } from "@/lib/landingData";
@@ -11,17 +12,17 @@ export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: {
-    absolute: "Timley — find jobs early, track them cleanly",
+    absolute: "Timley | fresh internships and new grad roles",
   },
   description:
-    "Fresh internships and new-grad roles, with a built-in application tracker. No account required.",
+    "Fresh internships and new-grad roles, plus a simple tracker for every next step. No account required.",
   alternates: {
     canonical: "/",
   },
   openGraph: {
-    title: "Find it early. Track it cleanly. | Timley",
+    title: "Your next role, right on time. | Timley",
     description:
-      "Fresh internships and new-grad roles, with a built-in application tracker. No account required.",
+      "Fresh internships and new-grad roles, plus a simple tracker for every next step. No account required.",
     url: "/",
     siteName: "Timley",
     type: "website",
@@ -29,9 +30,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Find it early. Track it cleanly. | Timley",
+    title: "Your next role, right on time. | Timley",
     description:
-      "Fresh internships and new-grad roles, with a built-in application tracker. No account required.",
+      "Fresh internships and new-grad roles, plus a simple tracker for every next step. No account required.",
     images: [OG_IMAGE.url],
   },
 };
@@ -39,12 +40,13 @@ export const metadata: Metadata = {
 export default async function HomePage() {
   const snapshot = await fetchJobsSnapshot();
   const now = Date.parse(snapshot.generatedAt);
+  const previewJobs = selectLandingPreviewJobs(snapshot.jobs);
 
   return (
     <LandingPage
-      jobs={snapshot.jobs.slice(0, 12)}
+      jobs={previewJobs}
       companies={selectListingCompanies(snapshot.jobs)}
-      showcaseJob={selectShowcaseJob(snapshot.jobs, now)}
+      showcaseJob={selectShowcaseJob(previewJobs, now)}
       generatedAt={snapshot.generatedAt}
     />
   );

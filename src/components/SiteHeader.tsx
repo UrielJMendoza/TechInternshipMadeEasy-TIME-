@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 const NAV_ITEMS = [
@@ -12,6 +13,7 @@ const NAV_ITEMS = [
 ] as const;
 
 export function SiteHeader() {
+  const pathname = usePathname();
   const mobileMenuRef = useRef<HTMLDetailsElement>(null);
   const mobileTriggerRef = useRef<HTMLElement>(null);
 
@@ -29,13 +31,16 @@ export function SiteHeader() {
     if (mobileMenuRef.current) mobileMenuRef.current.open = false;
   };
 
+  const isActive = (href: string) =>
+    pathname === href || pathname?.startsWith(`${href}/`);
+
   return (
     <header className="theme-marketing site-header">
-      <div className="mx-auto flex min-h-[4.75rem] max-w-7xl items-center justify-between gap-5 px-4 sm:px-6 lg:px-8">
+      <div className="site-header__inner mx-auto flex min-h-[3.75rem] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
         <Link
           href="/"
           aria-label="Timley home"
-          className="site-wordmark shrink-0 text-2xl font-extrabold tracking-[-0.05em] text-fg"
+          className="site-wordmark shrink-0 text-[1.35rem] font-extrabold tracking-[-0.05em] text-fg"
         >
           timley
           <span className="text-[var(--token-marketing-color-primary-display)]">
@@ -45,13 +50,14 @@ export function SiteHeader() {
 
         <nav
           aria-label="Primary navigation"
-          className="hidden items-center gap-5 lg:flex"
+          className="site-nav hidden items-center lg:flex"
         >
           {NAV_ITEMS.map((item) => (
             <Link
               key={item.href}
               href={item.href}
-              className="text-sm font-semibold text-muted transition-colors hover:text-fg"
+              aria-current={isActive(item.href) ? "page" : undefined}
+              className="site-nav-link"
             >
               {item.label}
             </Link>
@@ -61,7 +67,7 @@ export function SiteHeader() {
         <div className="hidden items-center gap-3 lg:flex">
           <Link
             href="/jobs"
-            className="ui-button ui-button--primary min-h-10 px-4"
+            className="site-header__cta ui-button ui-button--primary min-h-9 px-4"
           >
             Browse Jobs
             <span aria-hidden>↗</span>
@@ -91,7 +97,8 @@ export function SiteHeader() {
                 key={item.href}
                 href={item.href}
                 onClick={closeMobileMenu}
-                className="flex min-h-11 items-center rounded-lg px-3 text-sm font-semibold text-muted hover:bg-raised hover:text-fg"
+                aria-current={isActive(item.href) ? "page" : undefined}
+                className="site-mobile-menu__link flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-muted hover:bg-raised hover:text-fg"
               >
                 {item.label}
               </Link>

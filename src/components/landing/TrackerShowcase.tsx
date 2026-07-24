@@ -49,7 +49,11 @@ export function TrackerShowcase({ jobs }: TrackerShowcaseProps) {
                             : "landing-pipeline-card"
                         }
                       >
-                        <CompanyLogo company={job.company} size={32} />
+                        <CompanyLogo
+                          company={job.company}
+                          size={32}
+                          curatedOnly
+                        />
                         <div className="min-w-0">
                           <p>{job.company}</p>
                           <span>{job.title}</span>

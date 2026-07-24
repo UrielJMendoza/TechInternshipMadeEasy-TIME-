@@ -158,9 +158,12 @@ test("application semantic colors remain readable on base and soft surfaces", ()
 });
 
 test("category badge pairs remain non-semantic and WCAG AA", () => {
-  const categorySection = stylesheet.slice(
-    stylesheet.indexOf("/* Category badges"),
+  const categoryStart = stylesheet.indexOf("/* Category badges");
+  const categoryEnd = stylesheet.indexOf(
+    "@layer components {\n  .landing-page",
+    categoryStart,
   );
+  const categorySection = stylesheet.slice(categoryStart, categoryEnd);
   const pairs = [
     ...categorySection.matchAll(
       /background:\s*(#[0-9a-f]{6});\s*\n\s*color:\s*(#[0-9a-f]{6});/gi,
@@ -184,9 +187,20 @@ test("two visual surfaces and the signature Apply action stay wired", () => {
     "nested light product previews must reset application aliases",
   );
   assert.match(jobCard, /ui-button--apply/);
-  for (const creamColor of ["#f5f0e6", "#fffdf8", "#ece6da"]) {
-    assert.doesNotMatch(stylesheet.toLowerCase(), new RegExp(creamColor));
-  }
+  assert.equal(marketingTokens.page.toLowerCase(), "#f4f0e7");
+  assert.equal(marketingTokens.surface.toLowerCase(), "#fffdf8");
+  assert.equal(marketingTokens.text.toLowerCase(), "#191915");
+  assert.equal(marketingTokens.primary.toLowerCase(), "#b93a1f");
+  assert.match(
+    stylesheet,
+    /\.landing-page \.theme-application\s*\{[\s\S]*?--accent:\s*#b93a1f;/,
+    "landing product previews must inherit the warm editorial palette",
+  );
+  assert.match(
+    stylesheet,
+    /\.marketing-company-logo > img\s*\{[\s\S]*?filter:\s*saturate\(1\.12\) brightness\(1\.04\) contrast\(1\.04\);/,
+    "marketing logos must keep their full brand color and contrast",
+  );
 });
 
 test("reusable motion contracts use tokens and transform-safe keyframes", () => {

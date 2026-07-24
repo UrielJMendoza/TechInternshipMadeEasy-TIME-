@@ -51,14 +51,15 @@ test("landing page renders only the final marketing structure in order", () => {
     previous = index;
   }
 
-  assert.match(markup, /Find it early/);
-  assert.match(markup, /Track it/);
-  assert.match(markup, /cleanly/);
+  assert.match(markup, /Your next role/);
+  assert.match(markup, /right on time/);
   assert.match(markup, /No account required/);
-  assert.match(markup, /Search the signal/);
+  assert.match(markup, /Find what fits/);
+  assert.match(markup, /Keep the details/);
   assert.match(markup, /Every application/);
-  assert.match(markup, /Ready when the next role opens/);
+  assert.match(markup, /Ready for what opens next/);
   assert.match(markup, /NVIDIA/);
+  assert.doesNotMatch(markup, /—/);
 
   for (const removedId of [
     'id="problem"',

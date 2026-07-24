@@ -1,6 +1,6 @@
 # Timley modernization context
 
-Updated 2026-07-23 after module 8 (landing-page refinement).
+Updated 2026-07-24 after the landing visual refresh.
 
 ## Product guardrails
 
@@ -37,6 +37,14 @@ Timley is a job-discovery and application-tracking utility, not a career-AI plat
 - Prompt 3 replaced the checklist-based discovery section with a large typographic search showcase and current result rows. It replaced the three generic tracker columns with the full Saved, Applied, Assessment, Interview, and Offer pipeline plus restrained next-action and note surfaces. Both sections use one deliberate motion moment and keep content present without animation.
 - Prompt 4 removed stale landing components, imports, links, statistics helpers, navigation expectations, and deleted-section tests. The production browser audit found no horizontal overflow at 390×844, 768×1024, 1024×768, 1440×900, or the 200%-zoom reflow approximation; desktop/mobile navigation, `/jobs`, `/tracker`, and both retired-route redirects worked.
 - The live audit rendered current-listing hero/search rows and 12 prioritized active-company logo lockups with no failed images. Landmark structure, heading order, accessible mobile disclosure, duplicate-marquee hiding, focus pause, reduced-motion CSS, and color contrast tests remain covered. `public/og-v2.png` is the finished 1200×630 Timley social card.
+
+## Landing visual refresh (2026-07-24)
+
+- The homepage now uses a warm-paper, charcoal, crisp-white, and coral system. The hero keeps the established two-tone headline structure with the editorial line “Your next role, right on time.” Blue and purple ambient gradients were removed from the landing experience.
+- The header is a slimmer warm glass surface with compact oval navigation, route-aware active states, and a coral Browse Jobs action. The footer and other marketing-token surfaces inherit the same warm direction; the application product retains its established functional theme outside the landing page.
+- Homepage previews remain data-backed. They select distinct active listings whose companies have curated domains, prioritizing recognizable employers before other eligible companies. Landing preview logos never guess a domain; a provider failure shows the deterministic monogram instead of a generic globe.
+- Company ticker marks render at full brand color with a light brightness, saturation, and contrast correction. Hover and focus add a short lift and color response while preserving pause-on-interaction and reduced-motion behavior.
+- Motion remains transform-based and restrained: quick button compression, small card tilts, a low-amplitude warm light drift, and shorter section reveals. Authored landing copy contains no em dashes.
 
 ## Job data
 
@@ -146,7 +154,7 @@ This path requires deployment work rather than invented defaults: apply the cont
 
 ## Shared UI, motion, and metadata
 
-- `src/app/globals.css` remains the design-system source of truth: deep-ink marketing and cool-light application tokens, one-pixel borders, restrained radii/shadows, visible focus treatment, and explicit responsive behavior.
+- `src/app/globals.css` remains the design-system source of truth: warm editorial marketing and cool-light application tokens, one-pixel borders, restrained radii/shadows, visible focus treatment, and explicit responsive behavior.
 - `.theme-application` now fully resets semantic aliases so light product previews remain correct when nested inside dark marketing surfaces.
 - The global translucent header contains Find Jobs, Companies, Tracker, Alerts, Account, and one Browse Jobs action. Its native mobile disclosure supports keyboard use, Escape-to-close, focus return, and close-on-navigation.
 - The compact footer groups core product links, useful discovery collections, changelog, privacy, terms, and repository feedback. There are no placeholder social links or links to retired public pages.

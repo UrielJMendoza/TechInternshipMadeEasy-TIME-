@@ -41,9 +41,9 @@ function DiscoveryListing({
           fallback="Location unavailable"
           jobLabel={`${job.title} at ${job.company}`}
         />
-        <strong className={compensation.estimated ? "text-warning" : "text-info"}>
-          {compensation.label}
-        </strong>
+        {!compensation.estimated ? (
+          <strong className="text-info">{compensation.label}</strong>
+        ) : null}
       </div>
       <time dateTime={job.first_seen_at}>{relativeJobAge(job, now)}</time>
       <span className="landing-search-result__open" aria-hidden>

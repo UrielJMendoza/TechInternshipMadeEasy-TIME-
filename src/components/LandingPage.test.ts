@@ -50,7 +50,7 @@ test("landing page renders a concise hero and the complete product structure in 
     previous = index;
   }
 
-  assert.match(markup, /Find your next role/);
+  assert.match(markup, /<h1 id="landing-title">Find your next role<\/h1>/);
   assert.match(
     markup,
     /Fresh internships and new-grad opportunities, all in one place./,
@@ -81,6 +81,21 @@ test("landing page renders a concise hero and the complete product structure in 
   ]) {
     assert.doesNotMatch(markup, new RegExp(removedId));
   }
+});
+
+test("homepage preview omits estimated pay while preserving job data", () => {
+  const googleJob: Internship = {
+    ...fixture,
+    id: "google-fixture",
+    company: "Google",
+    salary: null,
+  };
+  const markup = renderLanding([googleJob]);
+
+  assert.match(markup, /Google/);
+  assert.match(markup, /Software Engineering Intern/);
+  assert.doesNotMatch(markup, /Timley estimate/);
+  assert.doesNotMatch(markup, /Est\. \$28–48\/hr/);
 });
 
 test("landing actions lead to jobs and tracker without dead hashes", () => {

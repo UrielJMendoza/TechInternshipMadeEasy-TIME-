@@ -14,9 +14,7 @@ export function LandingHero({ companies }: LandingHeroProps) {
       <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div className="landing-hero__main">
           <div className="motion-section-reveal landing-hero__copy">
-            <h1 id="landing-title">
-              Find your next role<span aria-hidden>.</span>
-            </h1>
+            <h1 id="landing-title">Find your next role</h1>
             <p>
               Fresh internships and new-grad opportunities, all in one place.
             </p>

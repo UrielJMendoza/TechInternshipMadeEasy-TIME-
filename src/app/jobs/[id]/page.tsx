@@ -4,12 +4,12 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import { Breadcrumbs } from "@/components/Breadcrumbs";
 import { JobOpenedEvent } from "@/components/JobOpenedEvent";
+import { LocationSummary } from "@/components/LocationSummary";
 import { PublicJobList } from "@/components/PublicJobList";
 import { ShareControls } from "@/components/ShareControls";
 import { StructuredData } from "@/components/StructuredData";
 import { TrackedApplyLink } from "@/components/TrackedApplyLink";
 import { classifySponsorship } from "@/lib/jobFilters";
-import { getUsLocationDisplay } from "@/lib/jobLocations";
 import {
   fetchJobsSnapshot,
   fetchPublicJobById,
@@ -179,9 +179,14 @@ export default async function PublicJobPage({
               {job.company}
             </Link>
           </p>
-          <p className="mt-2 text-base text-muted">
-            {getUsLocationDisplay(job.location)}
-          </p>
+          <div className="mt-2 text-base text-muted">
+            <LocationSummary
+              location={job.location}
+              maxVisible={2}
+              fallback="Location unavailable"
+              jobLabel={`${job.title} at ${job.company}`}
+            />
+          </div>
           <p className="mt-5 max-w-3xl text-sm leading-7 text-muted">
             {active
               ? jobPostingDescription(job)

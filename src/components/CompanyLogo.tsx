@@ -61,26 +61,27 @@ export function MarketingCompanyLogo({
 }) {
   const domain = knownCompanyDomain(company);
   const [failed, setFailed] = useState(() => !domain);
-
-  if (!domain || failed) return null;
+  const showFallback = !domain || failed;
 
   return (
     <span className="marketing-company-logo" aria-label={`${company} logo`}>
-      <Image
-        src={logoUrl(domain)}
-        alt=""
-        width={32}
-        height={32}
-        priority={priority}
-        unoptimized
-        decoding="async"
-        referrerPolicy="no-referrer"
-        className="grayscale"
-        onError={(event) => {
-          event.currentTarget.closest(".landing-company-logo")?.setAttribute("hidden", "");
-          setFailed(true);
-        }}
-      />
+      {showFallback ? (
+        <span className="marketing-company-logo__fallback" aria-hidden>
+          {company.charAt(0).toUpperCase()}
+        </span>
+      ) : (
+        <Image
+          src={logoUrl(domain)}
+          alt=""
+          width={36}
+          height={36}
+          priority={priority}
+          unoptimized
+          decoding="async"
+          referrerPolicy="no-referrer"
+          onError={() => setFailed(true)}
+        />
+      )}
       <span aria-hidden>{company}</span>
     </span>
   );
@@ -102,7 +103,7 @@ function CompanyLogoImage({
   const [failed, setFailed] = useState(() => !src);
 
   const avatar = avatarColor(company);
-  const radius = 2;
+  const radius = Math.round(size * 0.22);
 
   // The letter circle always renders as the base layer. When a real logo
   // loads it fades in on top. While it is pending or if it errors, the letter
@@ -136,7 +137,7 @@ function CompanyLogoImage({
           referrerPolicy="no-referrer"
           onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
-          className="absolute inset-0 bg-white object-contain grayscale transition-opacity"
+          className="absolute inset-0 bg-white object-contain transition-opacity"
           style={{ padding: size * 0.12, opacity: loaded ? 1 : 0 }}
         />
       )}

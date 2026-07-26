@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { CompanyLogo } from "@/components/CompanyLogo";
+import { LocationSummary } from "@/components/LocationSummary";
 import { compensationFor } from "@/lib/compensation";
 import { relativeJobAge } from "@/lib/jobTime";
 import { jobPublicPath } from "@/lib/publicCatalog";
@@ -20,18 +21,26 @@ function DiscoveryListing({
   const compensation = compensationFor(job);
 
   return (
-    <Link
-      href={jobPublicPath(job)}
-      className="landing-search-result"
-      aria-label={`View ${job.title} at ${job.company}`}
-    >
-      <CompanyLogo company={job.company} size={42} curatedOnly />
+    <article className="landing-search-result">
+      <Link
+        href={jobPublicPath(job)}
+        className="landing-search-result__overlay"
+        aria-label={`View ${job.title} at ${job.company}`}
+      />
+      <span className="landing-search-result__logo">
+        <CompanyLogo company={job.company} size={42} curatedOnly />
+      </span>
       <div className="landing-search-result__identity">
         <p>{job.company}</p>
         <h3>{job.title}</h3>
       </div>
       <div className="landing-search-result__context">
-        <span>{job.location || "Location unavailable"}</span>
+        <LocationSummary
+          location={job.location}
+          maxVisible={2}
+          fallback="Location unavailable"
+          jobLabel={`${job.title} at ${job.company}`}
+        />
         <strong className={compensation.estimated ? "text-warning" : "text-info"}>
           {compensation.label}
         </strong>
@@ -40,7 +49,7 @@ function DiscoveryListing({
       <span className="landing-search-result__open" aria-hidden>
         →
       </span>
-    </Link>
+    </article>
   );
 }
 
@@ -56,7 +65,7 @@ export function DiscoveryShowcase({
       aria-labelledby="job-discovery-title"
       className="theme-application landing-search-showcase"
     >
-      <div className="landing-reveal mx-auto max-w-[90rem] px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+      <div className="landing-reveal mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
         <header className="landing-section-heading">
           <h2 id="job-discovery-title">Jobs</h2>
           <Link

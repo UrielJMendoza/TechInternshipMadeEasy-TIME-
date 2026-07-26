@@ -40,7 +40,7 @@ function renderCard(dense: boolean, job = listedJob): string {
   );
 }
 
-test("card and compact-card modes retain details and blue external Apply", () => {
+test("card and compact-card modes retain details and the external Apply action", () => {
   for (const dense of [false, true]) {
     const markup = renderCard(dense);
     assert.match(markup, /data-job-id="card-job"/);
@@ -59,6 +59,21 @@ test("card and compact-card modes retain details and blue external Apply", () =>
     assert.match(markup, />Apply</);
     assert.doesNotMatch(markup, /absolute inset-0 z-0[^>]*href=/);
   }
+});
+
+test("long location lists use an accessible user-controlled disclosure", () => {
+  const markup = renderCard(false, {
+    ...listedJob,
+    location:
+      "Remote; Denver, CO; Austin, TX; Seattle, WA; New York, NY",
+  });
+
+  assert.match(markup, /<details[^>]*location-summary--expandable/);
+  assert.match(markup, /Remote; Denver, CO/);
+  assert.match(markup, /View 3 more locations/);
+  assert.match(markup, /Show fewer locations/);
+  assert.equal((markup.match(/<li>/g) ?? []).length, 5);
+  assert.match(markup, /for Cloud Platform Engineering Intern at Example Labs/);
 });
 
 test("compensation and sponsorship meaning never relies on color alone", () => {

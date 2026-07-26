@@ -10,6 +10,10 @@ const landingHero = readFileSync(
   new URL("../components/landing/LandingHero.tsx", import.meta.url),
   "utf8",
 );
+const companyLogo = readFileSync(
+  new URL("../components/CompanyLogo.tsx", import.meta.url),
+  "utf8",
+);
 const jobsPage = readFileSync(
   new URL("../app/jobs/page.tsx", import.meta.url),
   "utf8",
@@ -165,7 +169,7 @@ test("category badges use one neutral, text-backed treatment", () => {
   assert.doesNotMatch(stylesheet, /\.cat-[a-z-]+\s*\{/);
 });
 
-test("one visual system and the signature Apply action stay wired", () => {
+test("one red-led visual system and the signature Apply action stay wired", () => {
   assert.match(landingHero, /theme-marketing/);
   assert.match(jobsPage, /theme-application/);
   assert.match(
@@ -174,9 +178,9 @@ test("one visual system and the signature Apply action stay wired", () => {
     "nested light product previews must reset application aliases",
   );
   assert.match(jobCard, /ui-button--apply/);
-  assert.equal(marketingTokens.page.toLowerCase(), "#ffffff");
+  assert.equal(marketingTokens.page.toLowerCase(), "#f5f5f2");
   assert.equal(marketingTokens.surface.toLowerCase(), "#ffffff");
-  assert.equal(marketingTokens.text.toLowerCase(), "#000000");
+  assert.equal(marketingTokens.text.toLowerCase(), "#111111");
   assert.equal(marketingTokens.primary.toLowerCase(), "#e10600");
   for (const [name, value] of Object.entries(appTokens)) {
     assert.equal(marketingTokens[name], value, `${name} must match across themes`);
@@ -187,41 +191,25 @@ test("one visual system and the signature Apply action stay wired", () => {
     /\.landing-page \.theme-application\s*\{/,
     "landing product previews must use the sitewide application tokens",
   );
+  assert.doesNotMatch(companyLogo, /grayscale/);
   assert.match(
     stylesheet,
-    /\.marketing-company-logo > img[\s\S]*?filter:\s*grayscale\(1\) contrast\(1\.1\);/,
-    "company marks must stay neutral inside the strict palette",
+    /\.landing-page \.marketing-company-logo > img,[\s\S]*?filter:\s*none;/,
+    "company marks must retain their real brand colors",
   );
   assert.doesNotMatch(landingHero, /landing-hero__glow/);
 });
 
-test("stylesheet stays within the black, white, red, and neutral allowlist", () => {
-  const allowed = new Set([
-    "#000000",
-    "#1a1a1a",
-    "#4d4d4d",
-    "#666666",
-    "#b3b3b3",
-    "#d9d9d9",
-    "#e10600",
-    "#f5f5f5",
-    "#ffffff",
-  ]);
-  const colors = [...stylesheet.matchAll(/#[0-9a-f]{6}/gi)].map(([color]) =>
-    color.toLowerCase(),
-  );
-  assert.ok(colors.length > 0);
-  for (const color of colors) {
-    assert.ok(allowed.has(color), `${color} is outside the approved palette`);
-  }
-
+test("stylesheet stays restrained while allowing functional and logo color", () => {
   assert.doesNotMatch(stylesheet, /(?:linear|radial|conic)-gradient\(/);
   assert.doesNotMatch(stylesheet, /backdrop-filter:\s*(?:blur|saturate)/);
   assert.match(
     stylesheet,
-    /\*,\s*\n\*::before,\s*\n\*::after\s*\{[\s\S]*?box-shadow:\s*none\s*!important;/,
-    "the flat visual system must disable decorative shadows",
+    /--shadow-card:\s*0 2px 8px rgb\(17 17 17 \/ 6%\);/,
+    "cards may use quiet neutral depth",
   );
+  assert.doesNotMatch(stylesheet, /filter:\s*grayscale/);
+  assert.doesNotMatch(stylesheet, /filter:\s*blur/);
 });
 
 test("reusable motion contracts use tokens and transform-safe keyframes", () => {

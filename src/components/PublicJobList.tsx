@@ -1,6 +1,6 @@
 import Link from "next/link";
+import { LocationSummary } from "@/components/LocationSummary";
 import { classifySponsorship } from "@/lib/jobFilters";
-import { getUsLocationDisplay } from "@/lib/jobLocations";
 import { jobPublicPath } from "@/lib/publicCatalog";
 import { CATEGORY_LABELS, type Internship } from "@/lib/types";
 
@@ -58,9 +58,14 @@ export function PublicJobList({
                       {job.title}
                     </Link>
                   </h3>
-                  <p className="mt-1.5 text-sm text-muted">
-                    {getUsLocationDisplay(job.location)}
-                  </p>
+                  <div className="mt-1.5 text-sm text-muted">
+                    <LocationSummary
+                      location={job.location}
+                      maxVisible={2}
+                      fallback="Location unavailable"
+                      jobLabel={`${job.title} at ${job.company}`}
+                    />
+                  </div>
                 </div>
                 <span
                   className={`ui-badge ${closed ? "ui-badge--warning" : "ui-badge--neutral"}`}

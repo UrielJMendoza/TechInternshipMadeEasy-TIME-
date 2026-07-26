@@ -9,7 +9,7 @@ const job: Internship = {
   id: "table-job",
   title: "Product Engineering Intern",
   company: "Example Labs",
-  location: "New York, NY",
+  location: "New York, NY; Denver, CO; Seattle, WA",
   category: "product",
   role_type: "internship",
   season: "Summer 2027",
@@ -41,6 +41,8 @@ test("table view is semantic, aligned, and preserves every primary action", () =
   assert.match(markup, /data-job-id="table-job"/);
   assert.match(markup, /Product Engineering Intern/);
   assert.match(markup, /New York, NY/);
+  assert.match(markup, /View 2 more locations/);
+  assert.match(markup, /Show fewer locations/);
   assert.match(markup, /Summer 2027/);
   assert.match(markup, /Employer-listed/);
   assert.match(markup, /Sponsorship unknown/);

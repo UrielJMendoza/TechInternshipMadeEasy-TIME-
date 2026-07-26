@@ -34,7 +34,7 @@ function renderLanding(jobs: Internship[] = [fixture]): string {
   );
 }
 
-test("landing page renders only the compact product structure in order", () => {
+test("landing page renders a concise hero and the complete product structure in order", () => {
   const markup = renderLanding();
   const ids = [
     'id="landing-title"',
@@ -50,13 +50,17 @@ test("landing page renders only the compact product structure in order", () => {
     previous = index;
   }
 
+  assert.match(markup, /Find your next role/);
+  assert.match(
+    markup,
+    /Fresh internships and new-grad opportunities, all in one place./,
+  );
   assert.match(markup, /Browse jobs/);
   assert.match(markup, /View all jobs/);
   assert.match(markup, /Open tracker/);
   assert.match(markup, /Application tracker/);
   assert.match(markup, /NVIDIA/);
   assert.match(markup, /href="\/jobs\/landing-fixture"/);
-  assert.doesNotMatch(markup, /Your next role/);
   assert.doesNotMatch(markup, /right on time/);
   assert.doesNotMatch(markup, /Internships \+ new grad/i);
   assert.doesNotMatch(markup, /No account required/);
@@ -99,6 +103,7 @@ test("company marquee has one accessible copy and one hidden clone", () => {
   assert.match(markup, /aria-hidden="true" class="landing-company-marquee__copy"/);
   assert.match(markup, /Companies hiring now/);
   assert.doesNotMatch(markup, /landing-company-pill/);
+  assert.doesNotMatch(markup, /grayscale/);
 });
 
 test("missing live data renders restrained fallbacks without invented companies", () => {

@@ -8,6 +8,7 @@ import {
   SponsorshipTag,
 } from "@/components/JobCard";
 import { JobSaveButton } from "@/components/JobSaveButton";
+import { LocationSummary } from "@/components/LocationSummary";
 import { trackApplyClicked } from "@/lib/analytics";
 import {
   getApplicationStage,
@@ -15,7 +16,6 @@ import {
   type ApplicationStage,
 } from "@/lib/applicationTracking";
 import { compensationFor } from "@/lib/compensation";
-import { getUsLocationDisplay } from "@/lib/jobLocations";
 import { daysAgo, relativeJobAge } from "@/lib/jobTime";
 import { CATEGORY_LABELS, type Internship } from "@/lib/types";
 
@@ -79,8 +79,6 @@ export function JobTable({
         <tbody className="divide-y divide-border">
           {jobs.map((job) => {
             const stage = getApplicationStage(applications, job.link);
-            const location =
-              getUsLocationDisplay(job.location) || "Unavailable";
             const days = daysAgo(job, now);
             return (
               <tr
@@ -113,12 +111,13 @@ export function JobTable({
                   </div>
                 </td>
                 <td className="px-3 py-2.5">
-                  <span
-                    className="line-clamp-2 text-xs text-muted"
-                    title={location}
-                  >
-                    {location}
-                  </span>
+                  <LocationSummary
+                    location={job.location}
+                    maxVisible={1}
+                    fallback="Unavailable"
+                    className="text-xs text-muted"
+                    jobLabel={`${job.title} at ${job.company}`}
+                  />
                 </td>
                 <td className="px-3 py-2.5 text-xs text-muted">
                   {job.season?.trim() || "Unavailable"}

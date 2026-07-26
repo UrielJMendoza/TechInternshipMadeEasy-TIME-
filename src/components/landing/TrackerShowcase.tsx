@@ -17,7 +17,7 @@ export function TrackerShowcase({ jobs }: TrackerShowcaseProps) {
       aria-labelledby="tracker-showcase-title"
       className="theme-marketing landing-tracker-showcase"
     >
-      <div className="landing-reveal mx-auto max-w-[90rem] px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+      <div className="landing-reveal mx-auto max-w-7xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
         <header className="landing-section-heading">
           <h2 id="tracker-showcase-title">Application tracker</h2>
           <Link

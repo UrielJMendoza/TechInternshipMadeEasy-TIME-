@@ -3,6 +3,7 @@
 import { ApplicationStageMenu } from "@/components/ApplicationStageMenu";
 import { CompanyLogo } from "@/components/CompanyLogo";
 import { JobSaveButton } from "@/components/JobSaveButton";
+import { LocationSummary } from "@/components/LocationSummary";
 import { trackApplyClicked } from "@/lib/analytics";
 import type { ApplicationStage } from "@/lib/applicationTracking";
 import {
@@ -10,7 +11,6 @@ import {
   type Compensation,
 } from "@/lib/compensation";
 import { classifySponsorship } from "@/lib/jobFilters";
-import { getUsLocationDisplay } from "@/lib/jobLocations";
 import {
   HOT_DAYS,
   NEW_DAYS,
@@ -42,8 +42,6 @@ export function JobCard({
   const days = daysAgo(job, now);
   const compensation = compensationFor(job);
   const evidence = listingEvidenceFor(job, now);
-  const displayLocation =
-    getUsLocationDisplay(job.location) || "Location unavailable";
   const statusAccent =
     stage === "offer"
       ? "border-success/35"
@@ -62,14 +60,14 @@ export function JobCard({
         data-company={job.company}
         data-application-stage={stage}
         data-view={dense ? "compact-card" : "card"}
-        className={`ui-card group relative grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-3 overflow-hidden px-4 py-4 transition-[border-color,box-shadow,background-color] hover:border-border-strong hover:shadow-[var(--shadow-card-hover)] sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:px-5 ${statusAccent}`}
+        className={`ui-card group relative grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-3 overflow-hidden px-4 py-4 transition-[transform,border-color,box-shadow,background-color] hover:-translate-y-0.5 hover:border-border-strong hover:shadow-[var(--shadow-card-hover)] sm:grid-cols-[auto_minmax(0,1fr)_auto] sm:px-5 ${statusAccent}`}
       >
         <button
           type="button"
           data-job-details-trigger
           aria-label={`View details for ${job.title} at ${job.company}`}
           onClick={onOpenDetails}
-          className="absolute inset-0 z-0 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-focus"
+          className="absolute inset-0 z-0 rounded-[var(--radius-lg)] text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-focus"
         />
 
         <span className="pointer-events-none relative z-10">
@@ -130,9 +128,14 @@ export function JobCard({
 
         <div className="pointer-events-none relative z-10 col-span-2 grid min-w-0 gap-2 border-t border-border/70 pt-3 sm:col-start-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
           <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5 text-xs text-muted">
-            <span className="max-w-full truncate" title={displayLocation}>
-              {displayLocation}
-            </span>
+            <div className="pointer-events-auto max-w-full">
+              <LocationSummary
+                location={job.location}
+                maxVisible={2}
+                fallback="Location unavailable"
+                jobLabel={`${job.title} at ${job.company}`}
+              />
+            </div>
             <span aria-hidden className="hidden text-border-strong sm:inline">
               ·
             </span>

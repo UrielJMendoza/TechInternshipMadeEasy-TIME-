@@ -6,6 +6,7 @@ import {
 } from "@/components/ApplicationStageMenu";
 import { BottomSheet } from "@/components/BottomSheet";
 import { CompanyLogo } from "@/components/CompanyLogo";
+import { LocationSummary } from "@/components/LocationSummary";
 import { JobSaveButton } from "@/components/JobSaveButton";
 import { ReportListing } from "@/components/ReportListing";
 import { ShareControls } from "@/components/ShareControls";
@@ -13,7 +14,6 @@ import type { ApplicationStage } from "@/lib/applicationTracking";
 import { trackApplyClicked } from "@/lib/analytics";
 import { compensationFor } from "@/lib/compensation";
 import { classifySponsorship } from "@/lib/jobFilters";
-import { getUsLocationDisplay } from "@/lib/jobLocations";
 import {
   formatEvidenceDate,
   listingEvidenceFor,
@@ -120,7 +120,6 @@ export function JobDetailsContent({
   const listingEvidence = listingEvidenceFor(job, now);
   const source = sourceDetailsFor(job.source);
   const missing = missingJobEvidence(job);
-  const location = getUsLocationDisplay(job.location) || "Unavailable";
   const sponsorship = sponsorshipDetails(job.sponsorship);
 
   return (
@@ -137,7 +136,6 @@ export function JobDetailsContent({
           <h2 className="mt-2 text-xl font-extrabold leading-tight tracking-[-0.025em] text-fg sm:text-2xl">
             {job.title}
           </h2>
-          <p className="mt-2 text-sm text-muted">{location}</p>
         </div>
       </div>
 
@@ -189,7 +187,17 @@ export function JobDetailsContent({
           Role facts
         </h3>
         <dl className="mt-3 grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2">
-          <EvidenceItem label="Location" value={location} />
+          <EvidenceItem
+            label="Location"
+            value={
+              <LocationSummary
+                location={job.location}
+                maxVisible={2}
+                fallback="Unavailable"
+                jobLabel={`${job.title} at ${job.company}`}
+              />
+            }
+          />
           <EvidenceItem
             label="Role category"
             value={CATEGORY_LABELS[job.category]}

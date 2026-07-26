@@ -157,28 +157,15 @@ test("application semantic colors remain readable on base and soft surfaces", ()
   }
 });
 
-test("category badge pairs remain non-semantic and WCAG AA", () => {
-  const categoryStart = stylesheet.indexOf("/* Category badges");
-  const categoryEnd = stylesheet.indexOf(
-    "@layer components {\n  .landing-page",
-    categoryStart,
+test("category badges use one neutral, text-backed treatment", () => {
+  assert.match(
+    stylesheet,
+    /\.cat\s*\{[\s\S]*?border:[\s\S]*?background:\s*var\(--surface\);[\s\S]*?color:\s*var\(--fg\);/,
   );
-  const categorySection = stylesheet.slice(categoryStart, categoryEnd);
-  const pairs = [
-    ...categorySection.matchAll(
-      /background:\s*(#[0-9a-f]{6});\s*\n\s*color:\s*(#[0-9a-f]{6});/gi,
-    ),
-  ];
-  assert.equal(pairs.length, 10, "Expected every category color group");
-  for (const [, background, foreground] of pairs) {
-    assert.ok(
-      contrast(foreground, background) >= 4.5,
-      `${foreground} must remain readable on ${background}`,
-    );
-  }
+  assert.doesNotMatch(stylesheet, /\.cat-[a-z-]+\s*\{/);
 });
 
-test("two visual surfaces and the signature Apply action stay wired", () => {
+test("one visual system and the signature Apply action stay wired", () => {
   assert.match(landingHero, /theme-marketing/);
   assert.match(jobsPage, /theme-application/);
   assert.match(
@@ -187,19 +174,53 @@ test("two visual surfaces and the signature Apply action stay wired", () => {
     "nested light product previews must reset application aliases",
   );
   assert.match(jobCard, /ui-button--apply/);
-  assert.equal(marketingTokens.page.toLowerCase(), "#f4f0e7");
-  assert.equal(marketingTokens.surface.toLowerCase(), "#fffdf8");
-  assert.equal(marketingTokens.text.toLowerCase(), "#191915");
-  assert.equal(marketingTokens.primary.toLowerCase(), "#b93a1f");
-  assert.match(
+  assert.equal(marketingTokens.page.toLowerCase(), "#ffffff");
+  assert.equal(marketingTokens.surface.toLowerCase(), "#ffffff");
+  assert.equal(marketingTokens.text.toLowerCase(), "#000000");
+  assert.equal(marketingTokens.primary.toLowerCase(), "#e10600");
+  for (const [name, value] of Object.entries(appTokens)) {
+    assert.equal(marketingTokens[name], value, `${name} must match across themes`);
+  }
+  assert.equal(marketingTokens["primary-display"], "#e10600");
+  assert.doesNotMatch(
     stylesheet,
-    /\.landing-page \.theme-application\s*\{[\s\S]*?--accent:\s*#b93a1f;/,
-    "landing product previews must inherit the warm editorial palette",
+    /\.landing-page \.theme-application\s*\{/,
+    "landing product previews must use the sitewide application tokens",
   );
   assert.match(
     stylesheet,
-    /\.marketing-company-logo > img\s*\{[\s\S]*?filter:\s*saturate\(1\.12\) brightness\(1\.04\) contrast\(1\.04\);/,
-    "marketing logos must keep their full brand color and contrast",
+    /\.marketing-company-logo > img[\s\S]*?filter:\s*grayscale\(1\) contrast\(1\.1\);/,
+    "company marks must stay neutral inside the strict palette",
+  );
+  assert.doesNotMatch(landingHero, /landing-hero__glow/);
+});
+
+test("stylesheet stays within the black, white, red, and neutral allowlist", () => {
+  const allowed = new Set([
+    "#000000",
+    "#1a1a1a",
+    "#4d4d4d",
+    "#666666",
+    "#b3b3b3",
+    "#d9d9d9",
+    "#e10600",
+    "#f5f5f5",
+    "#ffffff",
+  ]);
+  const colors = [...stylesheet.matchAll(/#[0-9a-f]{6}/gi)].map(([color]) =>
+    color.toLowerCase(),
+  );
+  assert.ok(colors.length > 0);
+  for (const color of colors) {
+    assert.ok(allowed.has(color), `${color} is outside the approved palette`);
+  }
+
+  assert.doesNotMatch(stylesheet, /(?:linear|radial|conic)-gradient\(/);
+  assert.doesNotMatch(stylesheet, /backdrop-filter:\s*(?:blur|saturate)/);
+  assert.match(
+    stylesheet,
+    /\*,\s*\n\*::before,\s*\n\*::after\s*\{[\s\S]*?box-shadow:\s*none\s*!important;/,
+    "the flat visual system must disable decorative shadows",
   );
 });
 
@@ -281,12 +302,5 @@ test("reduced motion disables movement and keeps marquee content available", () 
     reducedMotion,
     /\.landing-company-marquee__copy\[aria-hidden="true"\][\s\S]*?display:\s*none;/,
   );
-  assert.match(
-    reducedMotion,
-    /\.landing-hero-save,[\s\S]*?animation:\s*none\s*!important;/,
-  );
-  assert.match(
-    reducedMotion,
-    /\.landing-pipeline-card--moving\s*\{[\s\S]*?animation:\s*none\s*!important;/,
-  );
+  assert.match(stylesheet, /\.landing-reveal\s*\{[\s\S]*?animation:\s*none\s*!important;/);
 });

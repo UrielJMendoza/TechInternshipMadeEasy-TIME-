@@ -468,7 +468,7 @@ export function Board({
       <div
         data-sticky-toolbar
         data-testid="job-toolbar"
-        className="sticky top-[4.75rem] z-[var(--layer-sticky)] isolate -mx-4 mt-5 border-y border-border bg-bg/95 px-4 py-3 shadow-[var(--shadow-sticky)] backdrop-blur-md sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"
+        className="sticky top-[4.75rem] z-[var(--layer-sticky)] isolate -mx-4 mt-5 border-y border-border bg-bg px-4 py-3 sm:-mx-6 sm:px-6 lg:-mx-8 lg:px-8"
       >
         <div className="flex items-center justify-between gap-3">
           <div className="ui-tabs" role="tablist" aria-label="Role type">

@@ -40,7 +40,7 @@ export default async function CompaniesPage() {
       className="theme-application min-h-screen bg-bg text-fg"
     >
       <StructuredData data={itemList} />
-      <section className="border-b border-border bg-raised">
+      <section className="border-b-2 border-fg bg-bg">
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
           <p className="text-xs font-extrabold tracking-[0.14em] text-accent-hover uppercase">
             Real listing observations

@@ -55,7 +55,7 @@ export function TrackerApplicationCard({
         ) : (
           <span
             aria-hidden
-            className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-border bg-raised text-sm font-extrabold text-faint"
+            className="flex size-10 shrink-0 items-center justify-center rounded-sm border border-border bg-raised text-sm font-extrabold text-faint"
           >
             {initials(row.company)}
           </span>

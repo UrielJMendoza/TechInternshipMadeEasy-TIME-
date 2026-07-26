@@ -4,16 +4,12 @@ import { useState } from "react";
 import Image from "next/image";
 import { companyDomain, knownCompanyDomain } from "@/lib/companyDomain";
 
-// Deterministic, warm fallback colors for companies without a usable logo.
+// Deterministic neutral fallbacks for companies without a usable logo.
 const AVATAR_COLORS = [
-  { background: "#F7E8DE", foreground: "#943A22" },
-  { background: "#F1EBDD", foreground: "#5F5A52" },
-  { background: "#E5E8DB", foreground: "#4D6245" },
-  { background: "#F4E2D5", foreground: "#85442A" },
-  { background: "#EDE4D8", foreground: "#5C5145" },
-  { background: "#E7E2DB", foreground: "#625E57" },
-  { background: "#F0DFD7", foreground: "#873823" },
-  { background: "#EEE8DD", foreground: "#575149" },
+  { background: "#000000", foreground: "#FFFFFF" },
+  { background: "#F5F5F5", foreground: "#000000" },
+  { background: "#E10600", foreground: "#FFFFFF" },
+  { background: "#E5E5E5", foreground: "#000000" },
 ] as const;
 
 function avatarColor(company: string): (typeof AVATAR_COLORS)[number] {
@@ -79,6 +75,7 @@ export function MarketingCompanyLogo({
         unoptimized
         decoding="async"
         referrerPolicy="no-referrer"
+        className="grayscale"
         onError={(event) => {
           event.currentTarget.closest(".landing-company-logo")?.setAttribute("hidden", "");
           setFailed(true);
@@ -105,7 +102,7 @@ function CompanyLogoImage({
   const [failed, setFailed] = useState(() => !src);
 
   const avatar = avatarColor(company);
-  const radius = Math.round(size * 0.28);
+  const radius = 2;
 
   // The letter circle always renders as the base layer. When a real logo
   // loads it fades in on top. While it is pending or if it errors, the letter
@@ -139,7 +136,7 @@ function CompanyLogoImage({
           referrerPolicy="no-referrer"
           onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
-          className="absolute inset-0 bg-white object-contain transition-opacity"
+          className="absolute inset-0 bg-white object-contain grayscale transition-opacity"
           style={{ padding: size * 0.12, opacity: loaded ? 1 : 0 }}
         />
       )}

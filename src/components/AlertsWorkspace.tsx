@@ -589,7 +589,7 @@ export function AlertsWorkspaceView({
   return (
     <main
       id="main-content"
-      className="min-h-[calc(100dvh-4rem)] bg-bg text-fg"
+      className="theme-application min-h-[calc(100dvh-4rem)] bg-bg text-fg"
     >
       <div className="mx-auto max-w-[88rem] px-4 py-8 sm:px-6 sm:py-12 lg:px-8">
         <header className="grid gap-6 border-b border-border pb-7 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
@@ -623,7 +623,7 @@ export function AlertsWorkspaceView({
         {loadError ? (
           <div
             role="status"
-            className="mt-6 rounded-xl border border-warning/35 bg-warning/10 p-4 text-sm leading-relaxed text-muted"
+            className="mt-6 rounded-sm border border-warning/35 bg-warning/10 p-4 text-sm leading-relaxed text-muted"
           >
             The current jobs snapshot could not be loaded. Your saved searches
             and local alert inbox are still available; no search is being
@@ -632,7 +632,7 @@ export function AlertsWorkspaceView({
         ) : partialData ? (
           <div
             role="status"
-            className="mt-6 rounded-xl border border-warning/35 bg-warning/10 p-4 text-sm leading-relaxed text-muted"
+            className="mt-6 rounded-sm border border-warning/35 bg-warning/10 p-4 text-sm leading-relaxed text-muted"
           >
             The current jobs snapshot is partial. Alerts are evaluated only
             against the roles that loaded successfully.
@@ -662,7 +662,7 @@ export function AlertsWorkspaceView({
         <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_minmax(21rem,0.65fr)]">
           <section
             aria-labelledby="inbox-title"
-            className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6"
+            className="rounded-sm border border-border bg-surface p-4 sm:p-6"
           >
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
@@ -675,7 +675,7 @@ export function AlertsWorkspaceView({
                   searches.
                 </p>
               </div>
-              <span className="rounded-full bg-raised px-3 py-1 text-xs font-extrabold text-muted">
+              <span className="rounded-sm border border-border bg-raised px-3 py-1 text-xs font-extrabold text-muted">
                 {deliveryHistory.length}{" "}
                 {deliveryHistory.length === 1 ? "delivery" : "deliveries"}
               </span>
@@ -684,7 +684,7 @@ export function AlertsWorkspaceView({
             {!alertsReady || !searchesReady ? (
               <p className="mt-6 text-sm text-muted">Loading local alerts…</p>
             ) : deliveryHistory.length === 0 ? (
-              <div className="mt-6 rounded-xl border border-dashed border-border p-6 text-center">
+              <div className="mt-6 rounded-sm border border-dashed border-border p-6 text-center">
                 <h3 className="text-base font-extrabold text-fg">
                   No alert deliveries yet
                 </h3>
@@ -719,13 +719,13 @@ export function AlertsWorkspaceView({
           <aside className="space-y-6">
             <section
               aria-labelledby="delivery-title"
-              className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6"
+              className="rounded-sm border border-border bg-surface p-4 sm:p-6"
             >
               <h2 id="delivery-title" className="text-lg font-black text-fg">
                 Delivery
               </h2>
               <div className="mt-4 space-y-4">
-                <div className="rounded-xl border border-border p-4">
+                <div className="rounded-sm border border-border p-4">
                   <h3 className="text-sm font-extrabold text-fg">
                     Browser alerts
                   </h3>
@@ -755,7 +755,7 @@ export function AlertsWorkspaceView({
 
                 <div
                   aria-disabled="true"
-                  className="rounded-xl border border-border bg-raised/50 p-4"
+                  className="rounded-sm border border-border bg-raised/50 p-4"
                 >
                   <h3 className="text-sm font-extrabold text-fg">
                     Email alerts
@@ -777,7 +777,7 @@ export function AlertsWorkspaceView({
 
             <section
               aria-labelledby="privacy-title"
-              className="rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6"
+              className="rounded-sm border border-border bg-surface p-4 sm:p-6"
             >
               <h2 id="privacy-title" className="text-lg font-black text-fg">
                 Privacy and persistence
@@ -816,7 +816,7 @@ export function AlertsWorkspaceView({
 
         <section
           aria-labelledby="searches-title"
-          className="mt-6 rounded-2xl border border-border bg-surface p-4 shadow-sm sm:p-6"
+          className="mt-6 rounded-sm border border-border bg-surface p-4 sm:p-6"
         >
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
@@ -840,7 +840,7 @@ export function AlertsWorkspaceView({
               Loading saved searches…
             </p>
           ) : searches.length === 0 ? (
-            <div className="mt-6 rounded-xl border border-dashed border-border p-6 text-center">
+            <div className="mt-6 rounded-sm border border-dashed border-border p-6 text-center">
               <h3 className="text-base font-extrabold text-fg">
                 Save your first search
               </h3>
@@ -889,7 +889,7 @@ export function AlertsWorkspaceView({
 
 function SummaryCard({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-xl border border-border bg-surface p-4 shadow-sm">
+    <div className="rounded-sm border border-border bg-surface p-4">
       <p className="text-xs font-extrabold uppercase tracking-[0.12em] text-faint">
         {label}
       </p>
@@ -917,7 +917,7 @@ function AlertCard({
   ].filter((label): label is string => label !== null);
 
   return (
-    <article className="rounded-xl border border-border p-4">
+    <article className="rounded-sm border border-border p-4">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div className="min-w-0">
           <h3 className="text-base font-extrabold text-fg">
@@ -995,7 +995,7 @@ function AlertCard({
           {alert.matchReasons.map((reason) => (
             <li
               key={reason}
-              className="rounded-full bg-raised px-2.5 py-1 text-xs font-semibold text-muted"
+              className="rounded-sm border border-border bg-raised px-2.5 py-1 text-xs font-semibold text-muted"
             >
               {reason}
             </li>
@@ -1053,7 +1053,7 @@ function SearchSettingsCard({
   }
 
   return (
-    <article className="rounded-xl border border-border p-4 sm:p-5">
+    <article className="rounded-sm border border-border p-4 sm:p-5">
       <form onSubmit={submit}>
         <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_10rem]">
           <label className="text-xs font-extrabold text-muted">
@@ -1128,7 +1128,7 @@ function SearchSettingsCard({
             {summary.map((item) => (
               <li
                 key={item}
-                className="rounded-full bg-raised px-2.5 py-1 text-xs font-semibold text-muted"
+                className="rounded-sm border border-border bg-raised px-2.5 py-1 text-xs font-semibold text-muted"
               >
                 {item}
               </li>

@@ -12,17 +12,17 @@ export const revalidate = 300;
 
 export const metadata: Metadata = {
   title: {
-    absolute: "Timley | fresh internships and new grad roles",
+    absolute: "Timley | jobs and application tracking",
   },
   description:
-    "Fresh internships and new-grad roles, plus a simple tracker for every next step. No account required.",
+    "Find open internships and new-grad roles, then organize applications in your browser.",
   alternates: {
     canonical: "/",
   },
   openGraph: {
-    title: "Your next role, right on time. | Timley",
+    title: "Timley | jobs and application tracking",
     description:
-      "Fresh internships and new-grad roles, plus a simple tracker for every next step. No account required.",
+      "Find open internships and new-grad roles, then organize applications in your browser.",
     url: "/",
     siteName: "Timley",
     type: "website",
@@ -30,9 +30,9 @@ export const metadata: Metadata = {
   },
   twitter: {
     card: "summary_large_image",
-    title: "Your next role, right on time. | Timley",
+    title: "Timley | jobs and application tracking",
     description:
-      "Fresh internships and new-grad roles, plus a simple tracker for every next step. No account required.",
+      "Find open internships and new-grad roles, then organize applications in your browser.",
     images: [OG_IMAGE.url],
   },
 };

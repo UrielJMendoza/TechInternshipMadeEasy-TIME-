@@ -154,7 +154,7 @@ export default async function PublicJobPage({
         }
       />
 
-      <section className="border-b border-border bg-raised">
+      <section className="border-b-2 border-fg bg-bg">
         <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
           <Breadcrumbs items={breadcrumbs} />
           <div className="mt-8 flex flex-wrap items-center gap-2">
@@ -288,7 +288,7 @@ export default async function PublicJobPage({
       {related.length > 0 ? (
         <section
           aria-labelledby="related-roles"
-          className="border-t border-border bg-raised"
+          className="border-t-2 border-fg bg-bg"
         >
           <div className="mx-auto max-w-5xl px-4 py-12 sm:px-6 lg:px-8">
             <h2 id="related-roles" className="text-2xl font-extrabold">

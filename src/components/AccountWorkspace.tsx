@@ -548,7 +548,7 @@ export function AccountWorkspace() {
       id="main-content"
       className="theme-application min-h-screen bg-bg text-fg"
     >
-      <section className="border-b border-border bg-raised">
+      <section className="border-b-2 border-fg bg-bg">
         <div className="mx-auto max-w-6xl px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
           <div className="flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
             <div className="max-w-3xl">
@@ -613,7 +613,7 @@ export function AccountWorkspace() {
                 </Link>
               </div>
             </div>
-            <aside className="rounded-xl border border-info/30 bg-info-soft p-5 sm:p-6">
+            <aside className="rounded-sm border border-info/30 bg-info-soft p-5 sm:p-6">
               <h2 className="font-bold text-info">
                 Deployment setup reference
               </h2>
@@ -651,7 +651,7 @@ export function AccountWorkspace() {
         </section>
       ) : status === "error" ? (
         <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6 lg:px-8">
-          <div className="rounded-xl border border-error/30 bg-error-soft p-6 sm:p-8">
+          <div className="rounded-sm border border-error/30 bg-error-soft p-6 sm:p-8">
             <h2 className="text-xl font-bold text-error">
               Account continuity could not initialize.
             </h2>
@@ -668,7 +668,7 @@ export function AccountWorkspace() {
             <>
               <section
                 aria-labelledby="password-update-title"
-                className="rounded-xl border border-info/30 bg-info-soft p-6 sm:p-8"
+                className="rounded-sm border border-info/30 bg-info-soft p-6 sm:p-8"
               >
                 <div className="max-w-2xl">
                   <p className="font-mono text-xs font-bold tracking-[0.14em] text-info uppercase">
@@ -1029,7 +1029,7 @@ export function AccountWorkspace() {
                     {SYNC_OPTIONS.map((option) => (
                       <label
                         key={option.key}
-                        className={`flex min-h-20 items-start gap-3 rounded-xl border p-4 ${
+                        className={`flex min-h-20 items-start gap-3 rounded-sm border p-4 ${
                           syncSelection[option.key]
                             ? "border-accent bg-accent-soft"
                             : "border-border bg-surface"
@@ -1059,7 +1059,7 @@ export function AccountWorkspace() {
                     ))}
                   </fieldset>
 
-                  <div className="mt-5 rounded-xl border border-warning/30 bg-warning-soft p-4 text-sm leading-6">
+                  <div className="mt-5 rounded-sm border border-warning/30 bg-warning-soft p-4 text-sm leading-6">
                     <strong className="text-warning">
                       Tracker data is private.
                     </strong>{" "}
@@ -1068,7 +1068,7 @@ export function AccountWorkspace() {
                     details when those fields exist.
                   </div>
 
-                  <div className="mt-6 rounded-xl border border-info/30 bg-info-soft p-4 text-sm leading-6">
+                  <div className="mt-6 rounded-sm border border-info/30 bg-info-soft p-4 text-sm leading-6">
                     <strong className="text-info">
                       Merge is additive and local-first.
                     </strong>{" "}
@@ -1173,7 +1173,7 @@ export function AccountWorkspace() {
                   ].map((item) => (
                     <div
                       key={item.key}
-                      className="rounded-xl border border-border bg-raised p-4"
+                      className="rounded-sm border border-border bg-raised p-4"
                     >
                       <dt className="text-xs font-bold tracking-wide text-faint uppercase">
                         {item.label}
@@ -1268,7 +1268,7 @@ export function AccountWorkspace() {
 
               <section
                 aria-labelledby="delete-account-title"
-                className={`mt-8 rounded-xl border p-6 sm:p-8 ${
+                className={`mt-8 rounded-sm border p-6 sm:p-8 ${
                   capabilities.accountDeletion
                     ? "border-error/30 bg-error-soft"
                     : "border-warning/30 bg-warning-soft"
@@ -1351,7 +1351,7 @@ export function AccountWorkspace() {
                       A native confirmation prompt appears before Timley sends
                       the deletion request.
                     </p>
-                    <label className="flex items-start gap-3 rounded-xl border border-error/30 bg-surface p-4">
+                    <label className="flex items-start gap-3 rounded-sm border border-error/30 bg-surface p-4">
                       <input
                         type="checkbox"
                         className="mt-1 size-4 shrink-0 accent-[var(--error)]"

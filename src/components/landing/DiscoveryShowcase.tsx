@@ -2,6 +2,7 @@ import Link from "next/link";
 import { CompanyLogo } from "@/components/CompanyLogo";
 import { compensationFor } from "@/lib/compensation";
 import { relativeJobAge } from "@/lib/jobTime";
+import { jobPublicPath } from "@/lib/publicCatalog";
 import type { Internship } from "@/lib/types";
 
 interface DiscoveryShowcaseProps {
@@ -19,7 +20,11 @@ function DiscoveryListing({
   const compensation = compensationFor(job);
 
   return (
-    <article className="landing-search-result">
+    <Link
+      href={jobPublicPath(job)}
+      className="landing-search-result"
+      aria-label={`View ${job.title} at ${job.company}`}
+    >
       <CompanyLogo company={job.company} size={42} curatedOnly />
       <div className="landing-search-result__identity">
         <p>{job.company}</p>
@@ -31,9 +36,11 @@ function DiscoveryListing({
           {compensation.label}
         </strong>
       </div>
-      <time>{relativeJobAge(job, now)}</time>
-      <span className="landing-search-result__save">Save</span>
-    </article>
+      <time dateTime={job.first_seen_at}>{relativeJobAge(job, now)}</time>
+      <span className="landing-search-result__open" aria-hidden>
+        →
+      </span>
+    </Link>
   );
 }
 
@@ -49,54 +56,34 @@ export function DiscoveryShowcase({
       aria-labelledby="job-discovery-title"
       className="theme-application landing-search-showcase"
     >
-      <div className="landing-reveal mx-auto grid max-w-[90rem] gap-14 px-4 py-20 sm:px-6 sm:py-24 lg:grid-cols-[minmax(0,0.72fr)_minmax(36rem,1.28fr)] lg:items-center lg:gap-20 lg:px-8 lg:py-32">
-        <div className="landing-showcase-copy">
-          <h2 id="job-discovery-title">
-            Find what fits.
-            <br />
-            Keep the details.
-          </h2>
-          <p>
-            Search by role, major, location, freshness, pay, and sponsorship.
-            Save the jobs worth pursuing.
-          </p>
-          <p className="landing-showcase-copy__note">
-            The details that matter stay beside each role.
-          </p>
+      <div className="landing-reveal mx-auto max-w-[90rem] px-4 py-12 sm:px-6 sm:py-16 lg:px-8">
+        <header className="landing-section-heading">
+          <h2 id="job-discovery-title">Jobs</h2>
           <Link
             href="/jobs"
-            className="ui-button ui-button--primary mt-8 min-h-12 px-6"
+            className="ui-button ui-button--primary min-h-11 px-5"
           >
-            Explore Jobs
+            View all jobs
             <span aria-hidden>↗</span>
           </Link>
-        </div>
+        </header>
 
         <div className="landing-search-product">
-          <div className="landing-search-product__beam" aria-hidden />
           <div className="landing-search-window">
             <div className="landing-search-window__top">
-              <div>
-                <strong>Find your next role</strong>
-                <span>Internships and new-grad opportunities</span>
-              </div>
-              <span>Featured current roles</span>
+              <strong>Current listings</strong>
+              <span>{Math.min(jobs.length, 3)} shown</span>
             </div>
 
-            <div className="landing-search-control">
+            <Link
+              href="/jobs"
+              className="landing-search-control"
+              aria-label="Search all jobs"
+            >
               <span aria-hidden>⌕</span>
-              <span>Search company, role, or city</span>
-              <kbd>/</kbd>
-            </div>
-
-            <div className="landing-search-filters" aria-label="Available search filters">
-              <span>Role</span>
-              <span>Major</span>
-              <span>Location</span>
-              <span>Freshness</span>
-              <span>Pay</span>
-              <span>Sponsorship</span>
-            </div>
+              <span>Search jobs</span>
+              <span aria-hidden>→</span>
+            </Link>
 
             <div className="landing-search-results">
               {jobs.length > 0 ? (

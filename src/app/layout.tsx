@@ -8,7 +8,7 @@ import "./globals.css";
 
 const title = "Timley | job discovery and application tracking";
 const description =
-  "Fresh internships and new-grad roles, with a built-in application tracker. No account required.";
+  "Find open internships and new-grad roles, then organize applications in your browser.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -34,7 +34,7 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#F4F0E7",
+  themeColor: "#FFFFFF",
   colorScheme: "light",
 };
 

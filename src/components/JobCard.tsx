@@ -69,7 +69,7 @@ export function JobCard({
           data-job-details-trigger
           aria-label={`View details for ${job.title} at ${job.company}`}
           onClick={onOpenDetails}
-          className="absolute inset-0 z-0 rounded-xl text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-focus"
+          className="absolute inset-0 z-0 rounded-sm text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-3px] focus-visible:outline-focus"
         />
 
         <span className="pointer-events-none relative z-10">

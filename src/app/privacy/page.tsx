@@ -111,7 +111,7 @@ const localRecords = [
 export default function PrivacyPage() {
   return (
     <main id="main-content" className="theme-application min-h-screen bg-bg text-fg">
-      <section className="border-b border-border bg-raised">
+      <section className="border-b-2 border-fg bg-bg">
         <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
           <p className="font-mono text-xs font-bold tracking-[0.18em] text-accent uppercase">
             Privacy
@@ -165,7 +165,7 @@ export default function PrivacyPage() {
           </div>
         </div>
 
-        <div className="mt-10 rounded-xl border border-info/30 bg-info-soft p-6 sm:p-8">
+        <div className="mt-10 rounded-sm border border-info/30 bg-info-soft p-6 sm:p-8">
           <h2 className="text-lg font-bold text-info">Control and deletion</h2>
           <div className="mt-3 max-w-3xl space-y-3 leading-7 text-fg">
             <p>

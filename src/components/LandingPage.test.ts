@@ -34,14 +34,13 @@ function renderLanding(jobs: Internship[] = [fixture]): string {
   );
 }
 
-test("landing page renders only the final marketing structure in order", () => {
+test("landing page renders only the compact product structure in order", () => {
   const markup = renderLanding();
   const ids = [
     'id="landing-title"',
     'id="company-marquee-title"',
     'id="job-discovery"',
     'id="tracker-showcase"',
-    'id="final-cta-title"',
   ];
 
   let previous = -1;
@@ -51,17 +50,26 @@ test("landing page renders only the final marketing structure in order", () => {
     previous = index;
   }
 
-  assert.match(markup, /Your next role/);
-  assert.match(markup, /right on time/);
-  assert.match(markup, /No account required/);
-  assert.match(markup, /Find what fits/);
-  assert.match(markup, /Keep the details/);
-  assert.match(markup, /Every application/);
-  assert.match(markup, /Ready for what opens next/);
+  assert.match(markup, /Browse jobs/);
+  assert.match(markup, /View all jobs/);
+  assert.match(markup, /Open tracker/);
+  assert.match(markup, /Application tracker/);
   assert.match(markup, /NVIDIA/);
+  assert.match(markup, /href="\/jobs\/landing-fixture"/);
+  assert.doesNotMatch(markup, /Your next role/);
+  assert.doesNotMatch(markup, /right on time/);
+  assert.doesNotMatch(markup, /Internships \+ new grad/i);
+  assert.doesNotMatch(markup, /No account required/);
+  assert.doesNotMatch(markup, /Find what fits/);
+  assert.doesNotMatch(markup, /Keep the details/);
+  assert.doesNotMatch(markup, /Every application/);
+  assert.doesNotMatch(markup, /Ready for what opens next/);
+  assert.doesNotMatch(markup, /Featured current roles/);
+  assert.doesNotMatch(markup, />Save</);
   assert.doesNotMatch(markup, /—/);
 
   for (const removedId of [
+    'id="final-cta-title"',
     'id="problem"',
     'id="freshness"',
     'id="product-statistics"',
@@ -89,13 +97,12 @@ test("company marquee has one accessible copy and one hidden clone", () => {
     /role="region"[^>]*aria-label="Companies with current active listings on Timley/,
   );
   assert.match(markup, /aria-hidden="true" class="landing-company-marquee__copy"/);
-  assert.match(markup, /Fresh roles from companies including/);
+  assert.match(markup, /Companies hiring now/);
   assert.doesNotMatch(markup, /landing-company-pill/);
 });
 
 test("missing live data renders restrained fallbacks without invented companies", () => {
   const markup = renderLanding([]);
-  assert.match(markup, /Current listings will appear here/);
   assert.match(markup, /Current results will appear/);
   assert.doesNotMatch(markup, /company-marquee-title/);
   assert.doesNotMatch(markup, /NVIDIA/);

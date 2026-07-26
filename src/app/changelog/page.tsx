@@ -71,7 +71,7 @@ const releases = [
 export default function ChangelogPage() {
   return (
     <main id="main-content" className="theme-application min-h-screen bg-bg text-fg">
-      <section className="border-b border-border bg-raised">
+      <section className="border-b-2 border-fg bg-bg">
         <div className="mx-auto max-w-4xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8 lg:py-24">
           <p className="font-mono text-xs font-bold tracking-[0.18em] text-accent uppercase">
             Changelog

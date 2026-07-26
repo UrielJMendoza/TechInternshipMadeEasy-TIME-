@@ -270,7 +270,7 @@ export function Tracker({ jobs, updatedAt, loadError }: TrackerProps) {
         {loadError && (
           <div
             role="status"
-            className="mt-5 rounded-xl border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning"
+            className="mt-5 rounded-sm border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning"
           >
             Your saved tracker data is available. Timley could not refresh
             active-listing status, so no application is being treated as
@@ -362,7 +362,7 @@ export function Tracker({ jobs, updatedAt, loadError }: TrackerProps) {
 
         <section
           aria-labelledby="upcoming-actions-heading"
-          className="mt-8 grid gap-4 rounded-xl border border-border bg-surface p-4 sm:p-5 lg:grid-cols-[13rem_minmax(0,1fr)]"
+          className="mt-8 grid gap-4 rounded-sm border border-border bg-surface p-4 sm:p-5 lg:grid-cols-[13rem_minmax(0,1fr)]"
         >
           <div>
             <p className="text-[10px] font-extrabold tracking-[0.12em] text-accent-hover uppercase">
@@ -447,7 +447,7 @@ export function Tracker({ jobs, updatedAt, loadError }: TrackerProps) {
             />
           </div>
 
-          <div className="mt-5 rounded-xl border border-border bg-surface p-3 sm:p-4">
+          <div className="mt-5 rounded-sm border border-border bg-surface p-3 sm:p-4">
             <div className="grid gap-3 lg:grid-cols-[minmax(15rem,1fr)_12rem_12rem_13rem_auto] lg:items-end">
               <label className="block">
                 <span className="mb-1.5 block text-xs font-bold text-muted">
@@ -692,7 +692,7 @@ function TrackerBoard({
             <section
               key={group.stage}
               aria-labelledby={`board-${group.stage}`}
-              className="rounded-xl border border-border bg-raised/70 p-3"
+              className="rounded-sm border border-border bg-raised/70 p-3"
             >
               <div className="mb-3 flex items-center justify-between gap-2">
                 <h3 id={`board-${group.stage}`}>

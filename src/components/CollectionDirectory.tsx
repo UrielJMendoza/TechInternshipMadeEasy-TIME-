@@ -38,7 +38,7 @@ export function CollectionDirectory({
       className="theme-application min-h-screen bg-bg text-fg"
     >
       <StructuredData data={[breadcrumbJsonLd(breadcrumbs), itemList]} />
-      <section className="border-b border-border bg-raised">
+      <section className="border-b-2 border-fg bg-bg">
         <div className="mx-auto max-w-6xl px-4 py-14 sm:px-6 sm:py-20 lg:px-8">
           <Breadcrumbs items={breadcrumbs} />
           <p className="mt-8 text-xs font-extrabold tracking-[0.14em] text-accent-hover uppercase">

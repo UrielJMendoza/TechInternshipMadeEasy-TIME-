@@ -43,9 +43,7 @@ export function CompanyMarquee({ companies }: CompanyMarqueeProps) {
       className="landing-hero-marquee"
       aria-labelledby="company-marquee-title"
     >
-      <h2 id="company-marquee-title">
-        Fresh roles from companies including
-      </h2>
+      <h2 id="company-marquee-title">Companies hiring now</h2>
       <div
         className="landing-company-marquee"
         role="region"

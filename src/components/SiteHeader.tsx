@@ -98,7 +98,7 @@ export function SiteHeader() {
                 href={item.href}
                 onClick={closeMobileMenu}
                 aria-current={isActive(item.href) ? "page" : undefined}
-                className="site-mobile-menu__link flex min-h-11 items-center rounded-xl px-3 text-sm font-semibold text-muted hover:bg-raised hover:text-fg"
+                className="site-mobile-menu__link flex min-h-11 items-center border-b border-border px-3 text-sm font-semibold text-muted hover:bg-raised hover:text-fg"
               >
                 {item.label}
               </Link>

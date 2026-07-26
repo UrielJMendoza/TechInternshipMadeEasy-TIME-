@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 const NAV_ITEMS = [
+  { href: "/", label: "Home" },
   { href: "/jobs", label: "Find Jobs" },
   { href: "/companies", label: "Companies" },
   { href: "/tracker", label: "Tracker" },
@@ -36,17 +37,8 @@ export function SiteHeader() {
 
   return (
     <header className="theme-marketing site-header">
-      <div className="site-header__inner mx-auto flex min-h-[3.75rem] max-w-7xl items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
-        <Link
-          href="/"
-          aria-label="Timley home"
-          className="site-wordmark shrink-0 text-[1.35rem] font-extrabold tracking-[-0.05em] text-fg"
-        >
-          timley
-          <span className="text-[var(--token-marketing-color-primary-display)]">
-            .
-          </span>
-        </Link>
+      <div className="site-header__inner mx-auto flex min-h-[3.75rem] max-w-7xl items-center justify-end gap-4 px-4 sm:px-6 lg:grid lg:grid-cols-[1fr_auto_1fr] lg:px-8">
+        <span aria-hidden className="hidden lg:block" />
 
         <nav
           aria-label="Primary navigation"
@@ -64,7 +56,7 @@ export function SiteHeader() {
           ))}
         </nav>
 
-        <div className="hidden items-center gap-3 lg:flex">
+        <div className="hidden items-center justify-self-end gap-3 lg:flex">
           <Link
             href="/jobs"
             className="site-header__cta ui-button ui-button--primary min-h-9 px-4"

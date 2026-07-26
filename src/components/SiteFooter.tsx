@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 const PRODUCT_LINKS = [
+  { href: "/", label: "Home" },
   { href: "/jobs", label: "Find jobs" },
   { href: "/companies", label: "Companies" },
   { href: "/tracker", label: "Tracker" },
@@ -29,19 +30,7 @@ const COMPANY_LINKS = [
 export function SiteFooter() {
   return (
     <footer className="theme-marketing border-t border-border bg-bg text-fg">
-      <div className="mx-auto grid max-w-7xl gap-8 px-4 py-8 sm:px-6 md:grid-cols-[minmax(8rem,0.65fr)_minmax(0,2fr)] lg:px-8">
-        <div>
-          <Link
-            href="/"
-            className="site-wordmark text-2xl font-extrabold tracking-[-0.05em]"
-          >
-            timley
-            <span className="text-[var(--token-marketing-color-primary-display)]">
-              .
-            </span>
-          </Link>
-        </div>
-
+      <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
         <div className="grid gap-7 sm:grid-cols-3">
           <FooterLinks heading="Product" links={PRODUCT_LINKS} />
           <FooterLinks heading="Explore" links={EXPLORE_LINKS} />

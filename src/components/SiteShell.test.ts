@@ -37,6 +37,7 @@ test("shared header and footer expose every working primary destination", () => 
     markup,
     /href="https:\/\/github\.com\/UrielJMendoza\/TechInternshipMadeEasy-TIME-\/issues\/new"/,
   );
+  assert.doesNotMatch(markup, /site-wordmark|aria-label="Timley home"/i);
   assert.match(markup, /<summary[^>]*aria-label="Open navigation menu"/);
   for (const href of ["/alerts", "/account"]) {
     assert.equal(

@@ -573,10 +573,6 @@
       var(--motion-ease-standard);
   }
 
-  .site-wordmark {
-    text-decoration: none;
-  }
-
   .site-nav {
     gap: 1.5rem;
     border: 0;

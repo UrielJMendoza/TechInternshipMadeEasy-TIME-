@@ -71,10 +71,10 @@ const localRecords = [
       "Whether you explicitly enabled foreground browser notices for saved searches. A search must also have its Browser channel enabled.",
   },
   {
-    name: "Followed companies",
+    name: "Legacy company follows",
     key: "timley:followed-companies:v1",
     detail:
-      "A bounded list of public company-page slugs you follow. It stays in this browser and does not contain employer contact information.",
+      "A bounded list created by the retired company pages. It stays in this browser until you clear local product data.",
   },
   {
     name: "Browser reminder setting",
@@ -126,7 +126,7 @@ export default function PrivacyPage() {
             nothing until you explicitly select data categories and sync.
           </p>
           <p className="mt-5 font-mono text-xs text-faint">
-            Last updated July 23, 2026
+            Last updated July 26, 2026
           </p>
         </div>
       </section>

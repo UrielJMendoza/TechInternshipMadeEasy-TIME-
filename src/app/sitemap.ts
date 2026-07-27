@@ -1,8 +1,7 @@
 import type { MetadataRoute } from "next";
-import { fetchPublicJobsSnapshot } from "@/lib/jobs";
+import { fetchJobsSnapshot } from "@/lib/jobs";
 import {
   buildCampusCollections,
-  buildCompanyProfiles,
   buildPublicCollections,
   isLegitimateActiveJob,
   jobPublicPath,
@@ -17,7 +16,7 @@ function safeDate(value: string | null | undefined, fallback: Date): Date {
 }
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const snapshot = await fetchPublicJobsSnapshot();
+  const snapshot = await fetchJobsSnapshot();
   const generatedAt = safeDate(snapshot.generatedAt, new Date());
   const entries: MetadataRoute.Sitemap = [
     {
@@ -56,12 +55,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 0.6,
     },
-    {
-      url: absoluteUrl("/companies"),
-      lastModified: generatedAt,
-      changeFrequency: "daily",
-      priority: 0.8,
-    },
     ...["/changelog", "/privacy", "/terms"].map((path) => ({
       url: absoluteUrl(path),
       lastModified: generatedAt,
@@ -80,24 +73,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const campusCollections = buildCampusCollections(snapshot.jobs, now).filter(
     (collection) => collection.indexable,
   );
-  const companies = buildCompanyProfiles(snapshot.jobs, []).filter(
-    (company) => company.indexable,
-  );
-
   for (const collection of [...collections, ...campusCollections]) {
     entries.push({
       url: absoluteUrl(collection.path),
       lastModified: safeDate(collection.updatedAt, generatedAt),
       changeFrequency: "daily",
       priority: collection.kind === "freshness" ? 0.8 : 0.7,
-    });
-  }
-  for (const company of companies) {
-    entries.push({
-      url: absoluteUrl(`/companies/${company.slug}`),
-      lastModified: safeDate(company.lastObservedAt, generatedAt),
-      changeFrequency: "daily",
-      priority: 0.6,
     });
   }
   for (const job of snapshot.jobs.filter(isLegitimateActiveJob)) {

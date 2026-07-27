@@ -12,8 +12,8 @@ browser data by itself.
 Public discovery pages are generated from the real active snapshot. They cover
 adequately populated role types, categories, explicit remote and sponsorship
 evidence, canonical locations, allowlisted hiring seasons, jobs first observed
-this week, unaffiliated campus filter bundles, and companies with enough active
-evidence. Thin or stale collections stay out of the directory and sitemap.
+this week, and unaffiliated campus filter bundles. Thin or stale collections
+stay out of the directory and sitemap.
 
 ## How it works
 

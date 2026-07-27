@@ -120,7 +120,7 @@ export default async function PublicJobPage({
   const job = result.job;
   const active = isLegitimateActiveJob(job);
   const path = jobPublicPath(job);
-  const companyPath = `/companies/${companySlugForJob(job)}`;
+  const companyPath = `/jobs?q=${encodeURIComponent(job.company)}`;
   const breadcrumbs = [
     { name: "Home", path: "/" },
     { name: "Jobs", path: "/jobs" },

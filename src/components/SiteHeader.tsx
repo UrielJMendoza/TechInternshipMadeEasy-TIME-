@@ -7,7 +7,6 @@ import { useEffect, useRef } from "react";
 const NAV_ITEMS = [
   { href: "/", label: "Home" },
   { href: "/jobs", label: "Find Jobs" },
-  { href: "/companies", label: "Companies" },
   { href: "/tracker", label: "Tracker" },
   { href: "/alerts", label: "Alerts" },
   { href: "/account", label: "Account" },

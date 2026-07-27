@@ -117,6 +117,8 @@ test("company marquee has one accessible copy and one hidden clone", () => {
   );
   assert.match(markup, /aria-hidden="true" class="landing-company-marquee__copy"/);
   assert.match(markup, /Companies hiring now/);
+  assert.match(markup, /href="\/jobs\?q=NVIDIA"/);
+  assert.doesNotMatch(markup, /href="\/companies/);
   assert.doesNotMatch(markup, /landing-company-pill/);
   assert.doesNotMatch(markup, /grayscale/);
 });

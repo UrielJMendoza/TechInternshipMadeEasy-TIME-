@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { MarketingCompanyLogo } from "@/components/CompanyLogo";
-import { companySlugFromName } from "@/lib/publicCatalog";
 
 interface CompanyMarqueeProps {
   companies: string[];
@@ -23,7 +22,7 @@ function CompanyStrip({
         ) : (
           <Link
             key={company}
-            href={`/companies/${companySlugFromName(company)}`}
+            href={`/jobs?q=${encodeURIComponent(company)}`}
             className="landing-company-logo"
             aria-label={`View active ${company} listings`}
           >

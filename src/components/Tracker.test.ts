@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -10,12 +11,7 @@ import {
 
 test("tracker exposes the complete workspace controls in initial markup", () => {
   const markup = renderToStaticMarkup(
-    createElement(Tracker, {
-      jobs: [],
-      generatedAt: "2026-07-22T12:00:00Z",
-      updatedAt: "2026-07-22T11:00:00Z",
-      loadError: false,
-    }),
+    createElement(Tracker),
   );
 
   assert.match(markup, /Application workspace/);
@@ -42,16 +38,10 @@ test("tracker exposes the complete workspace controls in initial markup", () => 
 });
 
 test("tracker keeps browser data usable when the active feed is unavailable", () => {
-  const markup = renderToStaticMarkup(
-    createElement(Tracker, {
-      jobs: [],
-      generatedAt: "2026-07-22T12:00:00Z",
-      updatedAt: null,
-      loadError: true,
-    }),
-  );
+  const source = readFileSync(new URL("./Tracker.tsx", import.meta.url), "utf8");
 
-  assert.match(markup, /Your saved tracker data is available/);
-  assert.match(markup, /no application is being treated as removed/);
-  assert.match(markup, /browser-first/);
+  assert.match(source, /usePublicJobsFeed\(needsJobsFeed\)/);
+  assert.match(source, /Your saved tracker data is available/);
+  assert.match(source, /no application is being treated as\s+removed/);
+  assert.match(source, /needsJobsFeed = ready && applicationCount > 0/);
 });

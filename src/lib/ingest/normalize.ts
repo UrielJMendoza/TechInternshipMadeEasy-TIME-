@@ -3,6 +3,8 @@ import type {
   NormalizedJob,
   SponsorshipStatus,
 } from "../types";
+import { plausiblePostedTime } from "../jobTime";
+import { safeExternalHttpUrl } from "../safeUrl";
 import { sanitizeUsLocation } from "../usLocations";
 
 /** Strip emoji, flag markers, markdown bold and stray whitespace. */
@@ -246,8 +248,12 @@ function isTrackingParam(name: string): boolean {
  * collapsed only when the resulting URL remains a valid job page.
  */
 export function canonicalizeApplicationUrl(url: string): string {
+  const safeUrl = safeExternalHttpUrl(url);
+  if (!safeUrl) return "";
+
   try {
-    const u = new URL(url);
+    const u = new URL(safeUrl);
+
     for (const p of [...u.searchParams.keys()]) {
       if (isTrackingParam(p)) u.searchParams.delete(p);
     }
@@ -281,7 +287,7 @@ export function canonicalizeApplicationUrl(url: string): string {
     u.searchParams.sort();
     return u.toString().replace(/\?$/, "");
   } catch {
-    return url.trim();
+    return "";
   }
 }
 
@@ -399,8 +405,10 @@ function sponsorshipEvidence(value: string | null): {
   return { status: "unknown", confidence: null };
 }
 
-function enrichTrustFields(job: NormalizedJob): NormalizedJob {
+function enrichTrustFields(job: NormalizedJob): NormalizedJob | null {
   const canonicalUrl = canonicalizeApplicationUrl(job.link);
+  if (!canonicalUrl) return null;
+
   const canonicalCompany = canonicalCompanyIdentity(job.company);
   const title = normalizedTitle(job.title);
   const location = normalizedLocation(job.location);
@@ -469,6 +477,8 @@ export function dedupeJobs(jobs: NormalizedJob[]): NormalizedJob[] {
 
   for (const input of jobs) {
     const job = enrichTrustFields(input);
+    if (!job) continue;
+
     const company = job.canonical_company!;
     const link = applicationUrlKey(job.canonical_url!);
     const externalKey = job.external_job_id
@@ -527,13 +537,16 @@ export const MAX_AGE_DAYS = 120;
 
 function isRecent(posted: string | null, now: number): boolean {
   if (!posted) return true; // no date — let first_seen aging handle it
-  const t = new Date(`${posted}T00:00:00Z`).getTime();
+  const t = plausiblePostedTime(posted, now);
+  if (t === null) return false;
   return now - t <= MAX_AGE_DAYS * 86_400_000;
 }
 
 /** USA-only, posted within the last MAX_AGE_DAYS. */
-export function applyPostFilters(jobs: NormalizedJob[]): NormalizedJob[] {
-  const now = Date.now();
+export function applyPostFilters(
+  jobs: NormalizedJob[],
+  now = Date.now(),
+): NormalizedJob[] {
   return jobs.flatMap((job) => {
     if (!isRecent(job.posted_date, now)) return [];
 
@@ -541,19 +554,10 @@ export function applyPostFilters(jobs: NormalizedJob[]): NormalizedJob[] {
     if (!sanitized.eligible) return [];
 
     const location = sanitized.display;
-    return [
-      enrichTrustFields({
-        ...job,
-        location,
-      }),
-    ];
+    const normalized = enrichTrustFields({
+      ...job,
+      location,
+    });
+    return normalized ? [normalized] : [];
   });
-}
-
-export async function fetchText(url: string): Promise<string> {
-  const res = await fetch(url, {
-    headers: { "User-Agent": "internship-tracker (github.com/UrielJMendoza)" },
-  });
-  if (!res.ok) throw new Error(`GET ${url} -> ${res.status}`);
-  return res.text();
 }

@@ -1,5 +1,6 @@
 import type { Category, NormalizedJob, RoleType } from "../../types";
-import { categorize, cleanLink, cleanText, dedupeKey, fetchText } from "../normalize";
+import { fetchText } from "../fetch";
+import { categorize, cleanLink, cleanText, dedupeKey } from "../normalize";
 
 const BASE = "https://raw.githubusercontent.com/speedyapply/2027-SWE-College-Jobs/main";
 

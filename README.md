@@ -210,7 +210,9 @@ npm run ingest        # one-off: fetch all sources and upsert into Supabase
 Trigger the deployed route manually:
 
 ```bash
-curl "https://<deployment>/api/ingest?key=$CRON_SECRET"
+curl --fail-with-body \
+  --header "Authorization: Bearer $CRON_SECRET" \
+  "https://<deployment>/api/ingest"
 ```
 
 ### Security model

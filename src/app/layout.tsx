@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { ContinuityProvider } from "@/components/ContinuityProvider";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
 import { StructuredData } from "@/components/StructuredData";
+import { hasConfiguredContinuity } from "@/lib/continuityEnvironment";
 import { OG_IMAGE, SITE_URL, siteIdentityJsonLd } from "@/lib/seo";
 import "./globals.css";
 
@@ -38,11 +38,23 @@ export const viewport: Viewport = {
   colorScheme: "light",
 };
 
+async function OptionalContinuity({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
+  if (!hasConfiguredContinuity()) return children;
+  const { ContinuityProvider } = await import(
+    "@/components/ContinuityProvider"
+  );
+  return <ContinuityProvider>{children}</ContinuityProvider>;
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
       <body>
-        <ContinuityProvider>
+        <OptionalContinuity>
           <StructuredData data={siteIdentityJsonLd()} />
           <a
             href="#main-content"
@@ -53,7 +65,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
           <SiteHeader />
           {children}
           <SiteFooter />
-        </ContinuityProvider>
+        </OptionalContinuity>
       </body>
     </html>
   );

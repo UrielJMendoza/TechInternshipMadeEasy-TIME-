@@ -63,14 +63,60 @@ export function compensationFor(job: Internship): Compensation {
   };
 }
 
-/** "$62/hr" | "$201k/yr" -> approximate annual USD, for sorting only. */
+function annualizePay(
+  amount: number,
+  thousands: boolean,
+  rawUnit: string | undefined,
+): number {
+  const value = amount * (thousands ? 1000 : 1);
+  const unit = rawUnit?.toLowerCase();
+
+  if (unit?.startsWith("hr") || unit?.startsWith("hour")) {
+    return value * 2080;
+  }
+  if (unit?.startsWith("mo") || unit?.startsWith("month")) {
+    return value * 12;
+  }
+  if (unit?.startsWith("yr") || unit?.startsWith("year")) return value;
+
+  // A bare value is only unambiguous when it is already annual-sized or uses
+  // a "k" suffix. "$42" could be hourly, monthly, or a typo, so keep it out.
+  return thousands || value >= 1000 ? value : 0;
+}
+
+/**
+ * Employer-listed pay -> approximate annual USD. For ranges, this deliberately
+ * returns the lower bound so a minimum-pay filter never qualifies a listing
+ * only because the top of its advertised range clears the threshold.
+ */
 export function annualSalary(salary: string | null): number {
   if (!salary) return 0;
-  const match = salary
-    .replace(/,/g, "")
-    .match(/\$?\s*(\d+(?:\.\d+)?)\s*(k)?\s*\/\s*(hr|yr|mo)/i);
-  if (!match) return 0;
-  const amount = Number(match[1]) * (match[2] ? 1000 : 1);
-  const unit = match[3].toLowerCase();
-  return unit === "hr" ? amount * 2080 : unit === "mo" ? amount * 12 : amount;
+  const normalized = salary.replace(/,/g, "");
+  const unit = "(hr|hour|hourly|yr|year|yearly|mo|month|monthly)s?";
+  const rangePattern = new RegExp(
+    `(\\$)?\\s*(\\d+(?:\\.\\d+)?)\\s*(k)?\\s*(?:(?:\\/|per\\s+)\\s*${unit})?\\s*(?:[-\\u2012-\\u2015]|to)\\s*(\\$)?\\s*(\\d+(?:\\.\\d+)?)\\s*(k)?\\s*(?:(?:\\/|per\\s+)\\s*${unit})?`,
+    "gi",
+  );
+
+  for (const match of normalized.matchAll(rangePattern)) {
+    const hasPayMarker = Boolean(
+      match[1] || match[3] || match[4] || match[5] || match[7] || match[8],
+    );
+    if (!hasPayMarker) continue;
+
+    const lowUnit = match[4] ?? match[8];
+    const lowThousands = Boolean(match[3] || (!match[4] && match[7]));
+    return annualizePay(Number(match[2]), lowThousands, lowUnit);
+  }
+
+  const scalarPattern = new RegExp(
+    `(\\$)?\\s*(\\d+(?:\\.\\d+)?)\\s*(k)?\\s*(?:(?:\\/|per\\s+)\\s*${unit})?`,
+    "gi",
+  );
+  for (const match of normalized.matchAll(scalarPattern)) {
+    if (!match[1] && !match[3] && !match[4]) continue;
+    return annualizePay(Number(match[2]), Boolean(match[3]), match[4]);
+  }
+
+  return 0;
 }

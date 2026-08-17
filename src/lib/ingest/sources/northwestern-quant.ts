@@ -1,6 +1,7 @@
 import type { Category, NormalizedJob } from "../../types";
 import { isUsStateLabel, normalizeLocationText } from "../../usLocations";
-import { categorize, cleanLink, cleanText, dedupeKey, fetchText } from "../normalize";
+import { fetchText } from "../fetch";
+import { categorize, cleanLink, cleanText, dedupeKey } from "../normalize";
 
 const URL =
   "https://raw.githubusercontent.com/northwesternfintech/2027QuantInternships/main/README.md";

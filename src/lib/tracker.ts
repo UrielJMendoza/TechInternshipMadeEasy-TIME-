@@ -5,6 +5,7 @@ import {
   type TrackedApplicationStage,
 } from "@/lib/applicationTracking";
 import type { Internship } from "@/lib/types";
+import { safeExternalHttpUrl } from "@/lib/safeUrl";
 
 export const TRACKER_STAGE_FILTERS = [
   "all",
@@ -197,14 +198,7 @@ export function listingHostname(jobKey: string): string {
 }
 
 export function safeListingHref(jobKey: string): string | null {
-  try {
-    const url = new URL(jobKey);
-    return url.protocol === "http:" || url.protocol === "https:"
-      ? url.toString()
-      : null;
-  } catch {
-    return null;
-  }
+  return safeExternalHttpUrl(jobKey);
 }
 
 export function localDateKey(date: Date): string {

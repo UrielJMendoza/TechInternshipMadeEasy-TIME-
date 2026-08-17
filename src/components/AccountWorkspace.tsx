@@ -619,7 +619,7 @@ export function AccountWorkspace() {
                 </Link>
               </div>
             </div>
-            <aside className="rounded-sm border border-info/30 bg-info-soft p-5 sm:p-6">
+            <div className="rounded-sm border border-info/30 bg-info-soft p-5 sm:p-6">
               <h2 className="font-bold text-info">
                 Deployment setup reference
               </h2>
@@ -632,12 +632,12 @@ export function AccountWorkspace() {
                 href={README_CONTINUITY_URL}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="mt-5 inline-flex min-h-11 items-center font-bold text-accent underline underline-offset-4"
+                className="mt-5 inline-flex min-h-11 items-center font-bold text-accent-hover underline underline-offset-4"
               >
                 Read deployment setup
                 <span aria-hidden>&nbsp;↗</span>
               </a>
-            </aside>
+            </div>
           </div>
         </section>
       ) : status === "initializing" ? (

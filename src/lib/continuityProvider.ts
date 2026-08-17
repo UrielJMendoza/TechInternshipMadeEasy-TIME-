@@ -4,7 +4,10 @@ import {
   type SupabaseClient,
   type User,
 } from "@supabase/supabase-js";
-import type { SyncSelection } from "./continuitySnapshot";
+import {
+  MAX_CONTINUITY_SNAPSHOT_JSON_LENGTH,
+  type SyncSelection,
+} from "./continuitySnapshot";
 
 const CONTINUITY_AUTH_STORAGE_KEY = "timley:continuity:auth:v1";
 const READ_CONTINUITY_RPC =
@@ -21,7 +24,8 @@ const CONTINUITY_CATEGORY_NAMES = [
   "savedSearches",
 ] as const;
 
-export const MAX_CONTINUITY_SNAPSHOT_LENGTH = 2_000_000;
+export const MAX_CONTINUITY_SNAPSHOT_LENGTH =
+  MAX_CONTINUITY_SNAPSHOT_JSON_LENGTH;
 export const ACCOUNT_DELETION_EXPECTED_USER_HEADER =
   "x-timley-expected-user-id";
 

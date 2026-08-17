@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { Tracker } from "@/components/Tracker";
-import { fetchJobsSnapshot } from "@/lib/jobs";
 
 const title = "Application workspace";
 const description =
@@ -28,9 +27,6 @@ export const metadata: Metadata = {
   },
 };
 
-export const revalidate = 86400;
-
-export default async function TrackerPage() {
-  const snapshot = await fetchJobsSnapshot();
-  return <Tracker {...snapshot} />;
+export default function TrackerPage() {
+  return <Tracker />;
 }

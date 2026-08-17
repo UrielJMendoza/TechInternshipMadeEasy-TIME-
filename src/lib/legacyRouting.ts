@@ -22,3 +22,11 @@ export function getLegacyJobsRedirect(
   const query = params.toString();
   return query ? `/jobs?${query}` : "/jobs";
 }
+
+export function getJobsRobotsDirective(
+  pathname: string,
+  search: string,
+): string | null {
+  if (pathname !== "/jobs" || !hasBoardFilterParams(search)) return null;
+  return "noindex, follow";
+}

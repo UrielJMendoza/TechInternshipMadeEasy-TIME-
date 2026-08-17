@@ -1,31 +1,16 @@
 import type { Metadata } from "next";
 import { Board } from "@/components/Board";
-import { hasBoardFilterParams } from "@/lib/boardFilterState";
 import { fetchJobsSnapshot } from "@/lib/jobs";
 import { publicPageMetadata } from "@/lib/seo";
 
-export const revalidate = 300;
+export const revalidate = 86400;
 
-export async function generateMetadata({
-  searchParams,
-}: {
-  searchParams: Promise<Record<string, string | string[] | undefined>>;
-}): Promise<Metadata> {
-  const values = await searchParams;
-  const params = new URLSearchParams();
-  for (const [key, value] of Object.entries(values)) {
-    if (Array.isArray(value)) value.forEach((item) => params.append(key, item));
-    else if (value !== undefined) params.set(key, value);
-  }
-  const filtered = hasBoardFilterParams(params.toString());
-  return publicPageMetadata({
-    title: "Browse internships and new-grad jobs",
-    description:
-      "Search, filter, save, and track active internship and new-grad listings on Timley.",
-    path: "/jobs",
-    indexable: !filtered,
-  });
-}
+export const metadata: Metadata = publicPageMetadata({
+  title: "Browse internships and new-grad jobs",
+  description:
+    "Search, filter, save, and track active internship and new-grad listings on Timley.",
+  path: "/jobs",
+});
 
 export default async function JobsPage() {
   const snapshot = await fetchJobsSnapshot();

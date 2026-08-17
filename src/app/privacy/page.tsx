@@ -126,7 +126,7 @@ export default function PrivacyPage() {
             nothing until you explicitly select data categories and sync.
           </p>
           <p className="mt-5 font-mono text-xs text-faint">
-            Last updated July 26, 2026
+            Last updated August 17, 2026
           </p>
         </div>
       </section>
@@ -247,18 +247,18 @@ export default function PrivacyPage() {
                 explicitly choose to enable tracker reminders or saved-search
                 browser alerts. Tracker reminders are best-effort foreground
                 notices in the tracker. Saved-search browser checks run only
-                while the Alerts page is open, including after it returns to
-                focus. Your browser and operating system process the
-                notification content and control how it appears.
+                while the Alerts page is open, at most once per day unless you
+                request a manual refresh. Your browser and operating system
+                process the notification content and control how it appears.
               </p>
             </article>
             <article className="ui-card p-6">
               <h3 className="text-lg font-bold">Saved-search alerts</h3>
               <p className="mt-3 leading-7 text-muted">
                 While the Alerts page is open, Timley refreshes its server jobs
-                snapshot about every five minutes and on return to focus, then
-                evaluates due searches in your browser. Delivery history
-                retains why a role matched, the triggering search, its
+                snapshot at most once per day or when you request a manual
+                refresh, then evaluates due searches in your browser. Delivery
+                history retains why a role matched, the triggering search, its
                 frequency, and a filtered results link for both in-app and
                 browser-only matches. Email alerts are scaffolded but
                 unavailable, and Timley does not collect an email address for

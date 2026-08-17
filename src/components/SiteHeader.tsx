@@ -47,6 +47,7 @@ export function SiteHeader() {
             <Link
               key={item.href}
               href={item.href}
+              prefetch={false}
               aria-current={isActive(item.href) ? "page" : undefined}
               className="site-nav-link"
             >
@@ -58,6 +59,7 @@ export function SiteHeader() {
         <div className="hidden items-center justify-self-end gap-3 lg:flex">
           <Link
             href="/jobs"
+            prefetch={false}
             className="site-header__cta ui-button ui-button--primary min-h-9 px-4"
           >
             Browse Jobs
@@ -87,6 +89,7 @@ export function SiteHeader() {
               <Link
                 key={item.href}
                 href={item.href}
+                prefetch={false}
                 onClick={closeMobileMenu}
                 aria-current={isActive(item.href) ? "page" : undefined}
                 className="site-mobile-menu__link flex min-h-11 items-center border-b border-border px-3 text-sm font-semibold text-muted hover:bg-raised hover:text-fg"
@@ -96,6 +99,7 @@ export function SiteHeader() {
             ))}
             <Link
               href="/jobs"
+              prefetch={false}
               onClick={closeMobileMenu}
               className="ui-button ui-button--primary mt-2 w-full"
             >

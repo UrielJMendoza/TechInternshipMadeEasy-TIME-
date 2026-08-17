@@ -28,7 +28,7 @@ export const metadata: Metadata = {
   },
 };
 
-export const revalidate = 300;
+export const revalidate = 86400;
 
 export default async function TrackerPage() {
   const snapshot = await fetchJobsSnapshot();

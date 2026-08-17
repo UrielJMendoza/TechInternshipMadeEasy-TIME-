@@ -24,6 +24,7 @@ function DiscoveryListing({
     <article className="landing-search-result">
       <Link
         href={jobPublicPath(job)}
+        prefetch={false}
         className="landing-search-result__overlay"
         aria-label={`View ${job.title} at ${job.company}`}
       />
@@ -70,6 +71,7 @@ export function DiscoveryShowcase({
           <h2 id="job-discovery-title">Jobs</h2>
           <Link
             href="/jobs"
+            prefetch={false}
             className="ui-button ui-button--primary min-h-11 px-5"
           >
             View all jobs
@@ -86,6 +88,7 @@ export function DiscoveryShowcase({
 
             <Link
               href="/jobs"
+              prefetch={false}
               className="landing-search-control"
               aria-label="Search all jobs"
             >

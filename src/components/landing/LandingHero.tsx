@@ -22,6 +22,7 @@ export function LandingHero({ companies }: LandingHeroProps) {
             <nav className="landing-hero__actions" aria-label="Primary actions">
               <Link
                 href="/jobs"
+                prefetch={false}
                 className="ui-button ui-button--primary min-h-12 px-6"
               >
                 Browse jobs
@@ -29,6 +30,7 @@ export function LandingHero({ companies }: LandingHeroProps) {
               </Link>
               <Link
                 href="/tracker"
+                prefetch={false}
                 className="ui-button ui-button--secondary min-h-12 px-6"
               >
                 Open tracker

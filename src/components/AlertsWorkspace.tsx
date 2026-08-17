@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useTransition,
   type FormEvent,
 } from "react";
 import { MobileFilterSheet } from "@/components/MobileFilterSheet";
@@ -47,18 +48,19 @@ interface AlertsWorkspaceProps {
 
 interface AlertsWorkspaceViewProps extends AlertsWorkspaceProps {
   refreshJobs: () => void;
+  refreshPending: boolean;
 }
 
 const BROWSER_ALERT_PREFERENCE_KEY =
   "timley:search-alerts:browser-enabled:v1";
 const STATUS_MAX_LENGTH = 240;
-const FOREGROUND_REFRESH_INTERVAL_MS = 300_000;
+const FOREGROUND_REFRESH_INTERVAL_MS = 86_400_000;
 const REFRESH_COALESCE_MS = 250;
-const MINIMUM_REFRESH_GAP_MS = 5_000;
+const MINIMUM_REFRESH_GAP_MS = FOREGROUND_REFRESH_INTERVAL_MS;
 const EMAIL_ALERTS_AVAILABLE = false;
 
 const FREQUENCY_OPTIONS = [
-  ["instant", "Instant"],
+  ["instant", "Every check"],
   ["daily", "Daily"],
   ["weekly", "Weekly"],
   ["paused", "Paused"],
@@ -106,6 +108,7 @@ function formatDateTime(value: string): string {
   return new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short",
+    timeZone: "UTC",
   }).format(date);
 }
 
@@ -176,8 +179,18 @@ function filterSummary(filters: BoardFilters): string[] {
 
 export function AlertsWorkspace(props: AlertsWorkspaceProps) {
   const router = useRouter();
-  const refreshJobs = useCallback(() => router.refresh(), [router]);
-  return <AlertsWorkspaceView {...props} refreshJobs={refreshJobs} />;
+  const [refreshPending, startRefreshTransition] = useTransition();
+  const refreshJobs = useCallback(
+    () => startRefreshTransition(() => router.refresh()),
+    [router],
+  );
+  return (
+    <AlertsWorkspaceView
+      {...props}
+      refreshJobs={refreshJobs}
+      refreshPending={refreshPending}
+    />
+  );
 }
 
 export function AlertsWorkspaceView({
@@ -187,6 +200,7 @@ export function AlertsWorkspaceView({
   loadError,
   partialData,
   refreshJobs,
+  refreshPending,
 }: AlertsWorkspaceViewProps) {
   const {
     searches,
@@ -207,6 +221,7 @@ export function AlertsWorkspaceView({
   const [status, setStatus] = useState("");
   const refreshTimerRef = useRef<number | null>(null);
   const lastRefreshRequestRef = useRef(0);
+  const refreshWasPendingRef = useRef(false);
 
   const persistAlertState = useCallback((next: SearchAlertState) => {
     const canonical = parseSearchAlertState(
@@ -302,6 +317,16 @@ export function AlertsWorkspaceView({
       }
     };
   }, [scheduleJobsRefresh]);
+
+  useEffect(() => {
+    if (refreshPending) {
+      refreshWasPendingRef.current = true;
+      return;
+    }
+    if (!refreshWasPendingRef.current) return;
+    refreshWasPendingRef.current = false;
+    setStatus("Jobs snapshot refreshed; no saved searches were due.");
+  }, [refreshPending]);
 
   useEffect(() => {
     if (!searchesReady || !alertsReady || loadError) return;
@@ -614,7 +639,11 @@ export function AlertsWorkspaceView({
             >
               Refresh jobs and check
             </button>
-            <Link href="/jobs" className="ui-button ui-button--primary">
+            <Link
+              href="/jobs"
+              prefetch={false}
+              className="ui-button ui-button--primary"
+            >
               Find and save a search
             </Link>
           </div>
@@ -690,11 +719,12 @@ export function AlertsWorkspaceView({
                 </h3>
                 <p className="mx-auto mt-2 max-w-lg text-sm leading-relaxed text-muted">
                   Save a search from Jobs with In-app or Browser selected.
-                  Timley refreshes the public jobs snapshot while this Alerts
-                  page is open, including when it regains focus.
+                  Timley checks the public jobs snapshot at most once per day
+                  while this page is open, or when you refresh it manually.
                 </p>
                 <Link
                   href="/jobs"
+                  prefetch={false}
                   className="ui-button ui-button--secondary mt-4"
                 >
                   Browse jobs
@@ -795,8 +825,8 @@ export function AlertsWorkspaceView({
                   Clearing this site&apos;s browser data removes them.
                 </li>
                 <li>
-                  Foreground checks refresh the server jobs snapshot about every
-                  five minutes and when this Alerts page returns to focus. Other
+                  Foreground checks refresh the server jobs snapshot at most
+                  once per day, or when you request a manual refresh. Other
                   Timley pages do not run saved-search browser delivery.
                 </li>
                 <li>
@@ -850,6 +880,7 @@ export function AlertsWorkspaceView({
               </p>
               <Link
                 href="/jobs"
+                prefetch={false}
                 className="ui-button ui-button--primary mt-4"
               >
                 Open job search

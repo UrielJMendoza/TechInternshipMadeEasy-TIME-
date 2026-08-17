@@ -11,11 +11,10 @@ import { StructuredData } from "@/components/StructuredData";
 import { TrackedApplyLink } from "@/components/TrackedApplyLink";
 import { classifySponsorship } from "@/lib/jobFilters";
 import {
-  fetchJobsSnapshot,
   fetchPublicJobById,
+  fetchRelatedJobs,
 } from "@/lib/jobs";
 import {
-  companySlugForJob,
   isLegitimateActiveJob,
   jobPublicPath,
 } from "@/lib/publicCatalog";
@@ -27,7 +26,10 @@ import {
 } from "@/lib/seo";
 import { CATEGORY_LABELS, SOURCE_LABELS } from "@/lib/types";
 
-export const revalidate = 300;
+// Detail pages remain request-rendered so thousands of sitemap URLs do not
+// become broad daily ISR writes. Their queries are bounded to one job and one
+// small cached category set.
+export const dynamic = "force-dynamic";
 
 const getJob = cache(fetchPublicJobById);
 
@@ -91,10 +93,7 @@ export default async function PublicJobPage({
   params: Promise<{ id: string }>;
 }) {
   const { id } = await params;
-  const [result, snapshot] = await Promise.all([
-    getJob(id),
-    fetchJobsSnapshot(),
-  ]);
+  const result = await getJob(id);
 
   if (!result.job) {
     if (!result.loadError) notFound();
@@ -109,7 +108,11 @@ export default async function PublicJobPage({
             Timley could not read this listing record. The active job board may
             still be available.
           </p>
-          <Link href="/jobs" className="ui-button ui-button--primary mt-6">
+          <Link
+            href="/jobs"
+            prefetch={false}
+            className="ui-button ui-button--primary mt-6"
+          >
             Browse jobs
           </Link>
         </div>
@@ -119,6 +122,7 @@ export default async function PublicJobPage({
 
   const job = result.job;
   const active = isLegitimateActiveJob(job);
+  const related = await fetchRelatedJobs(job);
   const path = jobPublicPath(job);
   const companyPath = `/jobs?q=${encodeURIComponent(job.company)}`;
   const breadcrumbs = [
@@ -126,14 +130,6 @@ export default async function PublicJobPage({
     { name: "Jobs", path: "/jobs" },
     { name: job.title, path },
   ];
-  const related = snapshot.jobs
-    .filter(
-      (candidate) =>
-        candidate.id !== job.id &&
-        (companySlugForJob(candidate) === companySlugForJob(job) ||
-          candidate.category === job.category),
-    )
-    .slice(0, 6);
   const sponsorship = classifySponsorship(job.sponsorship);
 
   return (
@@ -175,7 +171,11 @@ export default async function PublicJobPage({
             {job.title}
           </h1>
           <p className="mt-3 text-xl font-bold text-muted">
-            <Link href={companyPath} className="hover:text-accent-hover">
+            <Link
+              href={companyPath}
+              prefetch={false}
+              className="hover:text-accent-hover"
+            >
               {job.company}
             </Link>
           </p>
@@ -211,6 +211,7 @@ export default async function PublicJobPage({
             />
             <Link
               href={`/jobs?q=${encodeURIComponent(job.company)}`}
+              prefetch={false}
               className="ui-button ui-button--quiet"
             >
               More from this company

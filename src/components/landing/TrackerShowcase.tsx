@@ -22,6 +22,7 @@ export function TrackerShowcase({ jobs }: TrackerShowcaseProps) {
           <h2 id="tracker-showcase-title">Application tracker</h2>
           <Link
             href="/tracker"
+            prefetch={false}
             className="ui-button ui-button--primary min-h-11 px-5"
           >
             Open tracker

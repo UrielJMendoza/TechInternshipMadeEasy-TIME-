@@ -23,6 +23,7 @@ function CompanyStrip({
           <Link
             key={company}
             href={`/jobs?q=${encodeURIComponent(company)}`}
+            prefetch={false}
             className="landing-company-logo"
             aria-label={`View active ${company} listings`}
           >

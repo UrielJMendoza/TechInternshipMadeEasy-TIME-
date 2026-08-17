@@ -30,7 +30,10 @@ GitHub source lists ──▶ ingestion (fetch → parse → normalize → dedup
 The checked-in API route and CLI both call `src/lib/ingest/run.ts`:
 
 - **Vercel-side (optional):** `vercel.json` schedules `/api/ingest` daily
-  (Hobby-plan cron granularity). Requires a `CRON_SECRET` env var on Vercel.
+  (Hobby-plan cron granularity). Requires a `CRON_SECRET` env var on Vercel
+  that matches the database `app_meta` value. The route rejects a mismatch
+  before downloading any source feeds, and the database verifies it again
+  before writes.
 - **CLI:** `npm run ingest` runs the same checked-in ingestion pipeline manually.
 
 A deployed Supabase pg_cron job may also invoke an `ingest` Edge Function, but
@@ -141,9 +144,9 @@ unrelated origin data.
 ### Saved-search alerts
 
 Saved searches and alert delivery history remain local and anonymous. While
-the `/alerts` page is open, it refreshes the server-rendered jobs snapshot about
-every five minutes and when the page returns to focus, then evaluates due
-searches and globally deduplicates roles. Every delivered in-app or browser
+the `/alerts` page is open, it refreshes the server-rendered jobs snapshot at
+most once per day (or when the user requests a manual refresh), then evaluates
+due searches and globally deduplicates roles. Every delivered in-app or browser
 match remains inspectable with its reasons, triggering search, frequency, and
 filtered-results link. Browser notices require both a per-search Browser
 channel and a separate explicit permission action. Other Timley routes do not
@@ -158,7 +161,10 @@ available for at most 90 days, suppress Apply and `JobPosting`, and use
 `noindex`. Collection pages publish `ItemList`, and visible breadcrumbs have
 matching breadcrumb data. `robots.txt` and the data-driven XML sitemap exclude
 private workspaces, filtered query variants, thin collections, and expired
-records.
+records. The shared public snapshot is cached across requests and invalidated
+after a successful Vercel ingestion. Large public pages and the sitemap use a
+daily ISR fallback that matches the source-update cadence; dynamic listing and
+collection paths enter that cache on demand rather than being prebuilt in bulk.
 
 Deployments using company history must apply
 `20260723150000_allow_recent_public_job_history.sql` and

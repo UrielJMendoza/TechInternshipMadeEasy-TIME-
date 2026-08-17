@@ -171,6 +171,7 @@ export default function TermsPage() {
             Browse the{" "}
             <Link
               href="/jobs"
+              prefetch={false}
               className="font-semibold text-accent underline decoration-border-strong underline-offset-4 hover:text-accent-hover"
             >
               current job listings

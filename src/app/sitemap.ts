@@ -8,7 +8,7 @@ import {
 } from "@/lib/publicCatalog";
 import { absoluteUrl } from "@/lib/seo";
 
-export const revalidate = 300;
+export const revalidate = 86400;
 
 function safeDate(value: string | null | undefined, fallback: Date): Date {
   const date = value ? new Date(value) : fallback;
@@ -55,9 +55,13 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       changeFrequency: "daily",
       priority: 0.6,
     },
-    ...["/changelog", "/privacy", "/terms"].map((path) => ({
+    ...[
+      ["/changelog", "2026-07-23"],
+      ["/privacy", "2026-08-17"],
+      ["/terms", "2026-07-22"],
+    ].map(([path, lastModified]) => ({
       url: absoluteUrl(path),
-      lastModified: generatedAt,
+      lastModified: new Date(`${lastModified}T00:00:00Z`),
       changeFrequency: "weekly" as const,
       priority: 0.3,
     })),
@@ -84,8 +88,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   for (const job of snapshot.jobs.filter(isLegitimateActiveJob)) {
     entries.push({
       url: absoluteUrl(jobPublicPath(job)),
-      lastModified: safeDate(job.last_seen_at, generatedAt),
-      changeFrequency: "daily",
+      lastModified: safeDate(job.first_seen_at, generatedAt),
+      changeFrequency: "weekly",
       priority: 0.5,
     });
   }

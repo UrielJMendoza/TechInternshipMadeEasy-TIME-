@@ -53,6 +53,7 @@ export function PublicJobList({
                   <h3 className="mt-1 text-lg font-extrabold tracking-[-0.02em] text-fg">
                     <Link
                       href={jobPublicPath(job)}
+                      prefetch={false}
                       className="hover:text-accent-hover"
                     >
                       {job.title}

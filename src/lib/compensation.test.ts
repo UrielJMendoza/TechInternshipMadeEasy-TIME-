@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compensationFor } from "./compensation";
+import { annualSalary, compensationFor } from "./compensation";
 import type { Internship } from "./types";
 
 function fixtureJob(overrides: Partial<Internship> = {}): Internship {
@@ -53,4 +53,20 @@ test("missing pay is explicitly marked as a broad category estimate", () => {
   assert.match(internship.disclosure, /not supplied by the source listing/i);
   assert.equal(newGrad.label, "Est. $95–145k/yr");
   assert.equal(newGrad.kind, "category-estimate");
+});
+
+test("annual salary uses the lower bound of employer-listed pay ranges", () => {
+  assert.equal(annualSalary("$20–$50/hr"), 41_600);
+  assert.equal(annualSalary("$20 - $50 per hour"), 41_600);
+  assert.equal(annualSalary("$95–145k"), 95_000);
+  assert.equal(annualSalary("$95,000–$145,000/yr"), 95_000);
+});
+
+test("annual salary preserves scalar hourly, monthly, and yearly behavior", () => {
+  assert.equal(annualSalary("$62/hr"), 128_960);
+  assert.equal(annualSalary("$7,000/mo"), 84_000);
+  assert.equal(annualSalary("$201k/yr"), 201_000);
+  assert.equal(annualSalary("$201k"), 201_000);
+  assert.equal(annualSalary("competitive"), 0);
+  assert.equal(annualSalary("$42"), 0);
 });

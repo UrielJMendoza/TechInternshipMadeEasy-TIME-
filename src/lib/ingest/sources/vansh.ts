@@ -1,5 +1,6 @@
 import type { NormalizedJob } from "../../types";
-import { categorize, cleanLink, cleanText, dedupeKey, fetchText } from "../normalize";
+import { fetchText } from "../fetch";
+import { categorize, cleanLink, cleanText, dedupeKey } from "../normalize";
 
 const URL = "https://raw.githubusercontent.com/vanshb03/Summer2027-Internships/main/README.md";
 

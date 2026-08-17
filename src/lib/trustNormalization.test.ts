@@ -62,6 +62,37 @@ test("canonical URLs remove tracking, normalize ATS variants, and preserve job p
   );
 });
 
+test("application URLs allow only absolute credential-free HTTP destinations", () => {
+  assert.equal(
+    canonicalizeApplicationUrl("http://Careers.Example.com/jobs/123#apply"),
+    "http://careers.example.com/jobs/123",
+  );
+
+  for (const unsafe of [
+    "javascript:alert(document.domain)",
+    "data:text/html,<script>alert(1)</script>",
+    "ftp://careers.example.com/jobs/123",
+    "https://candidate:secret@careers.example.com/jobs/123",
+    "//careers.example.com/jobs/123",
+    "https://",
+    "not a URL",
+    "https://careers.example.com/jobs/12\n3",
+  ]) {
+    assert.equal(canonicalizeApplicationUrl(unsafe), "", unsafe);
+  }
+});
+
+test("unsafe application destinations are dropped before deduplication", () => {
+  const result = dedupeJobs([
+    job({ link: "javascript:alert(1)" }),
+    job({ link: "https://careers.example.com/jobs/safe" }),
+  ]);
+
+  assert.deepEqual(result.map((entry) => entry.link), [
+    "https://careers.example.com/jobs/safe",
+  ]);
+});
+
 test("ATS and requisition identifiers are extracted without inventing IDs", () => {
   assert.deepEqual(
     extractJobIdentifiers(
@@ -181,4 +212,3 @@ test("matching posting identity or content fingerprint can merge otherwise separ
   ]);
   assert.equal(byContent.length, 1);
 });
-

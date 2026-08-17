@@ -1,7 +1,9 @@
 import { unstable_cache } from "next/cache";
+import { plausiblePostedTime } from "@/lib/jobTime";
 import { supabase } from "@/lib/supabase";
 import type { Internship } from "@/lib/types";
 import { sanitizeUsLocation } from "@/lib/usLocations";
+import { safeExternalHttpUrl } from "@/lib/safeUrl";
 
 const PAGE_SIZE = 1000;
 const MAX_LISTING_AGE_DAYS = 120;
@@ -18,6 +20,27 @@ const RELATED_QUERY_SIZE = 24;
 interface ActiveJobsPage {
   jobs: Internship[];
   hasMore: boolean;
+}
+
+function sanitizePublicJob(job: Internship): Internship | null {
+  const location = sanitizeUsLocation(job.location);
+  if (!location.eligible) return null;
+
+  const link = safeExternalHttpUrl(job.link);
+  const canonicalUrl = safeExternalHttpUrl(job.canonical_url);
+  const safeLink = link ?? canonicalUrl;
+  if (!safeLink) return null;
+
+  return {
+    ...job,
+    link: safeLink,
+    canonical_url: canonicalUrl ?? safeLink,
+    location: location.display,
+    posted_date:
+      plausiblePostedTime(job.posted_date, Date.now()) === null
+        ? null
+        : job.posted_date,
+  };
 }
 
 export interface JobsSnapshot {
@@ -66,9 +89,8 @@ async function loadActiveJobsPage(from: number): Promise<ActiveJobsPage> {
     ) {
       continue;
     }
-    const location = sanitizeUsLocation(job.location);
-    if (!location.eligible) continue;
-    jobs.push({ ...job, location: location.display });
+    const sanitized = sanitizePublicJob(job);
+    if (sanitized) jobs.push(sanitized);
   }
 
   return { jobs, hasMore: rawJobs.length === PAGE_SIZE };
@@ -118,9 +140,8 @@ async function fetchRecentlyClosedJobs(
 
     const page = (data ?? []) as Internship[];
     for (const job of page) {
-      const location = sanitizeUsLocation(job.location);
-      if (!location.eligible) continue;
-      rows.push({ ...job, location: location.display });
+      const sanitized = sanitizePublicJob(job);
+      if (sanitized) rows.push(sanitized);
     }
     if (page.length < PAGE_SIZE) break;
   }
@@ -193,11 +214,10 @@ async function loadPublicJobById(
   if (error) throw new Error(error.message);
   if (!data) return { job: null, loadError: false };
 
-  const job = data as Internship;
-  const location = sanitizeUsLocation(job.location);
-  if (!location.eligible) return { job: null, loadError: false };
+  const job = sanitizePublicJob(data as Internship);
+  if (!job) return { job: null, loadError: false };
   return {
-    job: { ...job, location: location.display },
+    job,
     loadError: false,
   };
 }
@@ -243,9 +263,8 @@ async function loadRelatedJobsByCategory(
     ) {
       continue;
     }
-    const location = sanitizeUsLocation(candidate.location);
-    if (!location.eligible) continue;
-    related.push({ ...candidate, location: location.display });
+    const sanitized = sanitizePublicJob(candidate);
+    if (sanitized) related.push(sanitized);
   }
   return related;
 }

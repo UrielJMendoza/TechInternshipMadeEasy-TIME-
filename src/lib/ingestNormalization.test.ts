@@ -48,6 +48,42 @@ test("post filters reject foreign-only locations but retain US remote and blanks
   assert.deepEqual(results.map((job) => job.location), ["Remote in USA", ""]);
 });
 
+test("post filters reject invalid and implausibly future posting dates", () => {
+  const now = Date.parse("2026-08-17T12:00:00Z");
+  const results = applyPostFilters(
+    [
+      { ...fixtureJob("Denver, CO"), company: "Today", posted_date: "2026-08-17" },
+      {
+        ...fixtureJob("Denver, CO"),
+        company: "Clock Skew",
+        posted_date: "2026-08-18",
+      },
+      {
+        ...fixtureJob("Denver, CO"),
+        company: "Far Future",
+        posted_date: "2027-08-17",
+      },
+      {
+        ...fixtureJob("Denver, CO"),
+        company: "Invalid Calendar Date",
+        posted_date: "2026-02-30",
+      },
+    ],
+    now,
+  );
+
+  assert.deepEqual(results.map((job) => job.company), ["Today", "Clock Skew"]);
+});
+
+test("post filters discard jobs without a safe application destination", () => {
+  const results = applyPostFilters([
+    { ...fixtureJob("Denver, CO"), link: "javascript:alert(1)" },
+    { ...fixtureJob("Denver, CO"), link: "https://example.com/safe" },
+  ]);
+
+  assert.deepEqual(results.map((job) => job.link), ["https://example.com/safe"]);
+});
+
 test("Northwestern comma lists preserve city-state pairs and split office markets", () => {
   assert.equal(
     normalizeNorthwesternLocation("Chicago, Puerto Rico"),

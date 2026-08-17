@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { requestSecret, secretsMatch } from "./auth";
 
-test("cron trigger secrets accept one bounded bearer token or query key", () => {
+test("cron trigger secrets accept one bounded bearer token only", () => {
   assert.equal(
     requestSecret(
       new Request("https://timley.dev/api/ingest", {
@@ -16,7 +16,7 @@ test("cron trigger secrets accept one bounded bearer token or query key", () => 
     requestSecret(
       new Request("https://timley.dev/api/ingest?key=query-secret"),
     ),
-    "query-secret",
+    null,
   );
   assert.equal(
     requestSecret(
@@ -28,9 +28,9 @@ test("cron trigger secrets accept one bounded bearer token or query key", () => 
   );
   assert.equal(
     requestSecret(
-      new Request(
-        `https://timley.dev/api/ingest?key=${"x".repeat(513)}`,
-      ),
+      new Request("https://timley.dev/api/ingest", {
+        headers: { authorization: `Bearer ${"x".repeat(513)}` },
+      }),
     ),
     null,
   );

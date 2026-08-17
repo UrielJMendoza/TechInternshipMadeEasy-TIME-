@@ -1,17 +1,16 @@
 "use client";
 
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   useCallback,
   useEffect,
   useMemo,
   useRef,
   useState,
-  useTransition,
   type FormEvent,
 } from "react";
 import { MobileFilterSheet } from "@/components/MobileFilterSheet";
+import { usePublicJobsFeed } from "@/hooks/usePublicJobsFeed";
 import { useSavedSearches } from "@/hooks/useSavedSearches";
 import {
   APPLICATION_STAGE_LABELS,
@@ -38,18 +37,7 @@ import {
 } from "@/lib/savedSearches";
 import type { Internship } from "@/lib/types";
 
-interface AlertsWorkspaceProps {
-  jobs: Internship[];
-  generatedAt: string;
-  updatedAt: string | null;
-  loadError: boolean;
-  partialData: boolean;
-}
-
-interface AlertsWorkspaceViewProps extends AlertsWorkspaceProps {
-  refreshJobs: () => void;
-  refreshPending: boolean;
-}
+const EMPTY_JOBS: Internship[] = [];
 
 const BROWSER_ALERT_PREFERENCE_KEY =
   "timley:search-alerts:browser-enabled:v1";
@@ -177,31 +165,11 @@ function filterSummary(filters: BoardFilters): string[] {
   return summary;
 }
 
-export function AlertsWorkspace(props: AlertsWorkspaceProps) {
-  const router = useRouter();
-  const [refreshPending, startRefreshTransition] = useTransition();
-  const refreshJobs = useCallback(
-    () => startRefreshTransition(() => router.refresh()),
-    [router],
-  );
-  return (
-    <AlertsWorkspaceView
-      {...props}
-      refreshJobs={refreshJobs}
-      refreshPending={refreshPending}
-    />
-  );
+export function AlertsWorkspace() {
+  return <AlertsWorkspaceView />;
 }
 
-export function AlertsWorkspaceView({
-  jobs,
-  generatedAt,
-  updatedAt,
-  loadError,
-  partialData,
-  refreshJobs,
-  refreshPending,
-}: AlertsWorkspaceViewProps) {
+export function AlertsWorkspaceView() {
   const {
     searches,
     ready: searchesReady,
@@ -218,10 +186,27 @@ export function AlertsWorkspaceView({
   const [editingSearchId, setEditingSearchId] = useState<string | null>(
     null,
   );
+  const editingSearch =
+    searches.find((search) => search.id === editingSearchId) ?? null;
+  const shouldLoadJobs =
+    searchesReady &&
+    (editingSearch !== null ||
+      searches.some(
+        (search) =>
+          search.frequency !== "paused" &&
+          (search.channels.inApp ||
+            (search.channels.browser && browserEnabled)),
+      ));
+  const jobsFeed = usePublicJobsFeed(shouldLoadJobs);
+  const jobs = jobsFeed.data?.jobs ?? EMPTY_JOBS;
+  const generatedAt = jobsFeed.data?.generatedAt ?? null;
+  const updatedAt = jobsFeed.data?.updatedAt ?? null;
+  const loadError = shouldLoadJobs && jobsFeed.error !== null;
+  const refreshPending = jobsFeed.isValidating;
+  const refreshJobs = jobsFeed.refresh;
   const [status, setStatus] = useState("");
   const refreshTimerRef = useRef<number | null>(null);
   const lastRefreshRequestRef = useRef(0);
-  const refreshWasPendingRef = useRef(false);
 
   const persistAlertState = useCallback((next: SearchAlertState) => {
     const canonical = parseSearchAlertState(
@@ -270,6 +255,12 @@ export function AlertsWorkspaceView({
   const scheduleJobsRefresh = useCallback(
     (immediate = false) => {
       if (typeof window === "undefined") return;
+      if (!shouldLoadJobs) {
+        if (immediate) {
+          setStatus("Save and enable a local search before checking jobs.");
+        }
+        return;
+      }
       if (refreshTimerRef.current !== null) {
         if (!immediate) return;
         window.clearTimeout(refreshTimerRef.current);
@@ -286,16 +277,23 @@ export function AlertsWorkspaceView({
         lastRefreshRequestRef.current = Date.now();
         setStatus(
           boundedStatus(
-            "Refreshing the server jobs snapshot before checking due searches…",
+            "Refreshing the compact public jobs feed before checking due searches…",
           ),
         );
-        refreshJobs();
+        void refreshJobs().then((refreshed) => {
+          setStatus(
+            refreshed
+              ? "Public jobs refreshed; any due local searches were checked."
+              : "Public jobs could not be refreshed. Saved searches and local history were left unchanged.",
+          );
+        });
       }, delay);
     },
-    [refreshJobs],
+    [refreshJobs, shouldLoadJobs],
   );
 
   useEffect(() => {
+    if (!shouldLoadJobs) return;
     lastRefreshRequestRef.current = Date.now();
     const requestRefresh = () => scheduleJobsRefresh();
     const onVisibilityChange = () => {
@@ -316,20 +314,19 @@ export function AlertsWorkspaceView({
         refreshTimerRef.current = null;
       }
     };
-  }, [scheduleJobsRefresh]);
+  }, [scheduleJobsRefresh, shouldLoadJobs]);
 
   useEffect(() => {
-    if (refreshPending) {
-      refreshWasPendingRef.current = true;
+    if (
+      !searchesReady ||
+      !alertsReady ||
+      !shouldLoadJobs ||
+      jobsFeed.isLoading ||
+      loadError ||
+      !jobsFeed.data
+    ) {
       return;
     }
-    if (!refreshWasPendingRef.current) return;
-    refreshWasPendingRef.current = false;
-    setStatus("Jobs snapshot refreshed; no saved searches were due.");
-  }, [refreshPending]);
-
-  useEffect(() => {
-    if (!searchesReady || !alertsReady || loadError) return;
 
     const browserDeliveryAvailable =
       browserEnabled &&
@@ -412,10 +409,13 @@ export function AlertsWorkspaceView({
     browserEnabled,
     generatedAt,
     jobs,
+    jobsFeed.data,
+    jobsFeed.isLoading,
     loadError,
     persistAlertState,
     searches,
     searchesReady,
+    shouldLoadJobs,
     updatedAt,
   ]);
 
@@ -441,9 +441,6 @@ export function AlertsWorkspaceView({
       search.frequency !== "paused" &&
       (search.channels.inApp || search.channels.browser),
   ).length;
-  const editingSearch =
-    searches.find((search) => search.id === editingSearchId) ?? null;
-
   async function enableBrowserAlerts() {
     if (!("Notification" in window)) {
       setStatus(
@@ -635,9 +632,10 @@ export function AlertsWorkspaceView({
             <button
               type="button"
               onClick={() => scheduleJobsRefresh(true)}
+              disabled={!shouldLoadJobs || refreshPending}
               className="ui-button ui-button--secondary"
             >
-              Refresh jobs and check
+              {refreshPending ? "Refreshing jobs…" : "Refresh jobs and check"}
             </button>
             <Link
               href="/jobs"
@@ -658,13 +656,13 @@ export function AlertsWorkspaceView({
             and local alert inbox are still available; no search is being
             treated as empty or deleted.
           </div>
-        ) : partialData ? (
+        ) : shouldLoadJobs && jobsFeed.isLoading ? (
           <div
             role="status"
-            className="mt-6 rounded-sm border border-warning/35 bg-warning/10 p-4 text-sm leading-relaxed text-muted"
+            className="mt-6 rounded-sm border border-info/35 bg-info-soft p-4 text-sm leading-relaxed text-muted"
           >
-            The current jobs snapshot is partial. Alerts are evaluated only
-            against the roles that loaded successfully.
+            Loading the compact public jobs feed. Saved searches and alert
+            history remain in this browser while listing data arrives.
           </div>
         ) : null}
 
@@ -825,9 +823,10 @@ export function AlertsWorkspaceView({
                   Clearing this site&apos;s browser data removes them.
                 </li>
                 <li>
-                  Foreground checks refresh the server jobs snapshot at most
-                  once per day, or when you request a manual refresh. Other
-                  Timley pages do not run saved-search browser delivery.
+                  Timley fetches the public jobs feed only when this browser has
+                  a runnable saved search or you open a saved search&apos;s filters.
+                  Foreground checks refresh it at most once per day, or when you
+                  request a manual refresh.
                 </li>
                 <li>
                   Deleting a search removes its settings and visible alerts from
@@ -837,7 +836,8 @@ export function AlertsWorkspaceView({
                 </li>
                 <li>
                   Timley evaluates public job data locally. It does not silently
-                  transmit personal notes or contact information.
+                  transmit saved-search filters, personal notes, job URLs, or
+                  contact information.
                 </li>
               </ul>
             </section>
@@ -861,7 +861,14 @@ export function AlertsWorkspaceView({
               </p>
             </div>
             <p className="text-xs font-semibold text-faint">
-              Jobs snapshot: {formatDateTime(updatedAt ?? generatedAt)}
+              Jobs snapshot:{" "}
+              {!shouldLoadJobs
+                ? "not loaded until a saved search needs listing data"
+                : jobsFeed.isLoading
+                  ? "loading…"
+                  : updatedAt || generatedAt
+                    ? formatDateTime((updatedAt ?? generatedAt) as string)
+                    : "unavailable"}
             </p>
           </div>
 

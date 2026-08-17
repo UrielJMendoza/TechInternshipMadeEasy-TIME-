@@ -18,6 +18,7 @@ import {
 import { TrackerApplicationCard } from "@/components/TrackerApplicationCard";
 import { TrackerDataControls } from "@/components/TrackerDataControls";
 import { useApplicationTracking } from "@/hooks/useApplicationTracking";
+import { usePublicJobsFeed } from "@/hooks/usePublicJobsFeed";
 import {
   filterTrackerRows,
   joinTrackedApplications,
@@ -35,12 +36,7 @@ import {
   trackTrackerRevisited,
 } from "@/lib/analytics";
 
-interface TrackerProps {
-  jobs: Internship[];
-  generatedAt: string;
-  updatedAt: string | null;
-  loadError: boolean;
-}
+const EMPTY_JOBS: readonly Internship[] = [];
 
 type TrackerView = "list" | "board";
 type EditorState = { type: "new" } | { type: "edit"; jobKey: string };
@@ -79,7 +75,7 @@ function isTrackerView(value: string): value is TrackerView {
   return value === "list" || value === "board";
 }
 
-export function Tracker({ jobs, updatedAt, loadError }: TrackerProps) {
+export function Tracker() {
   const {
     records,
     ready,
@@ -89,7 +85,15 @@ export function Tracker({ jobs, updatedAt, loadError }: TrackerProps) {
     deleteRecord,
     restoreRecord,
     mergeRecords,
-  } = useApplicationTracking(jobs);
+  } = useApplicationTracking();
+  const applicationCount = Object.keys(records).length;
+  const needsJobsFeed = ready && applicationCount > 0;
+  const jobsFeed = usePublicJobsFeed(needsJobsFeed);
+  const jobs = jobsFeed.data?.jobs ?? EMPTY_JOBS;
+  const updatedAt = jobsFeed.data?.updatedAt ?? null;
+  const loadError = needsJobsFeed && jobsFeed.error !== null;
+  const feedPending = needsJobsFeed && jobsFeed.isLoading;
+  const feedAvailable = !needsJobsFeed || jobsFeed.data !== null;
   const [saved, toggleSaved] = usePersistentSet("timley:saved");
   const [view, setView] = usePersistentString<TrackerView>(
     "timley:tracker-view:v1",
@@ -296,11 +300,15 @@ export function Tracker({ jobs, updatedAt, loadError }: TrackerProps) {
               </p>
             </div>
             <p className="text-xs text-faint">
-              {loadError
-                ? "Listing status unavailable"
-                : updatedAt
-                  ? `Listings observed ${formatDate(updatedAt)}`
-                  : "Listing observation unavailable"}
+              {!needsJobsFeed
+                ? "Listing status loads only when needed"
+                : feedPending
+                  ? "Checking active-listing status…"
+                  : loadError
+                    ? "Listing status unavailable"
+                    : updatedAt
+                      ? `Listings observed ${formatDate(updatedAt)}`
+                      : "Listing observation unavailable"}
             </p>
           </div>
 
@@ -324,11 +332,13 @@ export function Tracker({ jobs, updatedAt, loadError }: TrackerProps) {
             />
             <SummaryMetric
               label="Active listings"
-              value={ready ? summary.activeListings : null}
+              value={ready && feedAvailable ? summary.activeListings : null}
               detail={
-                loadError
-                  ? "Status unavailable"
-                  : `${summary.notInActiveFeed} outside active feed`
+                feedPending
+                  ? "Checking status"
+                  : loadError
+                    ? "Status unavailable"
+                    : `${summary.notInActiveFeed} outside active feed`
               }
             />
           </div>
@@ -571,7 +581,7 @@ export function Tracker({ jobs, updatedAt, loadError }: TrackerProps) {
                   <TrackerApplicationCard
                     key={row.jobKey}
                     row={row}
-                    feedAvailable={!loadError}
+                    feedAvailable={feedAvailable && !loadError}
                     onEdit={() =>
                       setEditor({ type: "edit", jobKey: row.jobKey })
                     }
@@ -585,7 +595,7 @@ export function Tracker({ jobs, updatedAt, loadError }: TrackerProps) {
             ) : (
               <TrackerBoard
                 rows={filteredRows}
-                feedAvailable={!loadError}
+                feedAvailable={feedAvailable && !loadError}
                 onEdit={(row) =>
                   setEditor({ type: "edit", jobKey: row.jobKey })
                 }

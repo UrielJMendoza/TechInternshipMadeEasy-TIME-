@@ -5,20 +5,9 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { AlertsWorkspaceView } from "./AlertsWorkspace";
 
-function renderWorkspace(
-  overrides: Partial<Parameters<typeof AlertsWorkspaceView>[0]> = {},
-): string {
+function renderWorkspace(): string {
   return renderToStaticMarkup(
-    createElement(AlertsWorkspaceView, {
-      jobs: [],
-      generatedAt: "2026-07-22T12:00:00Z",
-      updatedAt: "2026-07-22T11:00:00Z",
-      loadError: false,
-      partialData: false,
-      refreshJobs: () => undefined,
-      refreshPending: false,
-      ...overrides,
-    }),
+    createElement(AlertsWorkspaceView),
   );
 }
 
@@ -45,23 +34,21 @@ test("alerts workspace exposes the complete anonymous management surface", () =>
   assert.match(markup, /or the Tracker JSON backup/);
   assert.match(markup, /bounded role-ID dedupe list remains/);
   assert.match(markup, /Signing out does not silently clear/);
-  assert.match(markup, /does not silently transmit personal notes/);
+  assert.match(markup, /does not silently transmit.*personal notes/s);
   assert.match(markup, /href="\/jobs"/);
   assert.doesNotMatch(markup, /Sign in|Create account/);
 });
 
 test("alerts workspace preserves local state messaging for incomplete feeds", () => {
-  const failedMarkup = renderWorkspace({
-    loadError: true,
-    updatedAt: null,
-  });
-  const partialMarkup = renderWorkspace({ partialData: true });
+  const source = readFileSync(
+    new URL("./AlertsWorkspace.tsx", import.meta.url),
+    "utf8",
+  );
 
-  assert.match(failedMarkup, /jobs snapshot could not be loaded/);
-  assert.match(failedMarkup, /local alert inbox are still available/);
-  assert.match(failedMarkup, /no search is being treated as empty or deleted/);
-  assert.match(partialMarkup, /jobs snapshot is partial/);
-  assert.match(partialMarkup, /roles that loaded successfully/);
+  assert.match(source, /jobs snapshot could not be loaded/);
+  assert.match(source, /local alert inbox are still available/);
+  assert.match(source, /no search is being.*treated as empty or deleted/s);
+  assert.match(source, /Loading the compact public jobs feed/);
 });
 
 test("browser permission is requested only in the explicit enable handler", () => {
@@ -106,7 +93,13 @@ test("workspace uses the local engine, complete filters, and confirmed deletion"
 
   assert.match(source, /useSavedSearches\(\)/);
   assert.match(source, /evaluateSearchAlerts\(\{/);
-  assert.match(source, /!alertsReady \|\| loadError/);
+  assert.match(source, /usePublicJobsFeed\(shouldLoadJobs\)/);
+  assert.match(
+    source,
+    /searchesReady &&\s*\(editingSearch !== null \|\|\s*searches\.some\(/s,
+  );
+  assert.match(source, /!shouldLoadJobs \|\|/);
+  assert.match(source, /!jobsFeed\.data/);
   assert.match(source, /SEARCH_ALERT_STORAGE_KEY/);
   assert.match(source, /serializeSearchAlertState/);
   assert.match(source, /window\.addEventListener\("focus"/);
@@ -127,15 +120,16 @@ test("workspace uses the local engine, complete filters, and confirmed deletion"
   assert.match(source, /MAX_LENGTH|STATUS_MAX_LENGTH/);
 });
 
-test("foreground refreshes align with the daily server snapshot without stale evaluation loops", () => {
+test("foreground refreshes align with the daily public feed without stale evaluation loops", () => {
   const source = readFileSync(
     new URL("./AlertsWorkspace.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(source, /useRouter\(\)/);
-  assert.match(source, /useTransition\(\)/);
-  assert.match(source, /router\.refresh\(\)/);
+  assert.match(source, /usePublicJobsFeed\(shouldLoadJobs\)/);
+  assert.match(source, /void refreshJobs\(\)/);
+  assert.doesNotMatch(source, /router\.refresh\(\)/);
+  assert.doesNotMatch(source, /cache:\s*"reload"/);
   assert.match(source, /FOREGROUND_REFRESH_INTERVAL_MS = 86_400_000/);
   assert.match(
     source,
@@ -149,8 +143,10 @@ test("foreground refreshes align with the daily server snapshot without stale ev
   assert.match(source, /timeZone: "UTC"/);
   assert.match(
     source,
-    /Jobs snapshot refreshed; no saved searches were due/,
+    /Public jobs refreshed; any due local searches were checked/,
   );
+  assert.match(source, /Public jobs could not be refreshed/);
+  assert.match(source, /refreshed\s*\?/);
 });
 
 test("delivery history keeps browser-only matches inspectable and actionable", () => {
@@ -186,15 +182,14 @@ test("saved-search settings reject a zero-channel configuration accessibly", () 
   assert.match(source, /aria-live="polite"/);
 });
 
-test("public alerts route fetches the same bounded jobs snapshot", () => {
+test("public alerts route renders a lightweight client shell", () => {
   const pageSource = readFileSync(
     new URL("../app/alerts/page.tsx", import.meta.url),
     "utf8",
   );
 
-  assert.match(pageSource, /fetchJobsSnapshot\(\)/);
-  assert.match(pageSource, /<AlertsWorkspace \{\.\.\.snapshot\} \/>/);
+  assert.match(pageSource, /<AlertsWorkspace \/>/);
   assert.match(pageSource, /canonical:\s*"\/alerts"/);
-  assert.match(pageSource, /export const revalidate = 86400/);
+  assert.doesNotMatch(pageSource, /fetchJobsSnapshot|revalidate/);
   assert.doesNotMatch(pageSource, /auth|session|redirect|signIn/i);
 });

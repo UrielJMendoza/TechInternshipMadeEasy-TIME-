@@ -1,5 +1,7 @@
 import type { Metadata } from "next";
 import { AccountWorkspace } from "@/components/AccountWorkspace";
+import { ContinuityProvider } from "@/components/ContinuityProvider";
+import { hasConfiguredContinuity } from "@/lib/continuityEnvironment";
 
 const title = "Account continuity";
 const description =
@@ -28,5 +30,10 @@ export const metadata: Metadata = {
 };
 
 export default function AccountPage() {
-  return <AccountWorkspace />;
+  if (hasConfiguredContinuity()) return <AccountWorkspace />;
+  return (
+    <ContinuityProvider>
+      <AccountWorkspace />
+    </ContinuityProvider>
+  );
 }

@@ -23,5 +23,5 @@ async function handle(req: Request) {
   }
 }
 
-// Vercel Cron sends GET; pg_cron and manual triggers may POST.
+// Vercel Cron sends GET; authenticated manual triggers may POST.
 export { handle as GET, handle as POST };

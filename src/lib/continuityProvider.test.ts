@@ -4,6 +4,7 @@ import test from "node:test";
 import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import {
   ACCOUNT_DELETION_EXPECTED_USER_HEADER,
+  MAX_CONTINUITY_SNAPSHOT_LENGTH,
   createContinuityProvider,
   createUnavailableContinuityProvider,
   getContinuityProviderCapabilities,
@@ -18,6 +19,7 @@ import {
   CONTINUITY_SNAPSHOT_FORMAT,
   CONTINUITY_SNAPSHOT_VERSION,
   DEFAULT_SYNC_SELECTION,
+  MAX_CONTINUITY_SNAPSHOT_JSON_LENGTH,
 } from "./continuitySnapshot";
 
 const URL = "https://project-ref.supabase.co";
@@ -35,6 +37,13 @@ const SESSION = {
   token_type: "bearer",
   user: USER,
 } satisfies Session;
+
+test("provider and snapshot validation use one continuity size limit", () => {
+  assert.equal(
+    MAX_CONTINUITY_SNAPSHOT_LENGTH,
+    MAX_CONTINUITY_SNAPSHOT_JSON_LENGTH,
+  );
+});
 
 function configuredEnvironment() {
   return {

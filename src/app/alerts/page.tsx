@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { AlertsWorkspace } from "@/components/AlertsWorkspace";
-import { fetchJobsSnapshot } from "@/lib/jobs";
 
 const title = "Search alerts";
 const description =
@@ -28,9 +27,6 @@ export const metadata: Metadata = {
   },
 };
 
-export const revalidate = 86400;
-
-export default async function AlertsPage() {
-  const snapshot = await fetchJobsSnapshot();
-  return <AlertsWorkspace {...snapshot} />;
+export default function AlertsPage() {
+  return <AlertsWorkspace />;
 }

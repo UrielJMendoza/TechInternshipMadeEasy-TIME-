@@ -230,3 +230,37 @@ test("minimum salary uses employer-listed compensation and excludes unknown pay"
 
   assert.deepEqual(result.map((job) => job.id), ["high"]);
 });
+
+test("minimum salary compares against the floor rather than the ceiling of a range", () => {
+  const hourlyWideRange = fixtureJob("hourly-wide-range", {
+    salary: "$20–$50/hr",
+  });
+  const annualWideRange = fixtureJob("annual-wide-range", {
+    salary: "$95–145k",
+  });
+  const qualifyingRange = fixtureJob("qualifying-range", {
+    salary: "$50–$70/hr",
+  });
+
+  const result = filterAndSortJobs(
+    [hourlyWideRange, annualWideRange, qualifyingRange],
+    {
+      query: "",
+      locationIds: [],
+      remoteOnly: false,
+      visaSponsorship: false,
+      minimumSalary: "100000",
+      stages: [],
+      freshness: "all",
+      collection: "all",
+      sort: "featured",
+      saved: new Set(),
+      applications: {},
+      now: FILTER_NOW,
+      matchesMajor: () => true,
+      matchesNiche: () => true,
+    },
+  );
+
+  assert.deepEqual(result.map((job) => job.id), ["qualifying-range"]);
+});

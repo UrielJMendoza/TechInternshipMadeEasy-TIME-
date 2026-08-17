@@ -1,5 +1,6 @@
 import type { NormalizedJob, RoleType } from "../../types";
-import { categorize, cleanLink, cleanText, dedupeKey, fetchText } from "../normalize";
+import { fetchText } from "../fetch";
+import { categorize, cleanLink, cleanText, dedupeKey } from "../normalize";
 
 // SimplifyJobs renames the internship repo each season (Summer2026 → Summer2027…)
 // and GitHub redirects raw URLs across renames, so this keeps working — but if a

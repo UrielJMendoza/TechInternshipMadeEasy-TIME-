@@ -1,5 +1,6 @@
 import type { NormalizedJob } from "../../types";
-import { categorize, cleanLink, cleanText, dedupeKey, fetchText } from "../normalize";
+import { fetchText } from "../fetch";
+import { categorize, cleanLink, cleanText, dedupeKey } from "../normalize";
 
 const URL =
   "https://raw.githubusercontent.com/zshah101/Automated-List-Of-Summer-2027-and-Fall-2026-Tech-Internships/main/docs/api/jobs.json";

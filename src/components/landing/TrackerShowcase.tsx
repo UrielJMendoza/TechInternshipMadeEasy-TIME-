@@ -33,10 +33,10 @@ export function TrackerShowcase({ jobs }: TrackerShowcaseProps) {
         <div className="landing-tracker-product">
           <div
             className="theme-application landing-tracker-board"
-            aria-label="Application pipeline with Saved, Applied, Assessment, Interview, and Offer stages"
+            aria-label="Example application pipeline with Saved, Applied, Assessment, Interview, and Offer stages"
           >
             <div className="landing-tracker-board__top">
-              <strong>Applications</strong>
+              <strong>Example applications</strong>
               <span>{jobs.length} shown</span>
             </div>
 

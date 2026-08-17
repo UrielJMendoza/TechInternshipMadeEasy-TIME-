@@ -126,7 +126,7 @@ export default function PrivacyPage() {
             nothing until you explicitly select data categories and sync.
           </p>
           <p className="mt-5 font-mono text-xs text-faint">
-            Last updated July 26, 2026
+            Last updated August 17, 2026
           </p>
         </div>
       </section>

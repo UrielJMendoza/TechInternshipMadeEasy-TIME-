@@ -596,17 +596,23 @@ export function AccountWorkspace() {
                 local search alerts. This page does not upload browser data.
               </p>
               <div className="mt-7 flex flex-wrap gap-3">
-                <Link href="/jobs" className="ui-button ui-button--primary">
+                <Link
+                  href="/jobs"
+                  prefetch={false}
+                  className="ui-button ui-button--primary"
+                >
                   Browse jobs
                 </Link>
                 <Link
                   href="/tracker"
+                  prefetch={false}
                   className="ui-button ui-button--secondary"
                 >
                   Open tracker
                 </Link>
                 <Link
                   href="/alerts"
+                  prefetch={false}
                   className="ui-button ui-button--secondary"
                 >
                   Manage alerts

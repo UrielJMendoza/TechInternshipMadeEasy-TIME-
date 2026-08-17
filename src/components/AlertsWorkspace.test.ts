@@ -16,6 +16,7 @@ function renderWorkspace(
       loadError: false,
       partialData: false,
       refreshJobs: () => undefined,
+      refreshPending: false,
       ...overrides,
     }),
   );
@@ -126,20 +127,30 @@ test("workspace uses the local engine, complete filters, and confirmed deletion"
   assert.match(source, /MAX_LENGTH|STATUS_MAX_LENGTH/);
 });
 
-test("foreground triggers refresh the real server snapshot without stale evaluation loops", () => {
+test("foreground refreshes align with the daily server snapshot without stale evaluation loops", () => {
   const source = readFileSync(
     new URL("./AlertsWorkspace.tsx", import.meta.url),
     "utf8",
   );
 
   assert.match(source, /useRouter\(\)/);
+  assert.match(source, /useTransition\(\)/);
   assert.match(source, /router\.refresh\(\)/);
-  assert.match(source, /FOREGROUND_REFRESH_INTERVAL_MS = 300_000/);
+  assert.match(source, /FOREGROUND_REFRESH_INTERVAL_MS = 86_400_000/);
+  assert.match(
+    source,
+    /MINIMUM_REFRESH_GAP_MS = FOREGROUND_REFRESH_INTERVAL_MS/,
+  );
   assert.match(source, /scheduleJobsRefresh/);
   assert.match(source, /window\.addEventListener\("focus"/);
   assert.match(source, /document\.addEventListener\("visibilitychange"/);
   assert.match(source, /MINIMUM_REFRESH_GAP_MS/);
   assert.doesNotMatch(source, /setEvaluationVersion/);
+  assert.match(source, /timeZone: "UTC"/);
+  assert.match(
+    source,
+    /Jobs snapshot refreshed; no saved searches were due/,
+  );
 });
 
 test("delivery history keeps browser-only matches inspectable and actionable", () => {
@@ -184,6 +195,6 @@ test("public alerts route fetches the same bounded jobs snapshot", () => {
   assert.match(pageSource, /fetchJobsSnapshot\(\)/);
   assert.match(pageSource, /<AlertsWorkspace \{\.\.\.snapshot\} \/>/);
   assert.match(pageSource, /canonical:\s*"\/alerts"/);
-  assert.match(pageSource, /export const revalidate = 300/);
+  assert.match(pageSource, /export const revalidate = 86400/);
   assert.doesNotMatch(pageSource, /auth|session|redirect|signIn/i);
 });

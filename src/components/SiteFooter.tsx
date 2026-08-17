@@ -69,6 +69,7 @@ function FooterLinks({
             <Link
               className="text-sm font-semibold text-muted underline-offset-4 hover:text-fg hover:underline"
               href={item.href}
+              prefetch={false}
               target={item.external ? "_blank" : undefined}
               rel={item.external ? "noopener noreferrer" : undefined}
             >

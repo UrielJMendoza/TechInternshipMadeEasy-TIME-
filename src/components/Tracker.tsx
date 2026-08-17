@@ -261,7 +261,11 @@ export function Tracker({ jobs, updatedAt, loadError }: TrackerProps) {
             >
               Add application
             </button>
-            <Link href="/jobs" className="ui-button ui-button--secondary">
+            <Link
+              href="/jobs"
+              prefetch={false}
+              className="ui-button ui-button--secondary"
+            >
               Browse jobs
             </Link>
           </div>
@@ -828,7 +832,11 @@ function EmptyTracker({ onAdd }: { onAdd: () => void }) {
         >
           Add application
         </button>
-        <Link href="/jobs" className="ui-button ui-button--secondary">
+        <Link
+          href="/jobs"
+          prefetch={false}
+          className="ui-button ui-button--secondary"
+        >
           Browse jobs
         </Link>
       </div>

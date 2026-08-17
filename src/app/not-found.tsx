@@ -16,7 +16,11 @@ export default function NotFound() {
           retained public-history window.
         </p>
         <div className="mt-6 flex flex-wrap justify-center gap-2">
-          <Link href="/jobs" className="ui-button ui-button--primary">
+          <Link
+            href="/jobs"
+            prefetch={false}
+            className="ui-button ui-button--primary"
+          >
             Browse jobs
           </Link>
           <Link href="/discover" className="ui-button ui-button--secondary">

@@ -18,7 +18,7 @@ import {
 } from "@/lib/analytics";
 
 const FREQUENCY_OPTIONS = [
-  ["instant", "Instant"],
+  ["instant", "Every check"],
   ["daily", "Daily"],
   ["weekly", "Weekly"],
   ["paused", "Paused"],
@@ -191,6 +191,7 @@ export function SavedSearchButton({ filters }: { filters: BoardFilters }) {
             </button>
             <Link
               href="/alerts"
+              prefetch={false}
               className="ui-button ui-button--quiet ui-button--sm"
             >
               Manage alerts

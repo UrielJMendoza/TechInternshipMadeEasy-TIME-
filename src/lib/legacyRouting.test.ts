@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getLegacyJobsRedirect } from "./legacyRouting";
+import {
+  getJobsRobotsDirective,
+  getLegacyJobsRedirect,
+} from "./legacyRouting";
 
 const BOARD_FILTER_KEYS = [
   "tab",
@@ -53,4 +56,17 @@ test("root URLs without board filters remain on the landing page", () => {
 test("non-root URLs never redirect", () => {
   assert.equal(getLegacyJobsRedirect("/jobs", "?major=computer-science"), null);
   assert.equal(getLegacyJobsRedirect("/methodology", "?q=verification"), null);
+});
+
+test("filtered job URLs are noindex while the canonical board stays indexable", () => {
+  assert.equal(getJobsRobotsDirective("/jobs", ""), null);
+  assert.equal(
+    getJobsRobotsDirective("/jobs", "?utm_source=launch"),
+    null,
+  );
+  assert.equal(
+    getJobsRobotsDirective("/jobs", "?major=computer-science"),
+    "noindex, follow",
+  );
+  assert.equal(getJobsRobotsDirective("/", "?major=computer-science"), null);
 });

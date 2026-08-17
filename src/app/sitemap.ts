@@ -8,7 +8,7 @@ import {
 } from "@/lib/publicCatalog";
 import { absoluteUrl } from "@/lib/seo";
 
-export const revalidate = 300;
+export const revalidate = 86400;
 
 function safeDate(value: string | null | undefined, fallback: Date): Date {
   const date = value ? new Date(value) : fallback;
@@ -84,8 +84,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   for (const job of snapshot.jobs.filter(isLegitimateActiveJob)) {
     entries.push({
       url: absoluteUrl(jobPublicPath(job)),
-      lastModified: safeDate(job.last_seen_at, generatedAt),
-      changeFrequency: "daily",
+      lastModified: safeDate(job.first_seen_at, generatedAt),
+      changeFrequency: "weekly",
       priority: 0.5,
     });
   }

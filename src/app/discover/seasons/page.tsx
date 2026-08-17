@@ -4,7 +4,7 @@ import { fetchJobsSnapshot } from "@/lib/jobs";
 import { buildPublicCollections } from "@/lib/publicCatalog";
 import { publicPageMetadata } from "@/lib/seo";
 
-export const revalidate = 300;
+export const revalidate = 86400;
 
 export const metadata: Metadata = publicPageMetadata({
   title: "Jobs by hiring season",

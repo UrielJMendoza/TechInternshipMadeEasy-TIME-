@@ -29,6 +29,20 @@ test("public growth routes and crawl controls are implemented from shared data",
   assert.match(catalog, /MAX_INDEXABLE_COLLECTION_AGE_DAYS/);
 });
 
+test("the job board is cacheable without indexing filtered URL variants", () => {
+  const jobsPage = source("../app/jobs/page.tsx");
+  const proxy = source("../proxy.ts");
+
+  assert.match(jobsPage, /export const metadata: Metadata/);
+  assert.match(jobsPage, /export const revalidate = 86400/);
+  assert.doesNotMatch(jobsPage, /generateMetadata|searchParams/);
+  assert.match(proxy, /getJobsRobotsDirective/);
+  assert.match(proxy, /X-Robots-Tag/);
+  assert.match(proxy, /source: "\/jobs"/);
+  assert.match(proxy, /type: "query"/);
+  assert.doesNotMatch(proxy, /matcher: \["\/", "\/jobs"\]/);
+});
+
 test("retired company pages redirect into job search", () => {
   const companies = source("../app/companies/page.tsx");
   const company = source("../app/companies/[slug]/page.tsx");

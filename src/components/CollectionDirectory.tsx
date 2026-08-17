@@ -76,6 +76,7 @@ export function CollectionDirectory({
                   <h3 className="mt-3 text-lg font-extrabold">
                     <Link
                       href={collection.path}
+                      prefetch={false}
                       className="hover:text-accent-hover"
                     >
                       {collection.shortTitle}
@@ -86,6 +87,7 @@ export function CollectionDirectory({
                   </p>
                   <Link
                     href={collection.path}
+                    prefetch={false}
                     className="mt-4 inline-block text-sm font-bold text-accent-hover hover:underline"
                   >
                     View real listings

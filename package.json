@@ -9,14 +9,17 @@
     "lint": "eslint . --max-warnings=0",
     "typecheck": "tsc --noEmit --incremental false",
     "test": "node --import tsx --test src/lib/*.test.ts src/components/*.test.ts",
-    "ingest": "tsx scripts/ingest.ts"
+    "ingest": "tsx scripts/ingest.ts",
+    "ingest:artifact:generate": "node --import tsx scripts/generate-edge-manifest.ts",
+    "ingest:artifact:check": "node --import tsx scripts/check-edge-manifest.ts"
   },
   "dependencies": {
     "@fontsource-variable/hanken-grotesk": "^5.2.8",
     "@supabase/supabase-js": "^2.110.1",
     "next": "^16.3.1",
     "react": "^19.2.7",
-    "react-dom": "^19.2.7"
+    "react-dom": "^19.2.7",
+    "zod": "4.4.3"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4.3.2",

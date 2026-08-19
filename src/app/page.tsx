@@ -8,7 +8,7 @@ import {
 } from "@/lib/landingData";
 import { OG_IMAGE } from "@/lib/seo";
 
-export const revalidate = 86400;
+export const revalidate = 21600;
 
 export const metadata: Metadata = {
   title: {

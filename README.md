@@ -18,30 +18,29 @@ stay out of the directory and sitemap.
 ## How it works
 
 ```
-GitHub source lists ──▶ ingestion (fetch → parse → normalize → dedupe)
- deployment scheduler       │  upsert via secret-gated Postgres RPC
-      or manual run          ▼
-                      Supabase `internships` table
-                             │  publishable-key read*
-                             ▼
-                 Next.js board (tabs · search · filters · sort)
+6 community lists ─┐
+                   ├─▶ Supabase Edge ingestion ─▶ canonical `jobs` +
+3 official ATS ────┘      (guarded + audited)       `job_sources`
+                                                         │
+                                      `timley_public_jobs` read model
+                                                         │
+                                                         ▼
+                                     Next.js board, tracker, and alerts
 ```
 
-The checked-in API route and CLI both call `src/lib/ingest/run.ts`:
+The checked-in Supabase Edge Function is the only production writer. Supabase
+`pg_cron` runs the six community feeds at 06:15 and 18:15 UTC and the three
+official ATS feeds at 00:45 and 12:45 UTC. The two daily attempts are
+non-overlapping, so a transient upstream failure gets a second chance without
+returning to the previous high-cost schedule. Vercel does not run ingestion.
 
-- **Vercel-side (optional):** `vercel.json` schedules `/api/ingest` daily
-  (Hobby-plan cron granularity). Requires a `CRON_SECRET` env var on Vercel
-  that matches the database `app_meta` value. The route rejects a mismatch
-  before downloading any source feeds, and the database verifies it again
-  before writes.
-- **CLI:** `npm run ingest` runs the same checked-in ingestion pipeline manually.
-
-A deployed Supabase pg_cron job may also invoke an `ingest` Edge Function, but
-that function and schedule are absent here, so their behavior is unverified.
-The diagram's publishable-key read likewise depends on deployed database policy;
-the complete base schema is not included in this snapshot. The checked-in
-Module 7 migrations do consolidate the public listing policy once that base
-table exists.
+Every source is evaluated independently. A healthy source can publish even if
+another source fails, while failed, partial, malformed, or anomalous snapshots
+cannot deactivate that source's prior listings. See
+[`docs/ingestion-operations.md`](docs/ingestion-operations.md) for deployment,
+health checks, and incident procedures. `npm run ingest` remains a local parser
+diagnostic for the older compatibility implementation; it is not the
+production writer.
 
 ### Data sources
 
@@ -53,6 +52,9 @@ table exists.
 | [northwesternfintech/2027QuantInternships](https://github.com/northwesternfintech/2027QuantInternships) | Auto-generated README tables | Quant, finance, software, and hardware internships |
 | [vanshb03/Summer2027-Internships](https://github.com/vanshb03/Summer2027-Internships) | README markdown table | Internships |
 | [speedyapply/2027-SWE-College-Jobs](https://github.com/speedyapply/2027-SWE-College-Jobs) | README + `NEW_GRAD_USA.md` tables | Internships + New Grad |
+| [Tenstorrent University](https://job-boards.greenhouse.io/tenstorrentuniversity) | Greenhouse API | Official internships and early-career roles |
+| [Notion](https://jobs.ashbyhq.com/notion) | Ashby API | Official internships and early-career roles |
+| [Hermeus](https://jobs.lever.co/hermeus) | Lever API | Official internships and early-career roles |
 
 The SimplifyJobs feeds include active and inactive listing history; the parser
 keeps only `active` + `is_visible` rows, and — for
@@ -71,16 +73,25 @@ two passes (`src/lib/ingest/normalize.ts`):
    ("(Fall 2026)"), and the location reduces to the first city with state/country
    tokens removed ("San Mateo, California, United States" → "san-mateo").
 
-A source can deactivate listings only after it returns a successful, complete snapshot. A failed source leaves its prior listings active, and every run is recorded in Supabase `ingest_source_runs` with fetched counts, accepted counts, error state, and timestamp. This protects against total source failures; a silently partial successful parse can still deactivate valid rows and remains an operational risk. Two more filters run at ingest time: listings with an explicit non-US location are excluded, and dated postings older than 120 days are dropped. Listings without usable location or posting-date data are retained.
+A source can deactivate listings only after it returns a successful, complete,
+schema-valid, non-quarantined snapshot. Guards cover missing source markers,
+empty output, malformed payloads, excessive rejection rates, and unexpected
+count changes. Historical comparisons are scoped to the parser version so a
+reviewed parser upgrade can establish a new baseline without weakening the
+absolute safeguards. A failed source leaves its prior listings active, and
+every attempt is retained in Supabase audit tables. Listings with an explicit
+non-US location are excluded, and dated postings older than 120 days are
+dropped. Listings without usable location or posting-date data are retained.
 
 ## Deploying the site (one-time)
 
 1. Go to [vercel.com/new](https://vercel.com/new) and import this GitHub repo.
-   The checked-in public fallback credentials point to Timley's hosted data source;
-   forks should provide their own values and verify the deployed read policy.
-2. *(Optional, enables the daily Vercel backup cron)* In Project → Settings →
-   Environment Variables, add `CRON_SECRET` = the value stored in Supabase
-   `app_meta` (`cron_secret` key).
+   Configure `NEXT_PUBLIC_SUPABASE_URL` and
+   `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` for your own project; never reuse
+   Timley's hosted credentials in a fork.
+2. Apply the checked-in Supabase migrations in timestamp order, deploy
+   `supabase/functions/ingest`, then follow the secret and scheduler release
+   checklist in [`docs/ingestion-operations.md`](docs/ingestion-operations.md).
 
 ### Optional account continuity
 
@@ -161,10 +172,11 @@ available for at most 90 days, suppress Apply and `JobPosting`, and use
 `noindex`. Collection pages publish `ItemList`, and visible breadcrumbs have
 matching breadcrumb data. `robots.txt` and the data-driven XML sitemap exclude
 private workspaces, filtered query variants, thin collections, and expired
-records. The shared public snapshot is cached across requests and invalidated
-after a successful Vercel ingestion. Large public pages and the sitemap use a
-daily ISR fallback that matches the source-update cadence; dynamic listing and
-collection paths enter that cache on demand rather than being prebuilt in bulk.
+records. The shared public snapshot is cached across requests. Large public
+pages, the public feed, and the sitemap use a six-hour fallback, keeping average
+observation lag near three hours without coupling Supabase writes to Vercel
+cache regeneration. Dynamic listing and collection paths enter that cache on
+demand rather than being prebuilt in bulk.
 
 Deployments using company history must apply
 `20260723150000_allow_recent_public_job_history.sql` and
@@ -204,25 +216,24 @@ npm run build -- --webpack
 ### Ingestion
 
 ```bash
-npm run ingest        # one-off: fetch all sources and upsert into Supabase
+npm run ingest:artifact:check  # verify the reviewed Edge artifact manifest
+npm run ingest                 # local compatibility-parser diagnostic only
 ```
 
-Trigger the deployed route manually:
-
-```bash
-curl --fail-with-body \
-  --header "Authorization: Bearer $CRON_SECRET" \
-  "https://<deployment>/api/ingest"
-```
+Production ingestion is operated through Supabase Edge and `pg_cron`, not a
+public Next.js route. Do not place the ingestion Bearer secret in source,
+Vercel browser variables, SQL job arguments, or URLs. See the operations guide
+for the exact release order and private per-source health query.
 
 ### Security model
 
-The browser and the Next.js server use a *publishable* Supabase key. All ingestion
-writes go through the `security definer` Postgres function `ingest_upsert_v3`,
-which checks a secret stored in `app_meta`. The base table and RLS-policy setup is
-not fully included in this repository snapshot, so deployed policies must still
-be verified. The checked-in Module 7 policy assumes the existing table/columns
-and then defines the combined current-plus-bounded-history public read boundary.
+The browser and the Next.js server use a *publishable* Supabase key and read the
+security-invoker `timley_public_jobs` view. The Edge Function verifies a
+Vault-backed Bearer secret before importing adapters or fetching upstream data,
+then writes with the server-only service role through a guarded snapshot
+function. The legacy public ingestion RPC is not executable by browser roles.
+Row-level security exposes only active eligible jobs and a bounded 90-day
+history needed for stable detail pages.
 
 Optional continuity uses a separate, explicitly configured browser client with
 persistent PKCE authentication and user-owned snapshot rows. The

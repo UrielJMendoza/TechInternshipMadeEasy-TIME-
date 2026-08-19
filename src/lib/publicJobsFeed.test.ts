@@ -156,27 +156,28 @@ test("public feed endpoint is cacheable and never accepts private identifiers", 
   );
 
   assert.match(source, /export const dynamic = "force-static"/);
-  assert.match(source, /export const revalidate = 86400/);
+  assert.match(source, /export const revalidate = 21600/);
   assert.match(source, /export async function GET\(\)/);
-  assert.match(source, /s-maxage=86400/);
+  assert.match(source, /s-maxage=21600/);
   assert.match(source, /snapshot\.loadError \|\|/);
   assert.match(source, /snapshot\.partialData \|\|/);
   assert.match(source, /snapshot\.jobs\.length === 0/);
   assert.doesNotMatch(source, /POST|request\.json|searchParams|cookies\(|headers\(/);
 });
 
-test("ingest invalidates the shared cache tag used by the public feed", () => {
+test("the public feed uses the shared bounded jobs cache", () => {
   const jobsSource = readFileSync(new URL("./jobs.ts", import.meta.url), "utf8");
-  const ingestSource = readFileSync(
-    new URL("../app/api/ingest/route.ts", import.meta.url),
-    "utf8",
-  );
 
   assert.match(jobsSource, /export const JOBS_CACHE_TAG = "timley-public-jobs"/);
   assert.match(jobsSource, /tags: \[JOBS_CACHE_TAG\]/);
-  assert.match(ingestSource, /import \{ JOBS_CACHE_TAG \} from "@\/lib\/jobs"/);
+});
+
+test("public job reads use the canonical nine-source compatibility view", () => {
+  const jobsSource = readFileSync(new URL("./jobs.ts", import.meta.url), "utf8");
+
   assert.match(
-    ingestSource,
-    /revalidateTag\(JOBS_CACHE_TAG, \{ expire: 0 \}\)/,
+    jobsSource,
+    /PUBLIC_JOBS_RELATION = "timley_public_jobs"/,
   );
+  assert.doesNotMatch(jobsSource, /\.from\("internships"\)/);
 });

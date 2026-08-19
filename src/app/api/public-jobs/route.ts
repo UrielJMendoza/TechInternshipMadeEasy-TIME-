@@ -2,7 +2,7 @@ import { createPublicJobsFeed } from "@/lib/publicJobsFeed";
 import { fetchJobsSnapshot } from "@/lib/jobs";
 
 export const dynamic = "force-static";
-export const revalidate = 86400;
+export const revalidate = 21600;
 
 export async function GET() {
   const snapshot = await fetchJobsSnapshot();
@@ -19,7 +19,7 @@ export async function GET() {
   return Response.json(createPublicJobsFeed(snapshot), {
     headers: {
       "Cache-Control":
-        "public, max-age=300, s-maxage=86400, stale-while-revalidate=86400, stale-if-error=604800",
+        "public, max-age=300, s-maxage=21600, stale-while-revalidate=21600, stale-if-error=604800",
       "X-Robots-Tag": "noindex, nofollow",
     },
   });

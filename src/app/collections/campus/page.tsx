@@ -4,7 +4,7 @@ import { fetchJobsSnapshot } from "@/lib/jobs";
 import { buildCampusCollections } from "@/lib/publicCatalog";
 import { publicPageMetadata } from "@/lib/seo";
 
-export const revalidate = 86400;
+export const revalidate = 21600;
 
 export const metadata: Metadata = publicPageMetadata({
   title: "Shareable campus job collections",

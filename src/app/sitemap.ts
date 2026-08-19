@@ -8,7 +8,7 @@ import {
 } from "@/lib/publicCatalog";
 import { absoluteUrl } from "@/lib/seo";
 
-export const revalidate = 86400;
+export const revalidate = 21600;
 
 function safeDate(value: string | null | undefined, fallback: Date): Date {
   const date = value ? new Date(value) : fallback;

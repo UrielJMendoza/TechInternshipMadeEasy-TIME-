@@ -8,13 +8,14 @@ import { safeExternalHttpUrl } from "@/lib/safeUrl";
 const PAGE_SIZE = 1000;
 const MAX_LISTING_AGE_DAYS = 120;
 const RECENTLY_CLOSED_DAYS = 90;
+export const PUBLIC_JOBS_RELATION = "timley_public_jobs";
 const JOB_COLUMNS =
   "id,title,company,location,category,role_type,season,salary,link,source,sponsorship,posted_date,first_seen_at,last_seen_at,last_verified_at,is_active,original_source,canonical_company,canonical_url,external_job_id,requisition_id,normalized_title,normalized_location,content_fingerprint,verification_status,expiration_status,closed_at,pay_evidence,sponsorship_status,sponsorship_source,sponsorship_confidence,duplicate_group,canonical_record_key";
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
 export const JOBS_CACHE_TAG = "timley-public-jobs";
-const JOBS_CACHE_SECONDS = 86400;
+const JOBS_CACHE_SECONDS = 21600;
 const RELATED_QUERY_SIZE = 24;
 
 interface ActiveJobsPage {
@@ -70,7 +71,7 @@ async function loadActiveJobsPage(from: number): Promise<ActiveJobsPage> {
     .slice(0, 10);
 
   const { data, error } = await db
-    .from("internships")
+    .from(PUBLIC_JOBS_RELATION)
     .select(JOB_COLUMNS)
     .eq("is_active", true)
     .or(`posted_date.is.null,posted_date.gte.${cutoff}`)
@@ -128,7 +129,7 @@ async function fetchRecentlyClosedJobs(
 
   for (let from = 0; ; from += PAGE_SIZE) {
     const { data, error } = await db
-      .from("internships")
+      .from(PUBLIC_JOBS_RELATION)
       .select(JOB_COLUMNS)
       .eq("is_active", false)
       .gte("closed_at", closedSince)
@@ -206,7 +207,7 @@ async function loadPublicJobById(
   id: string,
 ): Promise<PublicJobResult> {
   const { data, error } = await supabase()
-    .from("internships")
+    .from(PUBLIC_JOBS_RELATION)
     .select(JOB_COLUMNS)
     .eq("id", id)
     .maybeSingle();
@@ -244,7 +245,7 @@ async function loadRelatedJobsByCategory(
     .slice(0, 10);
 
   const { data, error } = await supabase()
-    .from("internships")
+    .from(PUBLIC_JOBS_RELATION)
     .select(JOB_COLUMNS)
     .eq("is_active", true)
     .eq("category", category)

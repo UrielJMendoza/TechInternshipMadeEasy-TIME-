@@ -34,7 +34,7 @@ test("the job board is cacheable without indexing filtered URL variants", () => 
   const proxy = source("../proxy.ts");
 
   assert.match(jobsPage, /export const metadata: Metadata/);
-  assert.match(jobsPage, /export const revalidate = 86400/);
+  assert.match(jobsPage, /export const revalidate = 21600/);
   assert.doesNotMatch(jobsPage, /generateMetadata|searchParams/);
   assert.match(proxy, /getJobsRobotsDirective/);
   assert.match(proxy, /X-Robots-Tag/);

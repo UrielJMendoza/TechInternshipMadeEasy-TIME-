@@ -4,7 +4,7 @@ import { createBoardJobs } from "@/lib/boardJobs";
 import { fetchJobsSnapshot } from "@/lib/jobs";
 import { publicPageMetadata } from "@/lib/seo";
 
-export const revalidate = 86400;
+export const revalidate = 21600;
 
 export const metadata: Metadata = publicPageMetadata({
   title: "Browse internships and new-grad jobs",

@@ -8,13 +8,11 @@ function boundedSecret(value: string | null): string | null {
 }
 
 /**
- * Extract the cron secret from the Bearer token Vercel Cron sends when a
- * CRON_SECRET environment variable is configured. Secrets are deliberately
+ * Extract a bounded secret from an Authorization Bearer token. Secrets are deliberately
  * rejected in query strings because URLs can be copied into browser history,
  * access logs, referrer data, and monitoring tools.
  *
- * The route validates this value against its server-only CRON_SECRET before
- * starting any remote fetches. Postgres validates it again before writing.
+ * Callers must validate the returned value before performing remote work.
  */
 export function requestSecret(req: Request): string | null {
   const bearer = req.headers.get("authorization");

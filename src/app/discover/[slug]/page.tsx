@@ -6,7 +6,7 @@ import { fetchJobsSnapshot } from "@/lib/jobs";
 import { findPublicCollection } from "@/lib/publicCatalog";
 import { publicPageMetadata } from "@/lib/seo";
 
-export const revalidate = 86400;
+export const revalidate = 21600;
 
 export function generateStaticParams(): Array<{ slug: string }> {
   return [];

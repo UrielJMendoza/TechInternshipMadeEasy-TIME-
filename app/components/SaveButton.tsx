@@ -10,6 +10,25 @@ let cachedRaw: string | undefined;
 let cachedJobs: JobCardData[] = EMPTY_SAVED_JOBS;
 let storageListenerAttached = false;
 
+function hasUsableApplicationUrl(value: unknown): value is string {
+  if (typeof value !== "string") return false;
+  try {
+    const url = new URL(value);
+    const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+    return (
+      (url.protocol === "https:" || url.protocol === "http:") &&
+      hostname !== "example.com" &&
+      hostname !== "example.org" &&
+      hostname !== "example.net" &&
+      !hostname.endsWith(".example.com") &&
+      !hostname.endsWith(".example.org") &&
+      !hostname.endsWith(".example.net")
+    );
+  } catch {
+    return false;
+  }
+}
+
 function parseSavedJobs(raw: string): JobCardData[] {
   try {
     const parsed: unknown = JSON.parse(raw);
@@ -28,7 +47,8 @@ function parseSavedJobs(raw: string): JobCardData[] {
         (candidate.workplace === "Remote" || candidate.workplace === "Hybrid" || candidate.workplace === "On-site") &&
         typeof candidate.logoText === "string" &&
         typeof candidate.logoTone === "string" &&
-        typeof candidate.applyUrl === "string" &&
+        (candidate.companyDomain === undefined || typeof candidate.companyDomain === "string") &&
+        hasUsableApplicationUrl(candidate.applyUrl) &&
         Array.isArray(candidate.sourceNames) &&
         candidate.sourceNames.length > 0 &&
         candidate.sourceNames.every((source) => typeof source === "string")

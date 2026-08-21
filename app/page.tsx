@@ -3,14 +3,16 @@ import { PopularCompanyRail } from "@/app/components/PopularCompanyRail";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
 import { getFeedStats, getNewestPostedJobs } from "@/lib/jobs";
+import { getPublicJobsSnapshot } from "@/lib/jobs/live";
 
 function count(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
 }
 
-export default function Home() {
-  const stats = getFeedStats();
-  const newestJobs = getNewestPostedJobs({ limit: 6, todayOnly: true });
+export default async function Home() {
+  const snapshot = await getPublicJobsSnapshot();
+  const stats = getFeedStats({ snapshot });
+  const newestJobs = getNewestPostedJobs({ limit: 6, todayOnly: true, snapshot });
 
   return (
     <main id="main-content">

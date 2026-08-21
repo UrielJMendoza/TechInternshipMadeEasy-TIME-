@@ -90,7 +90,7 @@ test("jobs HTML contains one 36-job server page and stays below the payload ceil
   );
   assert.match(html, /<time[^>]*>(?:Just now|[0-9]+ (?:minute|hour|day|month|year)s? ago)<\/time><\/strong>/);
   assert.doesNotMatch(html, /[–—]/, "the jobs feed should avoid long dash punctuation");
-  assert.match(html, /href="https:\/\/example\.com\/\?job=tl-[0-9]+"/);
+  assert.match(html, /class="apply" href="https:\/\/[^"]+" target="_blank" rel="noopener noreferrer"/);
   assert.equal(
     (html.match(/class="company-logo company-logo-row"/g) ?? []).length,
     36,
@@ -157,6 +157,6 @@ test("job details use record-specific metadata and clear the site-wide image", a
   assert.match(detail, /Listing details/);
   assert.match(detail, /<span>Recency<\/span><strong class="recency recency-(?:newest|fresh|recent|aging|old)"/);
   assert.doesNotMatch(detail, /Source details|Primary source|Contributing sources/);
-  assert.match(detail, /https:\/\/example\.com\/\?job=tl-[0-9]+/);
+  assert.match(detail, /class="apply" href="https:\/\/[^"]+" target="_blank" rel="noopener noreferrer"/);
   assert.doesNotMatch(detail, /property="og:image"|name="twitter:image"/);
 });

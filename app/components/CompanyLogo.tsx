@@ -6,6 +6,7 @@ import { companyDomain } from "@/app/data/company-domains";
 
 type CompanyLogoProps = {
   company: string;
+  domain?: string;
   size?: "row" | "rail" | "detail";
   priority?: boolean;
 };
@@ -16,10 +17,11 @@ function logoUrl(domain: string): string {
 
 export function CompanyLogo({
   company,
+  domain: suppliedDomain,
   size = "row",
   priority = false,
 }: CompanyLogoProps) {
-  const domain = companyDomain(company);
+  const domain = suppliedDomain?.trim().toLowerCase() || companyDomain(company);
   const src = domain ? logoUrl(domain) : null;
   const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(() => !src);

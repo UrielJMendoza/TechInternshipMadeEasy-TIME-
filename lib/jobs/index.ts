@@ -269,12 +269,16 @@ export type CanonicalJob = {
   roleLevel: "Internship" | "New grad";
   workplace: "Remote" | "Hybrid" | "On-site";
   category: string;
+  /** Exact taxonomy supplied by the production jobs repository, when present. */
+  majorIds?: readonly string[];
+  nicheIds?: readonly string[];
   team?: string;
   summary?: string;
   compensation?: string;
   sponsorship?: "Confirmed" | "Not offered";
   logoText: string;
   logoTone: string;
+  companyDomain?: string;
   applicationUrl: string;
   employerPostedAt: string | null;
   firstSeenAt: string;
@@ -296,6 +300,7 @@ export type JobListItem = {
   sponsorship?: "Confirmed" | "Not offered";
   logoText: string;
   logoTone: string;
+  companyDomain?: string;
   applyUrl: string;
   sourceNames: string[];
   team?: string;
@@ -1171,6 +1176,7 @@ function normalizeForSearch(value: string): string {
 
 function matchesMajor(job: CanonicalJob, major: JobMajorFilter): boolean {
   if (major === "all") return true;
+  if (job.majorIds) return job.majorIds.includes(major);
 
   const title = normalizeForSearch(job.title);
   const category = normalizeForSearch(job.category);
@@ -1195,6 +1201,7 @@ function matchesMajor(job: CanonicalJob, major: JobMajorFilter): boolean {
 
 function matchesNiche(job: CanonicalJob, niche: string): boolean {
   if (niche === "all") return true;
+  if (job.nicheIds) return job.nicheIds.includes(niche);
 
   const title = normalizeForSearch(job.title);
   const category = normalizeForSearch(job.category);
@@ -1294,6 +1301,7 @@ function toListItem(job: CanonicalJob, now: string | Date): JobListItem {
     sponsorship: job.sponsorship,
     logoText: job.logoText,
     logoTone: job.logoTone,
+    companyDomain: job.companyDomain,
     applyUrl: job.applicationUrl,
     sourceNames: job.contributingSourceIds.map((sourceId) => sourceFor(sourceId).name),
     team: job.team,
@@ -1316,6 +1324,7 @@ export type QueryOptions = {
   limit?: number;
   asOf?: string | Date;
   now?: string | Date;
+  snapshot?: DemoSnapshot;
 };
 
 /**
@@ -1343,11 +1352,14 @@ export function queryJobs(
   }
 
   const asOf = decodedCursor?.asOf ?? canonicalTimestamp(
-    options.asOf ?? getDemoSnapshotAt(requestedNow),
+    options.asOf ?? options.snapshot?.asOf ?? getDemoSnapshotAt(requestedNow),
     "asOf",
   );
   const evaluatedAt = decodedCursor?.evaluatedAt ?? requestedNow;
-  const snapshot = resolveSnapshot(asOf, evaluatedAt);
+  const snapshot = options.snapshot ?? resolveSnapshot(asOf, evaluatedAt);
+  if (decodedCursor && snapshot.asOf !== decodedCursor.asOf) {
+    throw new InvalidCursorError("The cursor does not belong to this snapshot");
+  }
   const filteredJobs = snapshot.jobs.filter(
     (job) => job.active && job.firstSeenAt <= asOf && matchesFilters(job, filters),
   );
@@ -1383,11 +1395,12 @@ export function queryJobs(
 export type FeedStatsOptions = {
   asOf?: string | Date;
   now?: string | Date;
+  snapshot?: DemoSnapshot;
 };
 
 export function getSourceHealth(options: FeedStatsOptions = {}): SourceHealth[] {
   const now = canonicalTimestamp(options.now ?? new Date(), "now");
-  const snapshot = resolveSnapshot(options.asOf, now);
+  const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
   return SOURCE_CATALOG.map((source, index) => {
     const lastSuccessfulUpdateAt = subtractMinutes(snapshot.asOf, index * 3);
     const healthy =
@@ -1408,11 +1421,11 @@ export function getSourceHealth(options: FeedStatsOptions = {}): SourceHealth[] 
 export function getFeedStats(options: FeedStatsOptions = {}): FeedStats {
   const now = canonicalTimestamp(options.now ?? new Date(), "now");
   const nowDate = asDate(now, "now");
-  const snapshot = resolveSnapshot(options.asOf, now);
+  const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
   const activeJobs = snapshot.jobs.filter((job) => job.active);
   const dayStart = utcDayStart(nowDate);
   const weekBoundary = nowDate.getTime() - 7 * DAY_MS;
-  const sourceHealth = getSourceHealth({ asOf: snapshot.asOf, now });
+  const sourceHealth = getSourceHealth({ asOf: snapshot.asOf, now, snapshot });
 
   return {
     activeJobs: activeJobs.length,
@@ -1433,6 +1446,7 @@ export function getFeedStats(options: FeedStatsOptions = {}): FeedStats {
 export type GetJobOptions = {
   asOf?: string | Date;
   now?: string | Date;
+  snapshot?: DemoSnapshot;
 };
 
 export function getJobById(
@@ -1440,7 +1454,7 @@ export function getJobById(
   options: GetJobOptions = {},
 ): JobListItem | null {
   const now = canonicalTimestamp(options.now ?? new Date(), "now");
-  const snapshot = resolveSnapshot(options.asOf, now);
+  const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
   const job = snapshot.jobs.find((candidate) => candidate.id === id && candidate.active);
   return job ? toListItem(job, now) : null;
 }
@@ -1450,7 +1464,7 @@ export function getNewestPostedJobs(
   options: GetJobOptions & { limit?: number; todayOnly?: boolean } = {},
 ): JobListItem[] {
   const now = canonicalTimestamp(options.now ?? new Date(), "now");
-  const snapshot = resolveSnapshot(options.asOf, now);
+  const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
   const dayStart = utcDayStart(asDate(now, "now"));
   const limit = normalizeLimit(options.limit ?? 6);
   return snapshot.jobs

@@ -300,6 +300,7 @@ summary {
 }
 
 .job-card {
+  position: relative;
   display: grid;
   grid-template-columns: 34px 62px minmax(250px, 1.28fr) minmax(350px, 0.98fr) 126px;
   min-height: 105px;
@@ -377,6 +378,13 @@ summary {
   transition: text-decoration-color 140ms ease;
 }
 
+.job-card-link::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  content: "";
+}
+
 .job-card-link:hover {
   text-decoration-color: var(--paper);
 }
@@ -437,6 +445,11 @@ summary {
   align-items: center;
   justify-content: flex-end;
   gap: 7px;
+}
+
+.job-actions {
+  position: relative;
+  z-index: 2;
 }
 
 .save-button,

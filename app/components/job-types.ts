@@ -11,6 +11,7 @@ export type JobCardData = {
   sponsorship?: "Confirmed" | "Not offered";
   logoText: string;
   logoTone: string;
+  companyDomain?: string;
   applyUrl: string;
   sourceNames: string[];
   team?: string;

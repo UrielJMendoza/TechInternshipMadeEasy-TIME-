@@ -3,6 +3,7 @@ import { JobsExplorer } from "@/app/components/JobsExplorer";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
 import { JOB_MAJOR_OPTIONS, parseFilters, queryJobs, serializeFilters } from "@/lib/jobs";
+import { getPublicJobsSnapshot } from "@/lib/jobs/live";
 
 export const metadata: Metadata = {
   title: "Newest internships and new-grad jobs · Timley",
@@ -15,7 +16,8 @@ type JobsPageProps = {
 
 export default async function JobsPage({ searchParams }: JobsPageProps) {
   const filters = parseFilters(await searchParams);
-  const page = queryJobs(filters, { limit: 36 });
+  const snapshot = await getPublicJobsSnapshot();
+  const page = queryJobs(filters, { limit: 36, snapshot });
 
   return (
     <main id="main-content">

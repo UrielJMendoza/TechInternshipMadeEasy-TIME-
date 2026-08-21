@@ -5,6 +5,7 @@ import { SaveButton } from "@/app/components/SaveButton";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
 import { getJobById } from "@/lib/jobs";
+import { getPublicJobsSnapshot } from "@/lib/jobs/live";
 
 type JobDetailProps = {
   params: Promise<{ id: string }>;
@@ -12,7 +13,8 @@ type JobDetailProps = {
 
 export async function generateMetadata({ params }: JobDetailProps): Promise<Metadata> {
   const { id } = await params;
-  const job = getJobById(id);
+  const snapshot = await getPublicJobsSnapshot();
+  const job = getJobById(id, { snapshot });
   const title = job ? `${job.title} at ${job.company} · Timley` : "Job not found · Timley";
   const description = job?.summary ?? "This Timley job is no longer available in the current feed.";
 
@@ -26,7 +28,8 @@ export async function generateMetadata({ params }: JobDetailProps): Promise<Meta
 
 export default async function JobDetailPage({ params }: JobDetailProps) {
   const { id } = await params;
-  const job = getJobById(id);
+  const snapshot = await getPublicJobsSnapshot();
+  const job = getJobById(id, { snapshot });
 
   if (!job) {
     return (
@@ -61,7 +64,7 @@ export default async function JobDetailPage({ params }: JobDetailProps) {
         <a className="back-link" href="/jobs"><span aria-hidden="true">←</span> Back to newest jobs</a>
         <article className="detail-card">
           <div className="detail-top">
-            <CompanyLogo company={job.company} size="detail" priority />
+            <CompanyLogo company={job.company} domain={job.companyDomain} size="detail" priority />
             <div className="detail-title">
               <div className="job-meta">
                 <span>{job.company}</span>

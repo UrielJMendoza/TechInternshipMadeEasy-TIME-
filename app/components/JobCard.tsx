@@ -22,7 +22,7 @@ export function JobCard({ job, liveRecency = false }: JobCardProps) {
 
   return (
     <article className="job-card" aria-labelledby={titleId}>
-      <CompanyLogo company={job.company} />
+      <CompanyLogo company={job.company} domain={job.companyDomain} />
       <div className="job-primary">
         <a className="job-card-link" href={`/jobs/${encodeURIComponent(job.id)}`}>
           <h3 id={titleId}>{job.title}</h3>

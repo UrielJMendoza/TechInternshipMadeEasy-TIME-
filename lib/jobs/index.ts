@@ -1001,7 +1001,7 @@ function subtractMinutes(timestamp: string, minutes: number): string {
 
 function demoRawRecord(index: number, asOf: string): RawJobRecord {
   const source = SOURCE_CATALOG[index % SOURCE_CATALOG.length];
-  const companyIndex = index % DEMO_COMPANIES.length;
+  const companyIndex = (index * 5) % DEMO_COMPANIES.length;
   const roleIndex = Math.floor(index / DEMO_COMPANIES.length) % DEMO_ROLES.length;
   const listingVariant = Math.floor(
     index / (DEMO_COMPANIES.length * DEMO_ROLES.length),

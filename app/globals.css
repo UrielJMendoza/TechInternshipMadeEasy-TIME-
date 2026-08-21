@@ -580,9 +580,9 @@ summary {
 
 .level-tabs {
   display: flex;
-  min-height: 45px;
+  min-height: 56px;
   align-items: stretch;
-  gap: 25px;
+  gap: 34px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -590,9 +590,12 @@ summary {
   position: relative;
   display: inline-flex;
   align-items: center;
+  padding: 0 2px;
   color: var(--quiet);
-  font-size: 12px;
-  font-weight: 560;
+  font-size: 15px;
+  font-weight: 620;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
 }
 
 .level-tabs a::after {
@@ -1678,12 +1681,16 @@ summary {
 
   .level-tabs {
     gap: 0;
+    min-height: 56px;
   }
 
   .level-tabs a {
-    flex: 1;
+    flex: 1 1 0;
     justify-content: center;
-    font-size: 11px;
+    min-width: 0;
+    min-height: 56px;
+    padding: 0 4px;
+    font-size: 14px;
   }
 
   .filter-form {

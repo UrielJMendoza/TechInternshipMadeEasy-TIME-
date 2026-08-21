@@ -1001,11 +1001,27 @@ function subtractMinutes(timestamp: string, minutes: number): string {
 
 function demoRawRecord(index: number, asOf: string): RawJobRecord {
   const source = SOURCE_CATALOG[index % SOURCE_CATALOG.length];
-  const company = DEMO_COMPANIES[(index * 5) % DEMO_COMPANIES.length];
-  const [title, category] = DEMO_ROLES[(index * 7) % DEMO_ROLES.length];
-  const roleLevel = index % 2 === 0 ? "Internship" : "New grad";
-  const workplace = index % 5 === 0 ? "Remote" : index % 3 === 0 ? "Hybrid" : "On-site";
-  const location = workplace === "Remote" ? "Remote · United States" : DEMO_LOCATIONS[(index * 7) % DEMO_LOCATIONS.length];
+  const companyIndex = index % DEMO_COMPANIES.length;
+  const roleIndex = Math.floor(index / DEMO_COMPANIES.length) % DEMO_ROLES.length;
+  const listingVariant = Math.floor(
+    index / (DEMO_COMPANIES.length * DEMO_ROLES.length),
+  );
+  const company = DEMO_COMPANIES[companyIndex];
+  const [title, category] = DEMO_ROLES[roleIndex];
+  const roleLevel = (companyIndex + roleIndex + listingVariant) % 2 === 0
+    ? "Internship"
+    : "New grad";
+  const workplace = listingVariant === 0
+    ? "Remote"
+    : listingVariant === 2
+      ? "Hybrid"
+      : "On-site";
+  const locationIndex = (
+    companyIndex + roleIndex * 3 + listingVariant * 5
+  ) % DEMO_LOCATIONS.length;
+  const location = workplace === "Remote"
+    ? "Remote · United States"
+    : DEMO_LOCATIONS[locationIndex];
   const requisitionId = `TL-${String(index + 1).padStart(6, "0")}`;
   const targetSource = source.type === "official-ats"
     ? source.id as Exclude<SourceId, "simplify" | "github-new-grad">

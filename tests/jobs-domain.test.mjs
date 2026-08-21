@@ -90,6 +90,18 @@ test("the mock snapshot is deterministic and deduplicates to exactly 4,416 activ
   assert.equal(first.jobs.length, DEMO_CANONICAL_JOB_COUNT);
   assert.ok(first.rawRecords.length > first.jobs.length, "mirror records exercise deduplication");
   assert.ok(first.jobs.every((job) => job.active));
+  const visibleJobKeys = first.jobs.map((job) => [
+    job.companyName,
+    job.title,
+    job.location,
+    job.roleLevel,
+    job.workplace,
+  ].join("|"));
+  assert.equal(
+    new Set(visibleJobKeys).size,
+    DEMO_CANONICAL_JOB_COUNT,
+    "every demo listing should be visibly distinct, not merely separated by requisition ID",
+  );
   assert.deepEqual(
     new Set(first.rawRecords.map((record) => record.sourceId)),
     new Set(SOURCE_CATALOG.map((source) => source.id)),

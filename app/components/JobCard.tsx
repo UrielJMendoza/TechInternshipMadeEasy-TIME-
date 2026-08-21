@@ -2,13 +2,15 @@
 
 import type { JobCardData } from "./job-types";
 import { CompanyLogo } from "./CompanyLogo";
+import { Recency } from "./Recency";
 import { SaveButton } from "./SaveButton";
 
 type JobCardProps = {
   job: JobCardData;
+  liveRecency?: boolean;
 };
 
-export function JobCard({ job }: JobCardProps) {
+export function JobCard({ job, liveRecency = false }: JobCardProps) {
   const titleId = `job-${job.id}-title`;
   const compensation = (job.compensation ?? "Compensation not listed").replace(/[–—]/g, " to ");
   const sponsorship =
@@ -32,9 +34,12 @@ export function JobCard({ job }: JobCardProps) {
         </p>
       </div>
       <div className="job-facts" aria-label="Job details">
-        <strong className={job.freshnessKind === "found" ? "fresh-found" : undefined}>
-          {job.freshnessLabel}
-        </strong>
+        <Recency
+          kind={job.freshnessKind}
+          label={job.freshnessLabel}
+          timestamp={job.postedAt ?? job.firstSeenAt}
+          recalculate={liveRecency}
+        />
         <span>{job.roleLevel} · {job.workplace}</span>
         <span>{compensation}{sponsorship ? ` · ${sponsorship}` : ""}</span>
       </div>

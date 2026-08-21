@@ -628,7 +628,6 @@ function utcDayStart(date: Date): number {
 }
 
 function relativeDateLabel(
-  prefix: "Posted" | "Found",
   timestamp: string,
   now: string | Date,
 ): string {
@@ -639,21 +638,15 @@ function relativeDateLabel(
   const hours = Math.floor(elapsedMs / HOUR_MS);
   const days = Math.floor(elapsedMs / DAY_MS);
 
-  if (prefix === "Found") {
-    const calendarDays = Math.floor((utcDayStart(nowDate) - utcDayStart(then)) / DAY_MS);
-    if (calendarDays <= 0) return "Found today";
-    if (calendarDays === 1) return "Found yesterday";
-  }
-  if (minutes < 1) return `${prefix} just now`;
-  if (minutes < 60) return `${prefix} ${minutes}m ago`;
-  if (hours < 24) return `${prefix} ${hours}h ago`;
-  if (days < 7) return `${prefix} ${days}d ago`;
-  const date = new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    timeZone: "UTC",
-  }).format(then);
-  return `${prefix} ${date}`;
+  const plural = (value: number, unit: string) =>
+    `${value} ${unit}${value === 1 ? "" : "s"} ago`;
+
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return plural(minutes, "minute");
+  if (hours < 24) return plural(hours, "hour");
+  if (days < 30) return plural(days, "day");
+  if (days < 365) return plural(Math.floor(days / 30), "month");
+  return plural(Math.floor(days / 365), "year");
 }
 
 export function getFreshness(job: CanonicalJob, now: string | Date): Freshness {
@@ -661,14 +654,14 @@ export function getFreshness(job: CanonicalJob, now: string | Date): Freshness {
     return {
       kind: "posted",
       at: job.employerPostedAt,
-      label: relativeDateLabel("Posted", job.employerPostedAt, now),
+      label: relativeDateLabel(job.employerPostedAt, now),
       semanticLabel: "Employer posting date",
     };
   }
   return {
     kind: "found",
     at: job.firstSeenAt,
-    label: relativeDateLabel("Found", job.firstSeenAt, now),
+    label: relativeDateLabel(job.firstSeenAt, now),
     semanticLabel: "Newly found",
   };
 }

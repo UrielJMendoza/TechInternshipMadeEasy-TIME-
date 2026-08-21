@@ -191,9 +191,9 @@ test("newest-first is global across categories and known backfills retain their 
   const found = ordered[0];
   const backfill = ordered.at(-1);
   assert.equal(getFreshness(found, NOW).kind, "found");
-  assert.equal(getFreshness(found, NOW).label, "Found today");
+  assert.equal(getFreshness(found, NOW).label, "30 minutes ago");
   assert.equal(getFreshness(backfill, NOW).kind, "posted");
-  assert.doesNotMatch(getFreshness(backfill, NOW).label, /today|just now/i);
+  assert.equal(getFreshness(backfill, NOW).label, "2 months ago");
   assert.equal(isNewThisWeek(backfill, NOW), false);
   assert.equal(isNewThisWeek(found, NOW), false, "missing dates never qualify as newly posted");
 });
@@ -212,6 +212,27 @@ test("community feed dates stay discovery evidence instead of employer posting d
   assert.equal(job.employerPostedAt, null);
   assert.equal(getFreshness(job, NOW).kind, "found");
   assert.equal(isNewThisWeek(job, NOW), false);
+});
+
+test("recency labels use readable singular time units without provenance prefixes", () => {
+  const [oneHour] = deduplicateJobs([
+    rawRecord({
+      sourceRecordId: "greenhouse:one-hour",
+      requisitionId: "ONE-HOUR",
+      employerPostedAt: "2026-08-19T17:00:00.000Z",
+    }),
+  ], { now: NOW });
+  const [oneDay] = deduplicateJobs([
+    rawRecord({
+      sourceRecordId: "greenhouse:one-day",
+      requisitionId: "ONE-DAY",
+      employerPostedAt: "2026-08-18T18:00:00.000Z",
+    }),
+  ], { now: NOW });
+
+  assert.equal(getFreshness(oneHour, NOW).label, "1 hour ago");
+  assert.equal(getFreshness(oneDay, NOW).label, "1 day ago");
+  assert.doesNotMatch(getFreshness(oneHour, NOW).label, /posted|found/i);
 });
 
 test("ATS normalization recognizes aliases without broad requisition fuzzy matching", () => {

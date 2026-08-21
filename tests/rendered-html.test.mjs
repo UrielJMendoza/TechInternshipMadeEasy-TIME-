@@ -52,6 +52,9 @@ test("homepage renders the focused account-free product and bespoke sharing meta
   assert.equal(new Set(popularCompanyDomains).size, 30, "the homepage rail should show more than 24 distinct companies");
   assert.match(css, /\.company-rail-track\s*\{[^}]*animation:\s*company-logo-loop 80s linear infinite/s);
   assert.doesNotMatch(css, /company-rail-window:hover|animation-play-state:\s*paused|company-rail-track\.is-paused/);
+  for (const color of ["#67d391", "#add66f", "#e4bd56", "#ed8b5a", "#f27d7d"]) {
+    assert.match(css, new RegExp(`--recency-color:\\s*${color}`));
+  }
   assert.match(html, /https:\/\/favicon\.vemetric\.com\//);
   assert.match(
     html,
@@ -80,6 +83,12 @@ test("jobs HTML contains one 36-job server page and stays below the payload ceil
   assert.match(html, />Engineering<\/option>/);
   assert.match(html, />Business<\/option>/);
   assert.doesNotMatch(html, /class="source-code"|>via\s|<span>Source<\/span>|All sources/);
+  assert.equal(
+    (html.match(/class="recency recency-(?:newest|fresh|recent|aging|old)"/g) ?? []).length,
+    36,
+    "every feed row should show a color-coded recency label",
+  );
+  assert.match(html, /<time[^>]*>(?:Just now|[0-9]+ (?:minute|hour|day|month|year)s? ago)<\/time><\/strong>/);
   assert.doesNotMatch(html, /[–—]/, "the jobs feed should avoid long dash punctuation");
   assert.match(html, /href="https:\/\/example\.com\/\?job=tl-[0-9]+"/);
   assert.equal(
@@ -146,6 +155,7 @@ test("job details use record-specific metadata and clear the site-wide image", a
   assert.match(detail, /Apply now/);
   assert.match(detail, /Employer website/);
   assert.match(detail, /Listing details/);
+  assert.match(detail, /<span>Recency<\/span><strong class="recency recency-(?:newest|fresh|recent|aging|old)"/);
   assert.doesNotMatch(detail, /Source details|Primary source|Contributing sources/);
   assert.match(detail, /https:\/\/example\.com\/\?job=tl-[0-9]+/);
   assert.doesNotMatch(detail, /property="og:image"|name="twitter:image"/);

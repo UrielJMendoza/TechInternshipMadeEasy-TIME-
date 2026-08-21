@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { CompanyLogo } from "@/app/components/CompanyLogo";
+import { Recency } from "@/app/components/Recency";
 import { SaveButton } from "@/app/components/SaveButton";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
@@ -62,7 +63,10 @@ export default async function JobDetailPage({ params }: JobDetailProps) {
           <div className="detail-top">
             <CompanyLogo company={job.company} size="detail" priority />
             <div className="detail-title">
-              <div className="job-meta"><span>{job.company}</span><strong className={job.freshnessKind === "found" ? "fresh-found" : undefined}>{job.freshnessLabel}</strong></div>
+              <div className="job-meta">
+                <span>{job.company}</span>
+                <Recency kind={job.freshnessKind} label={job.freshnessLabel} timestamp={job.postedAt ?? job.firstSeenAt} />
+              </div>
               <h1>{job.title}</h1>
               <p>{job.location}{job.team ? ` · ${job.team}` : ""}</p>
             </div>
@@ -95,7 +99,7 @@ export default async function JobDetailPage({ params }: JobDetailProps) {
             </div>
             <aside className="detail-aside" aria-label="Listing details">
               <h2>Listing details</h2>
-              <div className="detail-fact"><span>Freshness</span><strong>{job.freshnessLabel}</strong></div>
+              <div className="detail-fact"><span>Recency</span><Recency kind={job.freshnessKind} label={job.freshnessLabel} timestamp={job.postedAt ?? job.firstSeenAt} /></div>
               <div className="detail-fact"><span>Role</span><strong>{job.roleLevel}</strong></div>
               <div className="detail-fact"><span>Work style</span><strong>{job.workplace}</strong></div>
               <div className="detail-fact"><span>Application</span><strong>Employer website</strong></div>

@@ -431,10 +431,6 @@ summary {
   color: var(--paper);
 }
 
-.job-facts .fresh-found {
-  color: var(--blue);
-}
-
 .job-actions,
 .detail-actions {
   display: flex;
@@ -1222,10 +1218,6 @@ summary {
   font-weight: 400;
 }
 
-.detail-title .job-meta strong.fresh-found {
-  color: var(--blue);
-}
-
 .detail-title h1 {
   max-width: 1020px;
   margin-top: 13px;
@@ -1362,6 +1354,32 @@ summary {
   font-size: 11px;
   font-weight: 500;
   line-height: 1.42;
+}
+
+.recency-newest {
+  --recency-color: #67d391;
+}
+
+.recency-fresh {
+  --recency-color: #add66f;
+}
+
+.recency-recent {
+  --recency-color: #e4bd56;
+}
+
+.recency-aging {
+  --recency-color: #ed8b5a;
+}
+
+.recency-old {
+  --recency-color: #f27d7d;
+}
+
+.job-facts .recency,
+.detail-title .job-meta .recency,
+.detail-fact .recency {
+  color: var(--recency-color);
 }
 
 .direct-note {

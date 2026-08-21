@@ -37,7 +37,7 @@ export function SavedJobs() {
         <span>Stored only in this browser</span>
       </div>
       <div className="job-list">
-        {jobs.map((job) => <JobCard job={job} key={job.id} />)}
+        {jobs.map((job) => <JobCard job={job} key={job.id} liveRecency />)}
       </div>
     </section>
   );

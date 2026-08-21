@@ -1,6 +1,7 @@
 import {
   createDemoSnapshot,
   getDemoSnapshotAt,
+  InvalidCursorError,
   normalizeAtsHostname,
   normalizeEmployer,
   sortJobsNewestFirst,
@@ -17,7 +18,8 @@ const SUPABASE_PUBLISHABLE_KEY =
   "sb_publishable_ejWVjfUaEx5WAdrN72s7FQ_RwO7CDEh";
 
 const PAGE_SIZE = 1_000;
-const CACHE_TTL_MS = 5 * 60 * 1_000;
+const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1_000;
+const MAX_CURSOR_AGE_MS = 10 * 60 * 1_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const SELECT_FIELDS = [
   "id",
@@ -387,7 +389,9 @@ async function fetchAllLiveRows(snapshotAt: string): Promise<LiveJobRow[]> {
 }
 
 async function refreshPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot> {
-  const snapshotAt = asOf ?? new Date().toISOString();
+  const snapshotAt = asOf ?? new Date(
+    Math.floor(Date.now() / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS,
+  ).toISOString();
   const rows = await fetchAllLiveRows(snapshotAt);
   const snapshot = createLiveSnapshotFromRows(rows, snapshotAt);
   if (snapshot.jobs.length === 0) {
@@ -405,6 +409,20 @@ export async function getPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot
     return createDemoSnapshot(asOf ?? getDemoSnapshotAt());
   }
 
+  if (asOf) {
+    const requestedAt = Date.parse(asOf);
+    const currentBoundary = Math.floor(Date.now() / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS;
+    const age = currentBoundary - requestedAt;
+    if (
+      !Number.isFinite(requestedAt) ||
+      requestedAt % SNAPSHOT_INTERVAL_MS !== 0 ||
+      age < 0 ||
+      age > MAX_CURSOR_AGE_MS
+    ) {
+      throw new InvalidCursorError("The cursor does not belong to a current live snapshot");
+    }
+  }
+
   const now = Date.now();
   const historical = asOf ? snapshotHistory.get(asOf) : undefined;
   if (historical && now < historical.expiresAt) return historical.snapshot;
@@ -417,11 +435,12 @@ export async function getPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot
   const staleSnapshot = historical?.snapshot ?? (!asOf ? cachedSnapshot : null);
   const request = refreshPublicJobsSnapshot(asOf)
     .then((snapshot) => {
-      const expiresAt = Date.now() + CACHE_TTL_MS;
-      snapshotHistory.set(snapshot.asOf, { snapshot, expiresAt });
+      const refreshedAt = Date.now();
+      const historyExpiresAt = refreshedAt + MAX_CURSOR_AGE_MS + SNAPSHOT_INTERVAL_MS;
+      snapshotHistory.set(snapshot.asOf, { snapshot, expiresAt: historyExpiresAt });
       if (!asOf) {
         cachedSnapshot = snapshot;
-        cacheExpiresAt = expiresAt;
+        cacheExpiresAt = (Math.floor(refreshedAt / SNAPSHOT_INTERVAL_MS) + 1) * SNAPSHOT_INTERVAL_MS;
       }
       while (snapshotHistory.size > 8) {
         const oldestKey = snapshotHistory.keys().next().value;
@@ -433,7 +452,11 @@ export async function getPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot
     .catch((error: unknown) => {
       if (staleSnapshot && (!asOf || staleSnapshot.asOf === asOf)) {
         const retryAt = Date.now() + 60_000;
-        snapshotHistory.set(staleSnapshot.asOf, { snapshot: staleSnapshot, expiresAt: retryAt });
+        const priorExpiry = snapshotHistory.get(staleSnapshot.asOf)?.expiresAt ?? 0;
+        snapshotHistory.set(staleSnapshot.asOf, {
+          snapshot: staleSnapshot,
+          expiresAt: Math.max(priorExpiry, retryAt),
+        });
         if (!asOf) cacheExpiresAt = retryAt;
         return staleSnapshot;
       }

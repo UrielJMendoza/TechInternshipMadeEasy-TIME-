@@ -2,11 +2,11 @@ import type { Metadata } from "next";
 import { JobsExplorer } from "@/app/components/JobsExplorer";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
-import { SOURCE_CATALOG, parseFilters, queryJobs, serializeFilters } from "@/lib/jobs";
+import { JOB_MAJOR_OPTIONS, parseFilters, queryJobs, serializeFilters } from "@/lib/jobs";
 
 export const metadata: Metadata = {
   title: "Newest internships and new-grad jobs · Timley",
-  description: "Browse the newest internships and new-grad roles across nine public sources. No account required.",
+  description: "Browse internships and new-grad roles by major, specialization, location, and work style. No account required.",
 };
 
 type JobsPageProps = {
@@ -20,11 +20,8 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
   return (
     <main id="main-content">
       <SiteHeader active="jobs" />
-      <section className="page-intro jobs-intro">
-        <div className="jobs-intro-copy">
-          <h1>All jobs, newest first</h1>
-        </div>
-        <p>Employer posting dates stay separate from discovery dates. Old backfills never appear as new jobs.</p>
+      <section className="page-intro">
+        <h1>All jobs, newest first</h1>
       </section>
       <div className="jobs-shell">
         <JobsExplorer
@@ -34,7 +31,10 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
           initialFilters={filters}
           initialQuery={serializeFilters(filters)}
           total={page.total}
-          sourceOptions={SOURCE_CATALOG.map(({ id, name }) => ({ id, name }))}
+          majorOptions={JOB_MAJOR_OPTIONS.map((major) => ({
+            ...major,
+            niches: major.niches.map((niche) => ({ ...niche })),
+          }))}
         />
       </div>
       <SiteFooter />

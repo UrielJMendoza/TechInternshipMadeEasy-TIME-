@@ -44,6 +44,7 @@ test("homepage renders the focused account-free product and bespoke sharing meta
   assert.doesNotMatch(html, /Companies students are watching|Pause logos|Play logos/);
   assert.doesNotMatch(html, /TIMLEY INDEX \/ NEWEST FIRST|9\/9 sources healthy/);
   assert.doesNotMatch(html, /Modeled on public sources|Duplicates removed|Reference listings model/);
+  assert.doesNotMatch(html, /href="\/sources"|class="source-code"|>via\s/);
   assert.doesNotMatch(html, /[–—]/, "the homepage should avoid long dash punctuation");
   assert.ok(homepageJobs > 0 && homepageJobs <= 6, "the homepage should render its newest jobs");
   assert.equal(homepageLogos, homepageJobs, "every homepage job should render its company logo");
@@ -71,8 +72,14 @@ test("jobs HTML contains one 36-job server page and stays below the payload ceil
 
   assert.equal(uniqueDetailLinks.size, 36, "only the first 36 job records should be serialized");
   assert.match(html, /Results load 36 at a time/);
-  assert.match(html, /Newest first · No category boosts/);
+  assert.doesNotMatch(html, /Employer posting dates stay separate from discovery dates|Old backfills never appear as new jobs|Newest first · No category boosts/);
   assert.match(html, /4,416(?:<!-- -->)? matching opportunities/);
+  assert.match(html, /<span class="field-label">Major<\/span>/);
+  assert.match(html, /<span class="field-label">Specialization<\/span>/);
+  assert.match(html, />Computer Science<\/option>/);
+  assert.match(html, />Engineering<\/option>/);
+  assert.match(html, />Business<\/option>/);
+  assert.doesNotMatch(html, /class="source-code"|>via\s|<span>Source<\/span>|All sources/);
   assert.doesNotMatch(html, /[–—]/, "the jobs feed should avoid long dash punctuation");
   assert.match(html, /href="https:\/\/example\.com\/\?job=tl-[0-9]+"/);
   assert.equal(
@@ -89,25 +96,24 @@ test("jobs HTML contains one 36-job server page and stays below the payload ceil
 });
 
 test("shareable filters server-render their active state without a cursor", async () => {
-  const html = await htmlFor("/jobs?level=internship&q=design&remote=true");
+  const html = await htmlFor("/jobs?level=internship&q=software&major=computer-science&niche=software-engineering&remote=true");
 
   assert.match(html, /Filtered jobs/);
-  assert.match(html, /value="design"/);
-  assert.match(html, /href="\/jobs\?q=design&amp;remote=true"/);
+  assert.match(html, /value="software"/);
+  assert.match(html, /value="computer-science" selected=""/);
+  assert.match(html, /value="software-engineering" selected=""/);
+  assert.match(html, /href="\/jobs\?q=software&amp;major=computer-science&amp;niche=software-engineering&amp;remote=true"/);
   assert.doesNotMatch(html, /cursor=/);
 });
 
-test("sources and saved routes explain provenance and local-only state", async () => {
+test("the old sources route leaves the UI and saved jobs remain local", async () => {
   const [sources, saved] = await Promise.all([
-    htmlFor("/sources"),
+    render("/sources"),
     htmlFor("/saved"),
   ]);
 
-  assert.match(sources, /Sources and freshness/);
-  assert.match(sources, /Prototype catalog\./);
-  assert.equal((sources.match(/class="source-success"/g) ?? []).length, 9);
-  assert.match(sources, /ATS host, canonical employer, and trusted requisition ID agree/);
-  assert.match(sources, /Every Apply button opens the employer’s own application page/);
+  assert.ok([307, 308].includes(sources.status));
+  assert.match(sources.headers.get("location") ?? "", /\/jobs$/);
 
   assert.match(saved, /<h1>Saved jobs<\/h1>/);
   assert.match(saved, /Stored only in this browser/);
@@ -139,6 +145,8 @@ test("job details use record-specific metadata and clear the site-wide image", a
   assert.doesNotMatch(detail, /company-emoji/);
   assert.match(detail, /Apply now/);
   assert.match(detail, /Employer website/);
+  assert.match(detail, /Listing details/);
+  assert.doesNotMatch(detail, /Source details|Primary source|Contributing sources/);
   assert.match(detail, /https:\/\/example\.com\/\?job=tl-[0-9]+/);
   assert.doesNotMatch(detail, /property="og:image"|name="twitter:image"/);
 });

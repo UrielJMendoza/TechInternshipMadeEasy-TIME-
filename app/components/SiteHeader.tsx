@@ -1,5 +1,5 @@
 type SiteHeaderProps = {
-  active?: "home" | "jobs" | "saved" | "sources";
+  active?: "home" | "jobs" | "saved";
 };
 
 export function SiteHeader({ active = "home" }: SiteHeaderProps) {
@@ -7,7 +7,6 @@ export function SiteHeader({ active = "home" }: SiteHeaderProps) {
     { href: "/", label: "Latest", id: "home" },
     { href: "/jobs", label: "All jobs", id: "jobs" },
     { href: "/saved", label: "Saved", id: "saved" },
-    { href: "/sources", label: "Sources", id: "sources" },
   ] as const;
 
   return (

@@ -22,6 +22,7 @@ const {
   DEMO_CANONICAL_JOB_COUNT,
   DEMO_SOURCE_CATALOG_NOTICE,
   InvalidCursorError,
+  JOB_MAJOR_OPTIONS,
   SOURCE_CATALOG,
   buildAtsDedupeKey,
   buildJobsUrl,
@@ -273,6 +274,8 @@ test("filters parse defensively and serialize to one canonical copied URL", () =
   const params = new URLSearchParams();
   params.set("q", "  Data   science  ");
   params.set("level", "new-grad");
+  params.set("major", "computer-science");
+  params.set("niche", "data-ml");
   params.set("location", "  New   York ");
   params.set("remote", "true");
   params.set("sponsorship", "1");
@@ -283,6 +286,8 @@ test("filters parse defensively and serialize to one canonical copied URL", () =
   assert.deepEqual(filters, {
     q: "Data science",
     level: "new-grad",
+    major: "computer-science",
+    niche: "data-ml",
     location: "New York",
     remote: true,
     sponsorship: true,
@@ -290,17 +295,41 @@ test("filters parse defensively and serialize to one canonical copied URL", () =
   });
   assert.equal(
     serializeFilters(filters),
-    "level=new-grad&q=Data+science&location=New+York&remote=true&sponsorship=true&source=lever",
+    "level=new-grad&q=Data+science&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&source=lever",
   );
   assert.equal(
     buildJobsUrl(filters),
-    "/jobs?level=new-grad&q=Data+science&location=New+York&remote=true&sponsorship=true&source=lever",
+    "/jobs?level=new-grad&q=Data+science&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&source=lever",
   );
 
   assert.deepEqual(
-    parseFilters({ level: "not-a-level", source: "unknown", remote: "false" }),
-    { q: "", level: "all", location: "", remote: false, sponsorship: false, source: "" },
+    parseFilters({ level: "not-a-level", major: "invalid", niche: "finance", source: "unknown", remote: "false" }),
+    { q: "", level: "all", major: "all", niche: "all", location: "", remote: false, sponsorship: false, source: "" },
   );
+  assert.equal(parseFilters({ major: "business", niche: "security" }).niche, "all");
+});
+
+test("major search restores the original Timley taxonomy", () => {
+  assert.deepEqual(
+    JOB_MAJOR_OPTIONS.map(({ label, niches }) => [label, niches.map((niche) => niche.label)]),
+    [
+      ["All majors", ["All roles"]],
+      ["Computer Science", ["All CS roles", "Software Engineering", "Cloud / Infra", "Site Reliability", "Security", "Data / ML", "Quant"]],
+      ["Engineering", ["All engineering", "Hardware / Firmware", "Electrical", "Mechanical", "Civil", "Aerospace", "Manufacturing", "Industrial", "Materials"]],
+      ["Business", ["All business", "Finance", "Consulting", "Accounting", "Operations", "Product", "Marketing", "Supply Chain"]],
+    ],
+  );
+
+  for (const major of JOB_MAJOR_OPTIONS.filter((option) => option.id !== "all")) {
+    for (const niche of major.niches.filter((option) => option.id !== "all")) {
+      const page = queryJobs(parseFilters({ major: major.id, niche: niche.id }), {
+        limit: 1,
+        asOf: AS_OF,
+        now: NOW,
+      });
+      assert.ok(page.total > 0, `${major.label} / ${niche.label} should have matching jobs`);
+    }
+  }
 });
 
 test("cursor pagination walks every job once, including equal-boundary-safe tuple ordering", () => {
@@ -355,6 +384,13 @@ test("cursors preserve their snapshot and cannot be reused with different filter
     InvalidCursorError,
   );
   assert.throws(
+    () => queryJobs(parseFilters({ level: "internship", remote: "true", major: "business" }), {
+      cursor: first.nextCursor,
+      limit: 30,
+    }),
+    InvalidCursorError,
+  );
+  assert.throws(
     () => queryJobs(filters, { cursor: "not_a_valid_cursor", limit: 30 }),
     InvalidCursorError,
   );
@@ -377,6 +413,20 @@ test("filters run before pagination and source filters include contributing mirr
   assert.ok(remoteInternships.items.every((item) => item.roleLevel === "Internship"));
   assert.ok(remoteInternships.items.every((item) => item.workplace === "Remote"));
   assert.ok(remoteInternships.items.every((item) => item.sponsorship === "Confirmed"));
+
+  const softwareRoles = queryJobs(
+    parseFilters({ major: "computer-science", niche: "software-engineering" }),
+    { limit: 60, asOf: AS_OF, now: NOW },
+  );
+  assert.ok(softwareRoles.total > 0);
+  assert.ok(softwareRoles.items.every((item) => /software/i.test(item.title)));
+
+  const supplyChainRoles = queryJobs(
+    parseFilters({ major: "business", niche: "supply-chain" }),
+    { limit: 60, asOf: AS_OF, now: NOW },
+  );
+  assert.ok(supplyChainRoles.total > 0);
+  assert.ok(supplyChainRoles.items.every((item) => /supply chain/i.test(item.title)));
 });
 
 test("stats, details, and homepage newest jobs share the same snapshot semantics", () => {

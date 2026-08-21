@@ -11,7 +11,7 @@ export async function generateMetadata(): Promise<Metadata> {
   const protocol = forwardedProtocol ?? (host.startsWith("localhost") ? "http" : "https");
   const origin = `${protocol}://${host}`;
   const title = "Timley | Internships and new-grad jobs";
-  const description = "Internships and new-grad jobs from public source patterns, newest first. No account required.";
+  const description = "Search internships and new-grad jobs by major, location, and work style. No account required.";
   const socialImage = new URL("/og.png", origin).toString();
 
   return {

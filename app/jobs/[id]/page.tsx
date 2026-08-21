@@ -93,13 +93,13 @@ export default async function JobDetailPage({ params }: JobDetailProps) {
                 <li>Timley does not collect your résumé or application data.</li>
               </ul>
             </div>
-            <aside className="detail-aside" aria-label="Source details">
-              <h2>Source details</h2>
+            <aside className="detail-aside" aria-label="Listing details">
+              <h2>Listing details</h2>
               <div className="detail-fact"><span>Freshness</span><strong>{job.freshnessLabel}</strong></div>
-              <div className="detail-fact"><span>Primary source</span><strong>{job.sourceNames[0]}</strong></div>
-              <div className="detail-fact"><span>Contributing sources</span><strong>{job.sourceNames.join(", ")}</strong></div>
+              <div className="detail-fact"><span>Role</span><strong>{job.roleLevel}</strong></div>
+              <div className="detail-fact"><span>Work style</span><strong>{job.workplace}</strong></div>
               <div className="detail-fact"><span>Application</span><strong>Employer website</strong></div>
-              <p className="direct-note">The external link opens a demonstration employer-style destination in this prototype.</p>
+              <p className="direct-note">Apply opens the employer’s website in a new tab.</p>
             </aside>
           </div>
         </article>

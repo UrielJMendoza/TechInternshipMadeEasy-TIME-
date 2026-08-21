@@ -138,10 +138,79 @@ const SOURCE_ORDER = new Map<SourceId, number>(
 
 export type JobLevelFilter = "all" | "internship" | "new-grad";
 
+export type JobMajorFilter =
+  | "all"
+  | "computer-science"
+  | "engineering"
+  | "business";
+
+export type JobMajorOption = {
+  id: JobMajorFilter;
+  label: string;
+  niches: Array<{ id: string; label: string }>;
+};
+
+/** The familiar Timley major groups, adapted to the current job taxonomy. */
+export const JOB_MAJOR_OPTIONS: readonly JobMajorOption[] = Object.freeze([
+  {
+    id: "all",
+    label: "All majors",
+    niches: [{ id: "all", label: "All roles" }],
+  },
+  {
+    id: "computer-science",
+    label: "Computer Science",
+    niches: [
+      { id: "all", label: "All CS roles" },
+      { id: "software-engineering", label: "Software Engineering" },
+      { id: "cloud-infra", label: "Cloud / Infra" },
+      { id: "site-reliability", label: "Site Reliability" },
+      { id: "security", label: "Security" },
+      { id: "data-ml", label: "Data / ML" },
+      { id: "quant", label: "Quant" },
+    ],
+  },
+  {
+    id: "engineering",
+    label: "Engineering",
+    niches: [
+      { id: "all", label: "All engineering" },
+      { id: "hardware-firmware", label: "Hardware / Firmware" },
+      { id: "electrical", label: "Electrical" },
+      { id: "mechanical", label: "Mechanical" },
+      { id: "civil", label: "Civil" },
+      { id: "aerospace", label: "Aerospace" },
+      { id: "manufacturing", label: "Manufacturing" },
+      { id: "industrial", label: "Industrial" },
+      { id: "materials", label: "Materials" },
+    ],
+  },
+  {
+    id: "business",
+    label: "Business",
+    niches: [
+      { id: "all", label: "All business" },
+      { id: "finance", label: "Finance" },
+      { id: "consulting", label: "Consulting" },
+      { id: "accounting", label: "Accounting" },
+      { id: "operations", label: "Operations" },
+      { id: "product", label: "Product" },
+      { id: "marketing", label: "Marketing" },
+      { id: "supply-chain", label: "Supply Chain" },
+    ],
+  },
+]);
+
+const JOB_MAJOR_BY_ID = new Map(
+  JOB_MAJOR_OPTIONS.map((major) => [major.id, major]),
+);
+
 /** Structurally matches app/components/job-types.ts. */
 export type JobFilters = {
   q: string;
   level: JobLevelFilter;
+  major: JobMajorFilter;
+  niche: string;
   location: string;
   remote: boolean;
   sponsorship: boolean;
@@ -151,6 +220,8 @@ export type JobFilters = {
 export const DEFAULT_FILTERS: Readonly<JobFilters> = Object.freeze({
   q: "",
   level: "all",
+  major: "all",
+  niche: "all",
   location: "",
   remote: false,
   sponsorship: false,
@@ -665,11 +736,23 @@ export function parseFilters(input: FilterInput = undefined): JobFilters {
   const levelValue = inputValue(input, "level");
   const level: JobLevelFilter =
     levelValue === "internship" || levelValue === "new-grad" ? levelValue : "all";
+  const majorValue = inputValue(input, "major");
+  const major: JobMajorFilter =
+    majorValue === "computer-science" || majorValue === "engineering" || majorValue === "business"
+      ? majorValue
+      : "all";
+  const requestedNiche = cleanText(inputValue(input, "niche"), 40);
+  const majorDefinition = JOB_MAJOR_BY_ID.get(major) ?? JOB_MAJOR_OPTIONS[0];
+  const niche = majorDefinition.niches.some((option) => option.id === requestedNiche)
+    ? requestedNiche
+    : "all";
   const sourceValue = inputValue(input, "source");
 
   return {
     q,
     level,
+    major,
+    niche,
     location,
     remote: inputBoolean(inputValue(input, "remote")),
     sponsorship: inputBoolean(inputValue(input, "sponsorship")),
@@ -683,6 +766,8 @@ export function serializeFilters(filtersInput: FilterInput = undefined): string 
   const params = new URLSearchParams();
   if (filters.level !== "all") params.set("level", filters.level);
   if (filters.q) params.set("q", filters.q);
+  if (filters.major !== "all") params.set("major", filters.major);
+  if (filters.niche !== "all") params.set("niche", filters.niche);
   if (filters.location) params.set("location", filters.location);
   if (filters.remote) params.set("remote", "true");
   if (filters.sponsorship) params.set("sponsorship", "true");
@@ -869,6 +954,17 @@ const DEMO_ROLES = [
   ["Business Development Associate", "Sales"],
   ["UX Research Intern", "Design"],
   ["Cloud Engineer, New Grad", "Engineering"],
+  ["Site Reliability Intern", "Engineering"],
+  ["Quantitative Analyst Intern", "Finance"],
+  ["Electrical Engineering Intern", "Engineering"],
+  ["Mechanical Engineering Intern", "Engineering"],
+  ["Civil Engineering Intern", "Engineering"],
+  ["Aerospace Engineering Intern", "Engineering"],
+  ["Manufacturing Engineering Intern", "Engineering"],
+  ["Industrial Engineering Intern", "Engineering"],
+  ["Materials Engineering Intern", "Engineering"],
+  ["Consulting Intern", "Operations"],
+  ["Accounting Intern", "Finance"],
 ] as const;
 
 const DEMO_LOCATIONS = [
@@ -1064,11 +1160,92 @@ function normalizeForSearch(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+function matchesMajor(job: CanonicalJob, major: JobMajorFilter): boolean {
+  if (major === "all") return true;
+
+  const title = normalizeForSearch(job.title);
+  const category = normalizeForSearch(job.category);
+
+  if (major === "computer-science") {
+    return (
+      category === "data" ||
+      category === "security" ||
+      /\b(software|cloud|data|security|machine learning|site reliability|devops|quant|quantitative|trading)\b/.test(title)
+    );
+  }
+
+  if (major === "engineering") {
+    return /\b(hardware|firmware|embedded|electrical|electronics|mechanical|civil|structural|aerospace|aeronautical|manufacturing|industrial|materials|robotics|chemical|biomedical|construction|quality engineering|systems engineering)\b/.test(title);
+  }
+
+  return (
+    ["finance", "marketing", "operations", "product", "sales"].includes(category) ||
+    /\b(product management|product manager|product marketing|product strategy|business|finance|financial|marketing|sales|operations|supply chain|logistics|procurement|consulting|consultant|accounting|audit|investment banking|asset management|wealth management|private equity|venture capital|quant|quantitative|trading)\b/.test(title)
+  );
+}
+
+function matchesNiche(job: CanonicalJob, niche: string): boolean {
+  if (niche === "all") return true;
+
+  const title = normalizeForSearch(job.title);
+  const category = normalizeForSearch(job.category);
+
+  switch (niche) {
+    case "software-engineering":
+      return /\bsoftware\b/.test(title);
+    case "cloud-infra":
+      return /\b(cloud|infrastructure|platform|devops|site reliability)\b/.test(title);
+    case "site-reliability":
+      return /\b(site reliability|sre)\b/.test(title);
+    case "data-ml":
+      return category === "data" || /\b(data|machine learning|ml|ai)\b/.test(title);
+    case "security":
+      return category === "security" || /\bsecurity\b/.test(title);
+    case "quant":
+      return /\b(quant|quantitative|trading)\b/.test(title);
+    case "hardware-firmware":
+      return /\b(hardware|firmware|embedded|fpga|asic|silicon|semiconductor)\b/.test(title);
+    case "electrical":
+      return /\b(electrical|electronics|power systems|controls|embedded systems)\b/.test(title);
+    case "mechanical":
+      return /\b(mechanical|mechanic|hvac|thermal|fluid systems)\b/.test(title);
+    case "civil":
+      return /\b(civil|structural|geotechnical|construction|transportation engineering)\b/.test(title);
+    case "aerospace":
+      return /\b(aerospace|aeronautical|avionics|propulsion|flight systems|spacecraft)\b/.test(title);
+    case "manufacturing":
+      return /\b(manufacturing|manufacturability|production engineer|quality engineer|process engineer)\b/.test(title);
+    case "industrial":
+      return /\b(industrial|systems engineering|operations research)\b/.test(title);
+    case "materials":
+      return /\b(material|materials|metallurgy|polymer|electrochemistry)\b/.test(title);
+    case "finance":
+      return category === "finance" || /\b(finance|financial|investment banking|asset management|wealth management|private equity|venture capital|quant|trading)\b/.test(title);
+    case "consulting":
+      return /\b(consulting|consultant|advisory|strategy intern)\b/.test(title);
+    case "accounting":
+      return /\b(accounting|accountant|audit|auditor|tax)\b/.test(title);
+    case "operations":
+      return category === "operations" && !/\bsupply chain\b/.test(title);
+    case "product":
+      return category === "product" || /\bproduct management\b/.test(title);
+    case "marketing":
+      return category === "marketing" || /\b(marketing|brand|communications)\b/.test(title);
+    case "supply-chain":
+      return /\b(supply chain|logistics|procurement)\b/.test(title);
+    default:
+      return false;
+  }
+}
+
 function matchesFilters(job: CanonicalJob, filters: JobFilters): boolean {
   if (
     filters.level === "internship" && job.roleLevel !== "Internship" ||
     filters.level === "new-grad" && job.roleLevel !== "New grad"
   ) {
+    return false;
+  }
+  if (!matchesMajor(job, filters.major) || !matchesNiche(job, filters.niche)) {
     return false;
   }
   if (filters.remote && job.workplace !== "Remote") return false;

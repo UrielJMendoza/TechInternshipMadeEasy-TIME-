@@ -10,7 +10,11 @@ type JobsExplorerProps = {
   initialFilters: JobFilters;
   initialQuery: string;
   total: number;
-  sourceOptions: Array<{ id: string; name: string }>;
+  majorOptions: Array<{
+    id: JobFilters["major"];
+    label: string;
+    niches: Array<{ id: string; label: string }>;
+  }>;
 };
 
 function number(value: number) {
@@ -23,13 +27,26 @@ export function JobsExplorer({
   initialFilters,
   initialQuery,
   total,
-  sourceOptions,
+  majorOptions,
 }: JobsExplorerProps) {
   const [jobs, setJobs] = useState(initialJobs);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [shareStatus, setShareStatus] = useState("");
+  const [major, setMajor] = useState<JobFilters["major"]>(initialFilters.major);
+  const [niche, setNiche] = useState(initialFilters.niche);
+  const activeMajor = majorOptions.find((option) => option.id === major) ?? majorOptions[0];
+  const hasActiveFilters = Boolean(
+    initialFilters.q ||
+    initialFilters.location ||
+    initialFilters.remote ||
+    initialFilters.sponsorship ||
+    initialFilters.source ||
+    initialFilters.level !== "all" ||
+    initialFilters.major !== "all" ||
+    initialFilters.niche !== "all"
+  );
 
   function levelHref(level: JobFilters["level"]) {
     const params = new URLSearchParams(initialQuery);
@@ -106,6 +123,7 @@ export function JobsExplorer({
 
         <form className="filter-form" action="/jobs" method="get" onSubmit={cleanSubmission}>
           {initialFilters.level !== "all" && <input type="hidden" name="level" value={initialFilters.level} />}
+          {initialFilters.source && <input type="hidden" name="source" value={initialFilters.source} />}
           <label className="filter-field search-field">
             <span className="field-label">Search</span>
             <input name="q" defaultValue={initialFilters.q} placeholder="Title, company, or keyword" autoComplete="off" />
@@ -113,6 +131,38 @@ export function JobsExplorer({
           <label className="filter-field location-field">
             <span className="field-label">Location</span>
             <input name="location" defaultValue={initialFilters.location} placeholder="City or state" autoComplete="address-level2" />
+          </label>
+          <label className="filter-field major-field">
+            <span className="field-label">Major</span>
+            <select
+              name="major"
+              value={major === "all" ? "" : major}
+              onChange={(event) => {
+                setMajor((event.target.value || "all") as JobFilters["major"]);
+                setNiche("all");
+              }}
+            >
+              {majorOptions.map((option) => (
+                <option key={option.id} value={option.id === "all" ? "" : option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="filter-field niche-field">
+            <span className="field-label">Specialization</span>
+            <select
+              name="niche"
+              value={niche === "all" ? "" : niche}
+              onChange={(event) => setNiche(event.target.value || "all")}
+              disabled={activeMajor.id === "all"}
+            >
+              {activeMajor.niches.map((option) => (
+                <option key={option.id} value={option.id === "all" ? "" : option.id}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
           <label className="remote-toggle">
             <input type="checkbox" name="remote" value="true" defaultChecked={initialFilters.remote} />
@@ -124,27 +174,14 @@ export function JobsExplorer({
             <div className="more-menu">
               <div className="more-menu-heading">
                 <strong>More filters</strong>
-                <span>Keep the feed focused</span>
+                <span>Visa support</span>
               </div>
-              <label>
-                <span>Source</span>
-                <select name="source" defaultValue={initialFilters.source}>
-                  <option value="">All sources</option>
-                  {sourceOptions.map((source) => <option key={source.id} value={source.id}>{source.name}</option>)}
-                </select>
-              </label>
               <label className="menu-check" htmlFor="sponsorship-filter" aria-label="Confirmed sponsorship">
                 <input id="sponsorship-filter" type="checkbox" name="sponsorship" value="true" defaultChecked={initialFilters.sponsorship} />
                 <span>
                   <strong>Confirmed sponsorship</strong>
                   <small>Only roles that explicitly confirm it</small>
                 </span>
-              </label>
-              <label>
-                <span>Sort order</span>
-                <select disabled aria-label="Sort order, fixed to newest first">
-                  <option>Newest first</option>
-                </select>
               </label>
               <div className="menu-actions">
                 <a href="/jobs">Clear all</a>
@@ -159,8 +196,7 @@ export function JobsExplorer({
       <section className="results-section" aria-labelledby="results-title">
         <div className="results-heading">
           <div>
-            <span className="section-kicker">Newest first · No category boosts</span>
-            <h2 id="results-title">{initialFilters.q || initialFilters.location || initialFilters.remote || initialFilters.level !== "all" ? "Filtered jobs" : "Newest jobs"}</h2>
+            <h2 id="results-title">{hasActiveFilters ? "Filtered jobs" : "Newest jobs"}</h2>
             <p>{number(total)} matching opportunities</p>
           </div>
           <div className="results-tools">

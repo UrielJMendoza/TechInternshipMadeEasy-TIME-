@@ -37,7 +37,6 @@ export function JobCard({ job }: JobCardProps) {
         </strong>
         <span>{job.roleLevel} · {job.workplace}</span>
         <span>{compensation}{sponsorship ? ` · ${sponsorship}` : ""}</span>
-        <span className="source-code">via {job.sourceNames[0]}</span>
       </div>
       <div className="job-actions">
         <SaveButton job={job} />

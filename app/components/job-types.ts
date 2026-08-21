@@ -22,6 +22,8 @@ export type JobCardData = {
 export type JobFilters = {
   q: string;
   level: "all" | "internship" | "new-grad";
+  major: "all" | "computer-science" | "engineering" | "business";
+  niche: string;
   location: string;
   remote: boolean;
   sponsorship: boolean;

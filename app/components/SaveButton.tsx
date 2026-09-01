@@ -43,6 +43,7 @@ function parseSavedJobs(raw: string): JobCardData[] {
         typeof candidate.location === "string" &&
         typeof candidate.freshnessLabel === "string" &&
         (candidate.freshnessKind === "posted" || candidate.freshnessKind === "found") &&
+        (candidate.postedAtPrecision === undefined || candidate.postedAtPrecision === "date" || candidate.postedAtPrecision === "timestamp") &&
         (candidate.roleLevel === "Internship" || candidate.roleLevel === "New grad") &&
         (candidate.workplace === "Remote" || candidate.workplace === "Hybrid" || candidate.workplace === "On-site") &&
         typeof candidate.logoText === "string" &&

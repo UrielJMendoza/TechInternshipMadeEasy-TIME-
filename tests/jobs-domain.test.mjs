@@ -243,6 +243,7 @@ test("ATS normalization recognizes aliases without broad requisition fuzzy match
     "acme.myworkdayjobs.com",
   );
   assert.equal(normalizeEmployer("Acme & Sons, Inc."), "acme and sons");
+  assert.equal(normalizeEmployer("Base Power Company"), "base power");
   assert.equal(normalizeRequisitionId(" # req-10 "), "REQ-10");
   assert.notEqual(normalizeRequisitionId("REQ-10"), normalizeRequisitionId("REQ10"));
 
@@ -480,4 +481,17 @@ test("stats, details, and homepage newest jobs share the same snapshot semantics
   assert.equal(newestPosted.length, 6);
   assert.ok(newestPosted.every((job) => job.freshnessKind === "posted"));
   assert.ok(newestPosted.every((job) => job.postedAt));
+
+  const fallbackCapturedAt = "2026-08-19T15:55:00.000Z";
+  const fallbackSnapshot = Object.freeze({
+    ...createDemoSnapshot(AS_OF),
+    fallbackCapturedAt,
+  });
+  const fallbackStats = getFeedStats({ snapshot: fallbackSnapshot, now: NOW });
+  assert.equal(fallbackStats.lastCompleteUpdateAt, fallbackCapturedAt);
+  assert.ok(
+    fallbackStats.sourceHealth.every(
+      (source) => source.lastSuccessfulUpdateAt === fallbackCapturedAt,
+    ),
+  );
 });

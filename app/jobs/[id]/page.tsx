@@ -4,6 +4,7 @@ import { Recency } from "@/app/components/Recency";
 import { SaveButton } from "@/app/components/SaveButton";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
+import { SnapshotNotice } from "@/app/components/SnapshotNotice";
 import { getJobById } from "@/lib/jobs";
 import { getPublicJobsSnapshot } from "@/lib/jobs/live";
 
@@ -35,6 +36,7 @@ export default async function JobDetailPage({ params }: JobDetailProps) {
     return (
       <main id="main-content">
         <SiteHeader active="jobs" />
+        <SnapshotNotice capturedAt={snapshot.fallbackCapturedAt} />
         <div className="detail-shell">
           <a className="back-link" href="/jobs"><span aria-hidden="true">←</span> Back to newest jobs</a>
           <div className="empty-state">
@@ -60,6 +62,7 @@ export default async function JobDetailPage({ params }: JobDetailProps) {
   return (
     <main id="main-content">
       <SiteHeader active="jobs" />
+      <SnapshotNotice capturedAt={snapshot.fallbackCapturedAt} />
       <div className="detail-shell">
         <a className="back-link" href="/jobs"><span aria-hidden="true">←</span> Back to newest jobs</a>
         <article className="detail-card">
@@ -68,7 +71,7 @@ export default async function JobDetailPage({ params }: JobDetailProps) {
             <div className="detail-title">
               <div className="job-meta">
                 <span>{job.company}</span>
-                <Recency kind={job.freshnessKind} label={job.freshnessLabel} timestamp={job.postedAt ?? job.firstSeenAt} />
+                <Recency kind={job.freshnessKind} label={job.freshnessLabel} timestamp={job.postedAt ?? job.firstSeenAt} precision={job.postedAtPrecision} />
               </div>
               <h1>{job.title}</h1>
               <p>{job.location}{job.team ? ` · ${job.team}` : ""}</p>
@@ -102,7 +105,7 @@ export default async function JobDetailPage({ params }: JobDetailProps) {
             </div>
             <aside className="detail-aside" aria-label="Listing details">
               <h2>Listing details</h2>
-              <div className="detail-fact"><span>Recency</span><Recency kind={job.freshnessKind} label={job.freshnessLabel} timestamp={job.postedAt ?? job.firstSeenAt} /></div>
+              <div className="detail-fact"><span>Recency</span><Recency kind={job.freshnessKind} label={job.freshnessLabel} timestamp={job.postedAt ?? job.firstSeenAt} precision={job.postedAtPrecision} /></div>
               <div className="detail-fact"><span>Role</span><strong>{job.roleLevel}</strong></div>
               <div className="detail-fact"><span>Work style</span><strong>{job.workplace}</strong></div>
               <div className="detail-fact"><span>Application</span><strong>Employer website</strong></div>

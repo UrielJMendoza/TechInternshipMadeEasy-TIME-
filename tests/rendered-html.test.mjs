@@ -88,7 +88,8 @@ test("jobs HTML contains one 36-job server page and stays below the payload ceil
     36,
     "every feed row should show a color-coded recency label",
   );
-  assert.match(html, /<time[^>]*>(?:Just now|[0-9]+ (?:minute|hour|day|month|year)s? ago)<\/time><\/strong>/);
+  assert.match(html, /<time[^>]*>(?:Posted|Found by Timley) (?:just now|today|yesterday|[0-9]+ (?:minute|hour|day|month|year)s? ago)<\/time><\/strong>/);
+  assert.doesNotMatch(html, /<time[^>]*>(?:Just now|[0-9]+ (?:minute|hour|day|month|year)s? ago)<\/time>/);
   assert.doesNotMatch(html, /[–—]/, "the jobs feed should avoid long dash punctuation");
   assert.match(html, /class="apply" href="https:\/\/[^"]+" target="_blank" rel="noopener noreferrer"/);
   assert.equal(

@@ -17,6 +17,7 @@ export type JobCardData = {
   team?: string;
   summary?: string;
   postedAt?: string | null;
+  postedAtPrecision?: "date" | "timestamp";
   firstSeenAt?: string;
 };
 

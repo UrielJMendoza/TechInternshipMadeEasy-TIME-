@@ -5,18 +5,79 @@ import test from "node:test";
 
 const domainSource = await readFile(new URL("../lib/jobs/index.ts", import.meta.url), "utf8");
 const domainUrl = `data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(domainSource)).toString("base64")}`;
+const fallbackFixture = {
+  id: "fallback-source-record",
+  title: "Software Engineer Intern",
+  company: "Notion",
+  category: "software",
+  role_type: "internship",
+  primary_apply_url: "https://jobs.ashbyhq.com/notion/fallback-role",
+  display_location: "San Francisco, CA",
+  location_type: "onsite",
+  major_ids: ["all", "computer-science"],
+  niche_ids: ["all", "software-engineering"],
+  posted_date: "2026-08-21",
+  first_seen_at: "2026-08-21T06:15:08.837Z",
+  last_seen_at: "2026-08-21T12:45:04.739Z",
+  is_active: true,
+  primary_source: "ashby:notion",
+};
+const fallbackDataUrl = `data:text/javascript;base64,${Buffer.from(
+  `export const BUNDLED_FALLBACK_CAPTURED_AT = "2026-08-31T22:15:17.000Z"; export const BUNDLED_FALLBACK_ROWS = ${JSON.stringify([fallbackFixture])};`,
+).toString("base64")}`;
 const liveSource = await readFile(new URL("../lib/jobs/live.ts", import.meta.url), "utf8");
-const runnableLiveSource = stripTypeScriptTypes(liveSource).replace(
-  /from "\.\/index";/,
-  `from "${domainUrl}";`,
-);
+const runnableLiveSource = stripTypeScriptTypes(liveSource)
+  .replace(/from "\.\/index";/, `from "${domainUrl}";`)
+  .replace(/from "\.\/fallback-data";/, `from "${fallbackDataUrl}";`);
 const liveModule = await import(
   `data:text/javascript;base64,${Buffer.from(runnableLiveSource).toString("base64")}`
 );
 const domainModule = await import(domainUrl);
 
 const { createLiveSnapshotFromRows } = liveModule;
-const { InvalidCursorError, parseFilters, queryJobs } = domainModule;
+const { getJobById, InvalidCursorError, parseFilters, queryJobs } = domainModule;
+
+test("bundled fallback preserves the complete last verified public feed", async () => {
+  const chunks = await Promise.all(
+    Array.from({ length: 11 }, async (_, index) => {
+      const suffix = String(index).padStart(2, "0");
+      const contents = await readFile(
+        new URL(`../data/fallback/jobs-${suffix}.json`, import.meta.url),
+        "utf8",
+      );
+      return JSON.parse(contents);
+    }),
+  );
+  const rows = chunks.flat();
+  const snapshot = createLiveSnapshotFromRows(rows, "2026-08-31T22:15:17.000Z");
+
+  assert.equal(rows.length, 5_190);
+  assert.equal(new Set(rows.map((row) => row.id)).size, 5_190);
+  assert.ok(rows.every((row) => row.is_active === true));
+  assert.equal(snapshot.jobs.length, 5_037);
+  assert.equal(new Set(snapshot.jobs.map((job) => job.id)).size, 5_037);
+});
+
+test("a live repository failure serves a labelled, cursor-stable verified copy", async () => {
+  const originalFetch = globalThis.fetch;
+  const originalMode = process.env.TIMLEY_USE_DEMO_JOBS;
+  process.env.TIMLEY_USE_DEMO_JOBS = "false";
+  globalThis.fetch = async () => new Response("quota unavailable", { status: 402 });
+
+  try {
+    const snapshot = await liveModule.getPublicJobsSnapshot();
+    const historical = await liveModule.getPublicJobsSnapshot(snapshot.asOf);
+
+    assert.equal(snapshot.fallbackCapturedAt, "2026-08-31T22:15:17.000Z");
+    assert.equal(snapshot.jobs.length, 1);
+    assert.equal(snapshot.jobs[0].sourceRecordIds[0], "fallback-source-record");
+    assert.equal(historical, snapshot);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.TIMLEY_USE_DEMO_JOBS;
+    else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
+  }
+});
 
 function liveRow(overrides = {}) {
   return {
@@ -96,7 +157,7 @@ test("live mapping understands current sponsorship values and exact empty taxono
   assert.equal(queryJobs({ major: "computer-science" }, { snapshot }).total, 0);
 });
 
-test("live mapping removes duplicate URLs and visibly repeated cards", () => {
+test("live mapping removes canonical URL duplicates without hiding distinct requisitions", () => {
   const snapshot = createLiveSnapshotFromRows([
     liveRow(),
     liveRow({
@@ -108,6 +169,13 @@ test("live mapping removes duplicate URLs and visibly repeated cards", () => {
       primary_apply_url: "https://jobs.lever.co/notion/a-different-record",
     }),
     liveRow({
+      id: "duplicate-formatting",
+      company: "Notion, Inc.",
+      title: "Software Engineer - Intern",
+      display_location: "San Francisco, California",
+      primary_apply_url: "https://jobs.lever.co/notion/yet-another-record",
+    }),
+    liveRow({
       id: "distinct-role",
       title: "Security Engineer Intern",
       category: "security",
@@ -116,11 +184,112 @@ test("live mapping removes duplicate URLs and visibly repeated cards", () => {
     }),
   ], "2026-08-21T22:00:00.000Z");
 
-  assert.equal(snapshot.jobs.length, 2);
-  assert.deepEqual(
-    new Set(snapshot.jobs.map((job) => job.title)),
-    new Set(["Software Engineer Intern", "Security Engineer Intern"]),
+  assert.equal(snapshot.jobs.length, 4);
+  assert.equal(
+    snapshot.jobs.filter((job) => job.title === "Software Engineer Intern").length,
+    2,
   );
+  assert.equal(
+    snapshot.jobs.filter((job) => job.title === "Software Engineer - Intern").length,
+    1,
+  );
+  const merged = snapshot.jobs.find((job) =>
+    job.sourceRecordIds.includes("duplicate-url")
+  );
+  assert.deepEqual(
+    merged?.sourceRecordIds,
+    ["35141583-4060-48ad-ae33-db8969def0fd", "duplicate-url"],
+  );
+});
+
+test("live mapping merges mirrored Workday links only when the employer requisition matches", () => {
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({
+      id: "public-workday",
+      company: "BP",
+      title: "Finance & Risk Intern",
+      display_location: "Chicago, IL",
+      primary_apply_url: "https://bpinternational.wd3.myworkdayjobs.com/bpEarlyCareers/job/Chicago/Finance-Risk-Intern_RQ114738",
+      posted_date: "2026-08-15",
+    }),
+    liveRow({
+      id: "private-workday",
+      company: "BP",
+      title: "Finance & Risk Intern",
+      display_location: "Chicago, IL",
+      primary_apply_url: "https://bpinternational.wd3.myworkdayjobs.com/bpPrivateExternalCareersSite/job/Chicago/Finance-Risk-Intern_RQ114738-1",
+      posted_date: "2026-08-21",
+    }),
+    liveRow({
+      id: "distinct-workday",
+      company: "BP",
+      title: "Finance & Risk Intern",
+      display_location: "Chicago, IL",
+      primary_apply_url: "https://bpinternational.wd3.myworkdayjobs.com/bpEarlyCareers/job/Chicago/Finance-Risk-Intern_RQ114739",
+      posted_date: "2026-08-21",
+    }),
+    liveRow({
+      id: "brunswick-search",
+      company: "Brunswick",
+      title: "Software Engineering Intern",
+      display_location: "Champaign, IL",
+      primary_apply_url: "https://brunswick.wd1.myworkdayjobs.com/search/job/Champaign-IL/Software-Engineering-Intern_JR-051316",
+    }),
+    liveRow({
+      id: "brunswick-locale",
+      company: "Brunswick",
+      title: "Software Engineering Intern",
+      display_location: "Champaign, IL",
+      primary_apply_url: "https://brunswick.wd1.myworkdayjobs.com/en-US/search/job/Champaign-IL/Software-Engineering-Intern_JR-051316",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+
+  assert.equal(snapshot.jobs.length, 3);
+  const merged = snapshot.jobs.find((job) => job.sourceRecordIds.includes("public-workday"));
+  assert.deepEqual(merged?.sourceRecordIds, ["private-workday", "public-workday"]);
+  assert.equal(merged?.employerPostedAt, "2026-08-15T00:00:00.000Z");
+  const brunswick = snapshot.jobs.find((job) => job.sourceRecordIds.includes("brunswick-search"));
+  assert.deepEqual(brunswick?.sourceRecordIds, ["brunswick-locale", "brunswick-search"]);
+});
+
+test("distinct same-title requisitions keep stable IDs and ambiguous legacy IDs fail closed", () => {
+  const newest = liveRow({
+    id: "newest-requisition",
+    primary_apply_url: "https://jobs.lever.co/notion/newest-requisition",
+    posted_date: "2026-08-21",
+  });
+  const single = createLiveSnapshotFromRows([newest], "2026-08-21T22:00:00.000Z");
+  const combined = createLiveSnapshotFromRows([
+    newest,
+    liveRow({
+      id: "older-requisition",
+      primary_apply_url: "https://jobs.lever.co/notion/older-requisition",
+      posted_date: "2026-08-20",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+
+  assert.equal(combined.jobs.length, 2);
+  assert.equal(new Set(combined.jobs.map((job) => job.id)).size, 2);
+  assert.equal(
+    combined.jobs.find((job) => job.applicationUrl === newest.primary_apply_url)?.id,
+    single.jobs[0].id,
+  );
+  const withNewArrival = createLiveSnapshotFromRows([
+    newest,
+    liveRow({
+      id: "new-arrival",
+      primary_apply_url: "https://jobs.lever.co/notion/new-arrival",
+      posted_date: "2026-08-22",
+      first_seen_at: "2026-08-22T01:00:00.000Z",
+      last_seen_at: "2026-08-22T01:00:00.000Z",
+    }),
+  ], "2026-08-22T02:00:00.000Z");
+  assert.equal(
+    withNewArrival.jobs.find((job) => job.applicationUrl === newest.primary_apply_url)?.id,
+    single.jobs[0].id,
+  );
+  assert.equal(getJobById(single.jobs[0].legacyId, { snapshot: single })?.id, single.jobs[0].id);
+  assert.equal(getJobById(single.jobs[0].legacyId, { snapshot: combined }), null);
 });
 
 test("live public IDs stay stable when a fresher duplicate source wins", () => {
@@ -131,7 +300,7 @@ test("live public IDs stay stable when a fresher duplicate source wins", () => {
     liveRow({ id: "old-source" }),
     liveRow({
       id: "new-source",
-      primary_apply_url: "https://jobs.lever.co/notion/a-newer-source",
+      primary_apply_url: `${liveRow().primary_apply_url}?utm_source=refresh`,
       posted_date: "2026-08-22",
       first_seen_at: "2026-08-22T01:00:00.000Z",
       last_seen_at: "2026-08-22T01:00:00.000Z",
@@ -139,7 +308,138 @@ test("live public IDs stay stable when a fresher duplicate source wins", () => {
   ], "2026-08-22T02:00:00.000Z");
 
   assert.equal(older.jobs[0].id, refreshed.jobs[0].id);
-  assert.deepEqual(refreshed.jobs[0].sourceRecordIds, ["new-source"]);
+  assert.deepEqual(refreshed.jobs[0].sourceRecordIds, ["new-source", "old-source"]);
+  assert.equal(
+    refreshed.jobs[0].employerPostedAt,
+    older.jobs[0].employerPostedAt,
+    "a duplicate refresh must not make an older posting look newly posted",
+  );
+});
+
+test("date-only and discovery timestamps keep their honest precision", () => {
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow(),
+    liveRow({
+      id: "future-date",
+      title: "Security Engineer Intern",
+      primary_apply_url: "https://jobs.lever.co/notion/future-date",
+      posted_date: "2026-08-22",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+  const page = queryJobs({}, {
+    snapshot,
+    limit: 10,
+    now: "2026-08-21T22:00:00.000Z",
+  });
+  const dated = page.items.find((job) => job.title === "Software Engineer Intern");
+  const future = page.items.find((job) => job.title === "Security Engineer Intern");
+
+  assert.equal(dated?.freshnessKind, "posted");
+  assert.equal(dated?.freshnessLabel, "today");
+  assert.equal(dated?.postedAtPrecision, "date");
+  assert.equal(future?.freshnessKind, "found");
+  assert.equal(future?.postedAt, null);
+  assert.equal(future?.freshnessLabel, "15 hours ago");
+
+  const monthOld = queryJobs({}, {
+    snapshot: createLiveSnapshotFromRows([
+      liveRow({ posted_date: "2026-07-21" }),
+    ], "2026-08-21T22:00:00.000Z"),
+    now: "2026-08-21T22:00:00.000Z",
+  });
+  assert.equal(monthOld.items[0].freshnessLabel, "1 month ago");
+});
+
+test("search matches unordered field prefixes and common role aliases", () => {
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({ location_type: "remote", display_location: "United States" }),
+    liveRow({
+      id: "security-role",
+      company: "Acme",
+      title: "Security Engineer Intern",
+      primary_apply_url: "https://jobs.lever.co/acme/security-role",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+
+  assert.equal(queryJobs({ q: "not sof eng united" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "swe remote" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "otion" }, { snapshot }).total, 0);
+  assert.equal(queryJobs({ location: "California" }, {
+    snapshot: createLiveSnapshotFromRows([liveRow()], "2026-08-21T22:00:00.000Z"),
+  }).total, 1);
+});
+
+test("location search expands postal codes without treating prose as a state", () => {
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({ display_location: "New York, NY or Remote" }),
+    liveRow({
+      id: "boston-role",
+      company: "Acme",
+      display_location: "Boston, MA or Remote",
+      primary_apply_url: "https://jobs.lever.co/acme/boston-role",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+
+  assert.equal(queryJobs({ location: "Oregon" }, { snapshot }).total, 0);
+  assert.equal(queryJobs({ location: "Indiana" }, { snapshot }).total, 0);
+  assert.equal(queryJobs({ location: "IN" }, { snapshot }).total, 0);
+  assert.equal(queryJobs({ location: "Massachusetts" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ location: "NY" }, { snapshot }).total, 1);
+  const indiana = createLiveSnapshotFromRows([
+    liveRow({ display_location: "Fort Wayne, IN" }),
+  ], "2026-08-21T22:00:00.000Z");
+  assert.equal(queryJobs({ location: "IN" }, { snapshot: indiana }).total, 1);
+  assert.equal(queryJobs({ location: "Indiana" }, { snapshot: indiana }).total, 1);
+});
+
+test("jobs sharing one displayed age stay together by company", () => {
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({
+      id: "alpha-one",
+      company: "Alpha",
+      title: "Software Engineer Intern I",
+      primary_apply_url: "https://jobs.lever.co/alpha/one",
+      posted_date: "2026-08-21T19:50:00.000Z",
+    }),
+    liveRow({
+      id: "beta-one",
+      company: "Beta",
+      title: "Software Engineer Intern I",
+      primary_apply_url: "https://jobs.lever.co/beta/one",
+      posted_date: "2026-08-21T19:55:00.000Z",
+    }),
+    liveRow({
+      id: "alpha-two",
+      company: "Alpha Company",
+      title: "Software Engineer Intern II",
+      primary_apply_url: "https://jobs.lever.co/alpha/two",
+      posted_date: "2026-08-21T19:40:00.000Z",
+    }),
+    liveRow({
+      id: "beta-two",
+      company: "Beta",
+      title: "Software Engineer Intern II",
+      primary_apply_url: "https://jobs.lever.co/beta/two",
+      posted_date: "2026-08-21T19:45:00.000Z",
+    }),
+    liveRow({
+      id: "newer-role",
+      company: "Zulu",
+      title: "Software Engineer Intern III",
+      primary_apply_url: "https://jobs.lever.co/zulu/three",
+      posted_date: "2026-08-21T21:30:00.000Z",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+
+  const page = queryJobs({}, {
+    snapshot,
+    limit: 10,
+    now: "2026-08-21T22:00:00.000Z",
+  });
+  assert.deepEqual(
+    page.items.map((job) => job.company),
+    ["Zulu", "Alpha", "Alpha Company", "Beta", "Beta"],
+  );
 });
 
 test("a cursor cannot silently cross live repository snapshots", () => {
@@ -153,6 +453,28 @@ test("a cursor cannot silently cross live repository snapshots", () => {
   ], "2026-08-21T22:00:00.000Z");
   const firstPage = queryJobs({}, { snapshot: firstSnapshot, limit: 1 });
   assert.ok(firstPage.nextCursor);
+
+  const changedSameSnapshot = createLiveSnapshotFromRows([
+    liveRow(),
+    liveRow({
+      id: "second-role",
+      title: "Security Engineer Intern",
+      primary_apply_url: "https://jobs.lever.co/notion/security-role",
+    }),
+    liveRow({
+      id: "third-role",
+      title: "Data Engineer Intern",
+      primary_apply_url: "https://jobs.lever.co/notion/data-role",
+    }),
+  ], firstSnapshot.asOf);
+  assert.throws(
+    () => queryJobs({}, {
+      snapshot: changedSameSnapshot,
+      cursor: firstPage.nextCursor,
+      limit: 1,
+    }),
+    InvalidCursorError,
+  );
 
   const nextSnapshot = createLiveSnapshotFromRows(
     firstSnapshot.jobs.map((job) => ({

@@ -2,11 +2,12 @@ import type { Metadata } from "next";
 import { JobsExplorer } from "@/app/components/JobsExplorer";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
+import { SnapshotNotice } from "@/app/components/SnapshotNotice";
 import { JOB_MAJOR_OPTIONS, parseFilters, queryJobs, serializeFilters } from "@/lib/jobs";
 import { getPublicJobsSnapshot } from "@/lib/jobs/live";
 
 export const metadata: Metadata = {
-  title: "Newest internships and new-grad jobs · Timley",
+  title: "Newest jobs, grouped by company · Timley",
   description: "Browse internships and new-grad roles by major, specialization, location, and work style. No account required.",
 };
 
@@ -23,8 +24,9 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
     <main id="main-content">
       <SiteHeader active="jobs" />
       <section className="page-intro">
-        <h1>All jobs, newest first</h1>
+        <h1>Newest jobs, grouped by company</h1>
       </section>
+      <SnapshotNotice capturedAt={snapshot.fallbackCapturedAt} />
       <div className="jobs-shell">
         <JobsExplorer
           key={serializeFilters(filters) || "all-jobs"}

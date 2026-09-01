@@ -126,7 +126,7 @@ export function JobsExplorer({
           {initialFilters.source && <input type="hidden" name="source" value={initialFilters.source} />}
           <label className="filter-field search-field">
             <span className="field-label">Search</span>
-            <input name="q" defaultValue={initialFilters.q} placeholder="Title, company, or keyword" autoComplete="off" />
+            <input name="q" defaultValue={initialFilters.q} placeholder="Title, company, location, or keyword" autoComplete="off" />
           </label>
           <label className="filter-field location-field">
             <span className="field-label">Location</span>

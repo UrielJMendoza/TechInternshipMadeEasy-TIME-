@@ -4,11 +4,16 @@ import {
   InvalidCursorError,
   normalizeAtsHostname,
   normalizeEmployer,
+  sanitizeEmployerPostedAt,
   sortJobsNewestFirst,
   type CanonicalJob,
   type DemoSnapshot,
   type SourceId,
 } from "./index";
+import {
+  BUNDLED_FALLBACK_CAPTURED_AT,
+  BUNDLED_FALLBACK_ROWS,
+} from "./fallback-data";
 
 const SUPABASE_URL =
   process.env.NEXT_PUBLIC_SUPABASE_URL ??
@@ -21,6 +26,7 @@ const PAGE_SIZE = 1_000;
 const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1_000;
 const MAX_CURSOR_AGE_MS = 10 * 60 * 1_000;
 const REQUEST_TIMEOUT_MS = 15_000;
+const FALLBACK_RETRY_MS = 60_000;
 const SELECT_FIELDS = [
   "id",
   "title",
@@ -177,7 +183,7 @@ function logoText(company: string): string {
     .join("") || company.slice(0, 2).toUpperCase();
 }
 
-function rowToCanonicalJob(row: LiveJobRow): CanonicalJob | null {
+function rowToCanonicalJob(row: LiveJobRow, asOf: string): CanonicalJob | null {
   const id = requiredText(row.id);
   const title = requiredText(row.title);
   const companyName = requiredText(row.company);
@@ -186,6 +192,12 @@ function rowToCanonicalJob(row: LiveJobRow): CanonicalJob | null {
   const applicationUrl = safeApplicationUrl(row.primary_apply_url);
   const firstSeenAt = timestamp(row.first_seen_at);
   const lastSeenAt = timestamp(row.last_seen_at) ?? firstSeenAt;
+  const rawPostedAt = optionalText(row.posted_date);
+  const sanitizedEmployerPostedAt = sanitizeEmployerPostedAt(rawPostedAt, asOf);
+  const employerPostedAt = sanitizedEmployerPostedAt &&
+    Date.parse(sanitizedEmployerPostedAt) <= Date.parse(asOf)
+    ? sanitizedEmployerPostedAt
+    : null;
   const roleType = row.role_type;
   if (
     !id ||
@@ -200,6 +212,8 @@ function rowToCanonicalJob(row: LiveJobRow): CanonicalJob | null {
   ) {
     return null;
   }
+  if (Date.parse(firstSeenAt) > Date.parse(asOf)) return null;
+  if (Date.parse(lastSeenAt) < Date.parse(firstSeenAt)) return null;
 
   const primarySourceId = sourceIdFor(row, applicationUrl);
   const normalizedEmployer = normalizeEmployer(companyName);
@@ -229,51 +243,90 @@ function rowToCanonicalJob(row: LiveJobRow): CanonicalJob | null {
     logoTone: "ink",
     companyDomain: companyDomain(row),
     applicationUrl,
-    employerPostedAt: timestamp(row.posted_date),
+    employerPostedAt,
+    employerPostedPrecision: employerPostedAt
+      ? /^\d{4}-\d{2}-\d{2}$/.test(rawPostedAt ?? "") ? "date" : "timestamp"
+      : undefined,
     firstSeenAt,
     lastSeenAt,
     active: row.is_active !== false,
   };
 }
 
-function normalizeIdentity(value: string): string {
-  return value
+function canonicalApplicationKey(value: string): string {
+  const url = new URL(value);
+  const removableParameters = new Set([
+    "gh_src",
+    "lever-origin",
+    "lever-source",
+    "ref",
+    "referrer",
+    "referral",
+    "source",
+    "sourceid",
+    "src",
+    "trk",
+    "trackingid",
+  ]);
+  for (const key of [...url.searchParams.keys()]) {
+    const normalizedKey = key.toLowerCase();
+    if (normalizedKey.startsWith("utm_") || removableParameters.has(normalizedKey)) {
+      url.searchParams.delete(key);
+    }
+  }
+  url.hash = "";
+  url.hostname = url.hostname.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+  if (url.protocol === "https:" && url.port === "443") url.port = "";
+  const atsHostname = normalizeAtsHostname(url.toString());
+  if (atsHostname === "greenhouse.io") url.hostname = atsHostname;
+  if (atsHostname === "lever.co") url.hostname = atsHostname;
+  if (atsHostname === "ashbyhq.com") url.hostname = atsHostname;
+  if (atsHostname === "smartrecruiters.com") url.hostname = atsHostname;
+  if (atsHostname === "jobvite.com") url.hostname = atsHostname;
+  if (atsHostname?.endsWith(".myworkdayjobs.com")) url.hostname = atsHostname;
+  if (atsHostname?.endsWith(".icims.com")) url.hostname = atsHostname;
+  if (["lever.co", "ashbyhq.com"].includes(atsHostname ?? "")) {
+    url.pathname = url.pathname.replace(/\/apply\/?$/i, "");
+  }
+  url.pathname = url.pathname.replace(/\/+$/, "") || "/";
+  url.searchParams.sort();
+  return url.toString();
+}
+
+function legacyVisibleIdentity(job: CanonicalJob): string {
+  const normalize = (value: string) => value
     .normalize("NFKC")
     .toLocaleLowerCase("en-US")
     .replace(/&/g, " and ")
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
-}
-
-function canonicalApplicationKey(value: string): string {
-  const url = new URL(value);
-  const removableParameters = [
-    "gh_src",
-    "ref",
-    "referrer",
-    "source",
-    "trk",
-  ];
-  for (const key of [...url.searchParams.keys()]) {
-    if (key.toLowerCase().startsWith("utm_") || removableParameters.includes(key.toLowerCase())) {
-      url.searchParams.delete(key);
-    }
-  }
-  url.hash = "";
-  url.hostname = url.hostname.toLowerCase();
-  url.pathname = url.pathname.replace(/\/+$/, "") || "/";
-  return url.toString();
-}
-
-function visibleIdentity(job: CanonicalJob): string {
   return [
-    normalizeIdentity(job.companyName),
-    normalizeIdentity(job.title),
-    normalizeIdentity(job.location),
+    normalize(job.companyName),
+    normalize(job.title),
+    normalize(job.location),
     job.roleLevel,
     job.workplace,
   ].join("\u001f");
+}
+
+function employerRequisitionKey(job: CanonicalJob): string | null {
+  const url = new URL(job.applicationUrl);
+  const atsHostname = normalizeAtsHostname(url.toString());
+  if (!atsHostname?.endsWith(".myworkdayjobs.com")) return null;
+
+  const finalSegment = url.pathname.split("/").filter(Boolean).at(-1) ?? "";
+  const match = finalSegment.match(/_([a-z]{1,4}-?\d{5,})(?:-\d+)?$/i);
+  if (!match) return null;
+  return [
+    job.normalizedEmployer || normalizeEmployer(job.companyName) || "",
+    atsHostname,
+    match[1].toLocaleUpperCase("en-US"),
+  ].join("\u001f");
+}
+
+function stableIdentity(job: CanonicalJob): string {
+  return employerRequisitionKey(job) ?? canonicalApplicationKey(job.applicationUrl);
 }
 
 function stableJobId(identity: string): string {
@@ -288,6 +341,76 @@ function stableJobId(identity: string): string {
   return `job_${(first >>> 0).toString(16).padStart(8, "0")}${(second >>> 0).toString(16).padStart(8, "0")}`;
 }
 
+function mergeDuplicateJobs(group: CanonicalJob[]): CanonicalJob {
+  const ordered = sortJobsNewestFirst(group);
+  const primary = ordered[0];
+  const employerDates = group
+    .filter((job) => job.employerPostedAt)
+    .sort((a, b) => {
+      const dateOrder = (a.employerPostedAt ?? "").localeCompare(b.employerPostedAt ?? "");
+      if (dateOrder !== 0) return dateOrder;
+      return Number(a.employerPostedPrecision !== "date") - Number(b.employerPostedPrecision !== "date");
+    });
+  const dated = employerDates[0];
+  const publicIdentity = group
+    .map(stableIdentity)
+    .sort()[0];
+  return {
+    ...primary,
+    id: stableJobId(publicIdentity),
+    legacyId: stableJobId(legacyVisibleIdentity(primary)),
+    contributingSourceIds: [...new Set(group.flatMap((job) => job.contributingSourceIds))].sort(),
+    sourceRecordIds: [...new Set(group.flatMap((job) => job.sourceRecordIds))].sort(),
+    employerPostedAt: dated?.employerPostedAt ?? null,
+    employerPostedPrecision: dated?.employerPostedPrecision,
+    firstSeenAt: group.map((job) => job.firstSeenAt).sort()[0],
+    lastSeenAt: group.map((job) => job.lastSeenAt).sort().at(-1)!,
+    active: group.some((job) => job.active),
+  };
+}
+
+function deduplicateMappedJobs(mapped: CanonicalJob[]): CanonicalJob[] {
+  const parents = mapped.map((_, index) => index);
+  const ownerByIdentity = new Map<string, number>();
+  const find = (index: number): number => {
+    let root = index;
+    while (parents[root] !== root) root = parents[root];
+    while (parents[index] !== index) {
+      const next = parents[index];
+      parents[index] = root;
+      index = next;
+    }
+    return root;
+  };
+  const union = (left: number, right: number) => {
+    const leftRoot = find(left);
+    const rightRoot = find(right);
+    if (leftRoot !== rightRoot) parents[rightRoot] = leftRoot;
+  };
+
+  mapped.forEach((job, index) => {
+    const requisitionKey = employerRequisitionKey(job);
+    const identities = [
+      `application\u001f${canonicalApplicationKey(job.applicationUrl)}`,
+      requisitionKey && `requisition\u001f${requisitionKey}`,
+    ].filter((identity): identity is string => Boolean(identity));
+    for (const identity of identities) {
+      const owner = ownerByIdentity.get(identity);
+      if (owner === undefined) ownerByIdentity.set(identity, index);
+      else union(owner, index);
+    }
+  });
+
+  const groups = new Map<number, CanonicalJob[]>();
+  mapped.forEach((job, index) => {
+    const root = find(index);
+    const group = groups.get(root);
+    if (group) group.push(job);
+    else groups.set(root, [job]);
+  });
+  return sortJobsNewestFirst([...groups.values()].map(mergeDuplicateJobs));
+}
+
 /** Maps and deduplicates the public repository without trusting its JSON shape. */
 export function createLiveSnapshotFromRows(
   rows: readonly unknown[],
@@ -299,31 +422,25 @@ export function createLiveSnapshotFromRows(
   const mapped = sortJobsNewestFirst(
     rows.flatMap((row) => {
       if (typeof row !== "object" || row === null) return [];
-      const job = rowToCanonicalJob(row as LiveJobRow);
+      const job = rowToCanonicalJob(row as LiveJobRow, asOf);
       return job ? [job] : [];
     }),
   );
-
-  const applicationKeys = new Set<string>();
-  const visibleKeys = new Set<string>();
-  const deduplicatedJobs = mapped.flatMap((job) => {
-    const applicationKey = canonicalApplicationKey(job.applicationUrl);
-    const visibleKey = visibleIdentity(job);
-    if (applicationKeys.has(applicationKey) || visibleKeys.has(visibleKey)) return [];
-    applicationKeys.add(applicationKey);
-    visibleKeys.add(visibleKey);
-    return [{
-      ...job,
-      id: stableJobId(visibleKey),
-      sourceRecordIds: [job.id],
-    }];
-  });
-  const jobs = sortJobsNewestFirst(deduplicatedJobs);
+  const jobs = sortJobsNewestFirst(deduplicateMappedJobs(mapped));
 
   return Object.freeze({
     asOf,
     rawRecords: Object.freeze([]),
     jobs: Object.freeze(jobs),
+  });
+}
+
+/** Creates an honestly labelled emergency copy from the last verified public feed export. */
+export function createBundledFallbackSnapshot(asOfInput: string | Date): DemoSnapshot {
+  const snapshot = createLiveSnapshotFromRows(BUNDLED_FALLBACK_ROWS, asOfInput);
+  return Object.freeze({
+    ...snapshot,
+    fallbackCapturedAt: BUNDLED_FALLBACK_CAPTURED_AT,
   });
 }
 
@@ -400,6 +517,45 @@ async function refreshPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot> {
   return snapshot;
 }
 
+function currentSnapshotBoundary(): string {
+  return new Date(
+    Math.floor(Date.now() / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS,
+  ).toISOString();
+}
+
+function rememberSnapshot(
+  snapshot: DemoSnapshot,
+  options: { latest: boolean; latestExpiresAt: number },
+): DemoSnapshot {
+  const rememberedAt = Date.now();
+  snapshotHistory.set(snapshot.asOf, {
+    snapshot,
+    expiresAt: rememberedAt + MAX_CURSOR_AGE_MS + SNAPSHOT_INTERVAL_MS,
+  });
+  if (options.latest) {
+    cachedSnapshot = snapshot;
+    cacheExpiresAt = options.latestExpiresAt;
+  }
+  while (snapshotHistory.size > 8) {
+    const oldestKey = snapshotHistory.keys().next().value;
+    if (typeof oldestKey !== "string") break;
+    snapshotHistory.delete(oldestKey);
+  }
+  return snapshot;
+}
+
+function unavailableSnapshot(
+  snapshotAt: string,
+  staleSnapshot: DemoSnapshot | null,
+): DemoSnapshot {
+  if (!staleSnapshot) return createBundledFallbackSnapshot(snapshotAt);
+  return Object.freeze({
+    ...staleSnapshot,
+    asOf: snapshotAt,
+    fallbackCapturedAt: staleSnapshot.fallbackCapturedAt ?? staleSnapshot.asOf,
+  });
+}
+
 /**
  * Production reads Timley's existing public, RLS-protected job repository.
  * Tests opt into the deterministic fixture explicitly and never hit the network.
@@ -433,34 +589,21 @@ export async function getPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot
   if (existingRequest) return existingRequest;
 
   const staleSnapshot = historical?.snapshot ?? (!asOf ? cachedSnapshot : null);
-  const request = refreshPublicJobsSnapshot(asOf)
+  const snapshotAt = asOf ?? currentSnapshotBoundary();
+  const request = refreshPublicJobsSnapshot(snapshotAt)
     .then((snapshot) => {
       const refreshedAt = Date.now();
-      const historyExpiresAt = refreshedAt + MAX_CURSOR_AGE_MS + SNAPSHOT_INTERVAL_MS;
-      snapshotHistory.set(snapshot.asOf, { snapshot, expiresAt: historyExpiresAt });
-      if (!asOf) {
-        cachedSnapshot = snapshot;
-        cacheExpiresAt = (Math.floor(refreshedAt / SNAPSHOT_INTERVAL_MS) + 1) * SNAPSHOT_INTERVAL_MS;
-      }
-      while (snapshotHistory.size > 8) {
-        const oldestKey = snapshotHistory.keys().next().value;
-        if (typeof oldestKey !== "string") break;
-        snapshotHistory.delete(oldestKey);
-      }
-      return snapshot;
+      return rememberSnapshot(snapshot, {
+        latest: !asOf,
+        latestExpiresAt: (Math.floor(refreshedAt / SNAPSHOT_INTERVAL_MS) + 1) * SNAPSHOT_INTERVAL_MS,
+      });
     })
-    .catch((error: unknown) => {
-      if (staleSnapshot && (!asOf || staleSnapshot.asOf === asOf)) {
-        const retryAt = Date.now() + 60_000;
-        const priorExpiry = snapshotHistory.get(staleSnapshot.asOf)?.expiresAt ?? 0;
-        snapshotHistory.set(staleSnapshot.asOf, {
-          snapshot: staleSnapshot,
-          expiresAt: Math.max(priorExpiry, retryAt),
-        });
-        if (!asOf) cacheExpiresAt = retryAt;
-        return staleSnapshot;
-      }
-      throw error;
+    .catch(() => {
+      const fallback = unavailableSnapshot(snapshotAt, staleSnapshot);
+      return rememberSnapshot(fallback, {
+        latest: !asOf,
+        latestExpiresAt: Date.now() + FALLBACK_RETRY_MS,
+      });
     })
     .finally(() => {
       inFlightSnapshots.delete(requestKey);

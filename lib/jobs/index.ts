@@ -256,6 +256,8 @@ export type RawJobRecord = {
 
 export type CanonicalJob = {
   id: string;
+  /** Compatibility alias for a prior public ID; never used when ambiguous. */
+  legacyId?: string;
   dedupeKey: string | null;
   normalizedAtsHostname: string | null;
   normalizedEmployer: string;
@@ -281,6 +283,8 @@ export type CanonicalJob = {
   companyDomain?: string;
   applicationUrl: string;
   employerPostedAt: string | null;
+  /** Date-only employer values must not be presented with invented hour precision. */
+  employerPostedPrecision?: "date" | "timestamp";
   firstSeenAt: string;
   lastSeenAt: string;
   active: boolean;
@@ -306,6 +310,7 @@ export type JobListItem = {
   team?: string;
   summary?: string;
   postedAt?: string | null;
+  postedAtPrecision?: "date" | "timestamp";
   firstSeenAt?: string;
 };
 
@@ -313,7 +318,8 @@ export type Freshness = {
   kind: "posted" | "found";
   at: string;
   label: string;
-  semanticLabel: "Employer posting date" | "Newly found";
+  precision: "date" | "timestamp";
+  semanticLabel: "Employer posting date" | "First observed by Timley";
 };
 
 export type SourceHealth = {
@@ -351,7 +357,7 @@ export type JobPage = {
 export const DEMO_CANONICAL_JOB_COUNT = 4_416;
 export const DEFAULT_PAGE_SIZE = 36;
 export const MAX_PAGE_SIZE = 60;
-const CURSOR_VERSION = 1;
+const CURSOR_VERSION = 3;
 const HOUR_MS = 60 * 60 * 1_000;
 const DAY_MS = 24 * HOUR_MS;
 const FUTURE_DATE_TOLERANCE_MS = 6 * HOUR_MS;
@@ -444,7 +450,7 @@ export function normalizeEmployer(value: string | null | undefined): string | nu
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ")
-    .replace(/\s+(?:incorporated|inc|limited|ltd|llc|corporation|corp|plc)$/i, "")
+    .replace(/\s+(?:incorporated|inc|limited|ltd|llc|corporation|corp|company|co|plc)$/i, "")
     .trim();
   return normalized || null;
 }
@@ -616,6 +622,7 @@ export function deduplicateJobs(
       logoTone: primary.logoTone,
       applicationUrl: primary.applicationUrl,
       employerPostedAt: datedOfficial?.employerPostedAt ?? null,
+      employerPostedPrecision: datedOfficial ? "timestamp" : undefined,
       firstSeenAt: group
         .map((record) => record.firstSeenAt)
         .sort(lexicalCompare)[0],
@@ -654,12 +661,34 @@ function relativeDateLabel(
   return plural(Math.floor(days / 365), "year");
 }
 
+function relativeCalendarDateLabel(timestamp: string, now: string | Date): string {
+  const nowDate = asDate(now, "now");
+  const then = asDate(timestamp, "timestamp");
+  const calendarDays = Math.max(
+    0,
+    Math.floor((utcDayStart(nowDate) - utcDayStart(then)) / DAY_MS),
+  );
+  if (calendarDays === 0) return "today";
+  if (calendarDays === 1) return "yesterday";
+  if (calendarDays < 30) return `${calendarDays} days ago`;
+  if (calendarDays < 365) {
+    const months = Math.floor(calendarDays / 30);
+    return `${months} month${months === 1 ? "" : "s"} ago`;
+  }
+  const years = Math.floor(calendarDays / 365);
+  return `${years} year${years === 1 ? "" : "s"} ago`;
+}
+
 export function getFreshness(job: CanonicalJob, now: string | Date): Freshness {
   if (job.employerPostedAt) {
+    const precision = job.employerPostedPrecision ?? "timestamp";
     return {
       kind: "posted",
       at: job.employerPostedAt,
-      label: relativeDateLabel(job.employerPostedAt, now),
+      label: precision === "date"
+        ? relativeCalendarDateLabel(job.employerPostedAt, now)
+        : relativeDateLabel(job.employerPostedAt, now),
+      precision,
       semanticLabel: "Employer posting date",
     };
   }
@@ -667,7 +696,8 @@ export function getFreshness(job: CanonicalJob, now: string | Date): Freshness {
     kind: "found",
     at: job.firstSeenAt,
     label: relativeDateLabel(job.firstSeenAt, now),
-    semanticLabel: "Newly found",
+    precision: "timestamp",
+    semanticLabel: "First observed by Timley",
   };
 }
 
@@ -705,6 +735,52 @@ export function compareJobsNewestFirst(a: CanonicalJob, b: CanonicalJob): number
 
 export function sortJobsNewestFirst(jobs: readonly CanonicalJob[]): CanonicalJob[] {
   return [...jobs].sort(compareJobsNewestFirst);
+}
+
+export type FeedSortTuple = JobSortTuple & {
+  ageBucketMs: number;
+  companyKey: string;
+};
+
+function relativeAgeBucketMs(timestamp: string, now: string | Date): number {
+  const elapsedMs = Math.max(0, asDate(now, "now").getTime() - Date.parse(timestamp));
+  const minutes = Math.floor(elapsedMs / 60_000);
+  const hours = Math.floor(elapsedMs / HOUR_MS);
+  const days = Math.floor(elapsedMs / DAY_MS);
+  if (minutes < 1) return 0;
+  if (minutes < 60) return minutes * 60_000;
+  if (hours < 24) return hours * HOUR_MS;
+  if (days < 30) return days * DAY_MS;
+  if (days < 365) return Math.floor(days / 30) * 30 * DAY_MS;
+  return Math.floor(days / 365) * 365 * DAY_MS;
+}
+
+export function getFeedSortTuple(
+  job: CanonicalJob,
+  now: string | Date,
+): FeedSortTuple {
+  const base = getJobSortTuple(job);
+  return {
+    ...base,
+    ageBucketMs: relativeAgeBucketMs(base.sortAt, now),
+    companyKey: job.normalizedEmployer || normalizeEmployer(job.companyName) || "",
+  };
+}
+
+function compareFeedSortTuples(a: FeedSortTuple, b: FeedSortTuple): number {
+  if (a.ageBucketMs !== b.ageBucketMs) return a.ageBucketMs - b.ageBucketMs;
+  const companyOrder = lexicalCompare(a.companyKey, b.companyKey);
+  if (companyOrder !== 0) return companyOrder;
+  return compareSortTuples(a, b);
+}
+
+export function sortJobsForFeed(
+  jobs: readonly CanonicalJob[],
+  now: string | Date,
+): CanonicalJob[] {
+  return [...jobs].sort((a, b) =>
+    compareFeedSortTuples(getFeedSortTuple(a, now), getFeedSortTuple(b, now))
+  );
 }
 
 type SearchParamRecord = Record<string, string | string[] | undefined>;
@@ -782,10 +858,11 @@ export const parseJobFilters = parseFilters;
 export const serializeJobFilters = serializeFilters;
 
 type CursorPayload = {
-  version: 1;
+  version: 3;
   asOf: string;
   evaluatedAt: string;
-  tuple: JobSortTuple;
+  snapshotRevision: string;
+  tuple: FeedSortTuple;
   filtersKey: string;
 };
 
@@ -836,6 +913,9 @@ export function encodeJobCursor(payload: CursorPayload): string {
     CURSOR_VERSION,
     payload.asOf,
     payload.evaluatedAt,
+    payload.snapshotRevision,
+    payload.tuple.ageBucketMs,
+    payload.tuple.companyKey,
     payload.tuple.sortAt,
     payload.tuple.freshnessKind,
     payload.tuple.id,
@@ -852,12 +932,29 @@ export function decodeJobCursor(cursor: string): CursorPayload {
     if (error instanceof InvalidCursorError) throw error;
     throw new InvalidCursorError();
   }
-  if (!Array.isArray(parsed) || parsed.length !== 7) throw new InvalidCursorError();
-  const [version, asOf, evaluatedAt, sortAt, freshnessKind, id, filtersKey] = parsed;
+  if (!Array.isArray(parsed) || parsed.length !== 10) throw new InvalidCursorError();
+  const [
+    version,
+    asOf,
+    evaluatedAt,
+    snapshotRevision,
+    ageBucketMs,
+    companyKey,
+    sortAt,
+    freshnessKind,
+    id,
+    filtersKey,
+  ] = parsed;
   if (
     version !== CURSOR_VERSION ||
     !validCanonicalIso(asOf) ||
     !validCanonicalIso(evaluatedAt) ||
+    typeof snapshotRevision !== "string" ||
+    !/^[a-f0-9]{16}$/.test(snapshotRevision) ||
+    !Number.isSafeInteger(ageBucketMs) ||
+    ageBucketMs < 0 ||
+    typeof companyKey !== "string" ||
+    companyKey.length > 160 ||
     !validCanonicalIso(sortAt) ||
     (freshnessKind !== "posted" && freshnessKind !== "found") ||
     typeof id !== "string" ||
@@ -869,10 +966,11 @@ export function decodeJobCursor(cursor: string): CursorPayload {
     throw new InvalidCursorError();
   }
   return {
-    version: 1,
+    version: 3,
     asOf,
     evaluatedAt,
-    tuple: { sortAt, freshnessKind, id },
+    snapshotRevision,
+    tuple: { ageBucketMs, companyKey, sortAt, freshnessKind, id },
     filtersKey,
   };
 }
@@ -1110,11 +1208,40 @@ function duplicateCommunityRecord(
 
 export type DemoSnapshot = {
   asOf: string;
+  /** Present when live reads fail and the feed is served from its last verified copy. */
+  fallbackCapturedAt?: string;
   rawRecords: readonly RawJobRecord[];
   jobs: readonly CanonicalJob[];
 };
 
 const SNAPSHOT_CACHE = new Map<string, DemoSnapshot>();
+const SNAPSHOT_REVISION_CACHE = new WeakMap<DemoSnapshot, string>();
+
+function getSnapshotRevision(snapshot: DemoSnapshot): string {
+  const cached = SNAPSHOT_REVISION_CACHE.get(snapshot);
+  if (cached) return cached;
+  const revisionMaterial = snapshot.jobs.map((job) => [
+    job.id,
+    job.active ? "1" : "0",
+    job.normalizedEmployer,
+    job.companyName,
+    job.title,
+    job.location,
+    job.roleLevel,
+    job.workplace,
+    job.category,
+    job.team ?? "",
+    job.sponsorship ?? "",
+    job.employerPostedAt ?? "",
+    job.firstSeenAt,
+    job.contributingSourceIds.join(","),
+    job.majorIds?.join(",") ?? "",
+    job.nicheIds?.join(",") ?? "",
+  ].join("\u001f")).join("\u001e");
+  const revision = fnv1a64(revisionMaterial);
+  SNAPSHOT_REVISION_CACHE.set(snapshot, revision);
+  return revision;
+}
 
 export function getDemoSnapshotAt(now: string | Date = new Date()): string {
   const date = asDate(now, "now");
@@ -1172,6 +1299,88 @@ function normalizeForSearch(value: string): string {
     .replace(/[^a-z0-9]+/g, " ")
     .trim()
     .replace(/\s+/g, " ");
+}
+
+const US_STATE_ALIASES = [
+  ["alabama", "al"], ["alaska", "ak"], ["arizona", "az"], ["arkansas", "ar"],
+  ["california", "ca"], ["colorado", "co"], ["connecticut", "ct"], ["delaware", "de"],
+  ["florida", "fl"], ["georgia", "ga"], ["hawaii", "hi"], ["idaho", "id"],
+  ["illinois", "il"], ["indiana", "in"], ["iowa", "ia"], ["kansas", "ks"],
+  ["kentucky", "ky"], ["louisiana", "la"], ["maine", "me"], ["maryland", "md"],
+  ["massachusetts", "ma"], ["michigan", "mi"], ["minnesota", "mn"], ["mississippi", "ms"],
+  ["missouri", "mo"], ["montana", "mt"], ["nebraska", "ne"], ["nevada", "nv"],
+  ["new hampshire", "nh"], ["new jersey", "nj"], ["new mexico", "nm"], ["new york", "ny"],
+  ["north carolina", "nc"], ["north dakota", "nd"], ["ohio", "oh"], ["oklahoma", "ok"],
+  ["oregon", "or"], ["pennsylvania", "pa"], ["rhode island", "ri"], ["south carolina", "sc"],
+  ["south dakota", "sd"], ["tennessee", "tn"], ["texas", "tx"], ["utah", "ut"],
+  ["vermont", "vt"], ["virginia", "va"], ["washington", "wa"], ["west virginia", "wv"],
+  ["wisconsin", "wi"], ["wyoming", "wy"], ["district of columbia", "dc"],
+] as const;
+const US_STATE_ABBREVIATION_BY_NAME: ReadonlyMap<string, string> = new Map(US_STATE_ALIASES);
+const US_STATE_NAME_BY_ABBREVIATION: ReadonlyMap<string, string> = new Map(
+  US_STATE_ALIASES.map(([name, abbreviation]) => [abbreviation, name]),
+);
+const US_STATE_NAME_PATTERN = new RegExp(
+  `\\b(?:${US_STATE_ALIASES
+    .map(([name]) => name)
+    .sort((a, b) => b.length - a.length)
+    .join("|")})\\b`,
+  "g",
+);
+
+/** Normalizes common location aliases for duplicate detection without hiding the display value. */
+export function normalizeLocationForIdentity(value: string): string {
+  return normalizeForSearch(value)
+    .replace(/\bunited states(?: of america)?\b/g, "us")
+    .replace(/\bu s a?\b/g, "us")
+    .replace(US_STATE_NAME_PATTERN, (name) =>
+      US_STATE_ABBREVIATION_BY_NAME.get(name) ?? name
+    )
+    .trim()
+    .replace(/\s+/g, " ");
+}
+
+function postalCodesInLocation(value: string): Set<string> {
+  const postalCodes = new Set<string>();
+  const delimitedCode = /(?:^|[,(/|])\s*([A-Z]{2})(?=\s*(?:$|[-,)/|]|\d{5}|\bor\s+[Rr]emote\b))/g;
+  for (const match of value.matchAll(delimitedCode)) postalCodes.add(match[1].toLowerCase());
+  const trailingCode = value.match(/\b([A-Z]{2})(?:\s+\d{5}(?:-\d{4})?)?\s*$/);
+  if (trailingCode) postalCodes.add(trailingCode[1].toLowerCase());
+  return postalCodes;
+}
+
+function locationSearchText(value: string): string {
+  const original = normalizeForSearch(value);
+  const canonical = normalizeLocationForIdentity(value);
+  const expansions = new Set([original, canonical]);
+  const postalCodes = postalCodesInLocation(value);
+  for (const postalCode of postalCodes) {
+    const stateName = US_STATE_NAME_BY_ABBREVIATION.get(postalCode);
+    if (stateName) expansions.add(stateName);
+  }
+  return [...expansions].join(" ");
+}
+
+function searchTermsMatch(query: string, searchable: string): boolean {
+  const wanted = normalizeForSearch(query).split(" ").filter(Boolean);
+  const available = normalizeForSearch(searchable).split(" ").filter(Boolean);
+  return wanted.every((term) => available.some((word) =>
+    term.length <= 2 ? word === term : word.startsWith(term)
+  ));
+}
+
+function locationTermsMatch(query: string, location: string): boolean {
+  const original = normalizeForSearch(location);
+  const available = normalizeForSearch(locationSearchText(location)).split(" ").filter(Boolean);
+  const postalCodes = postalCodesInLocation(location);
+  return normalizeForSearch(query).split(" ").filter(Boolean).every((term) => {
+    const stateName = US_STATE_NAME_BY_ABBREVIATION.get(term);
+    if (stateName) {
+      const hasFullStateName = new RegExp(`(?:^| )${stateName}(?: |$)`).test(original);
+      return postalCodes.has(term) || hasFullStateName;
+    }
+    return available.some((word) => term.length <= 2 ? word === term : word.startsWith(term));
+  });
 }
 
 function matchesMajor(job: CanonicalJob, major: JobMajorFilter): boolean {
@@ -1273,15 +1482,24 @@ function matchesFilters(job: CanonicalJob, filters: JobFilters): boolean {
     return false;
   }
   if (filters.location) {
-    const wantedLocation = normalizeForSearch(filters.location);
-    if (!normalizeForSearch(job.location).includes(wantedLocation)) return false;
+    if (!locationTermsMatch(filters.location, job.location)) return false;
   }
   if (filters.q) {
-    const queryTokens = normalizeForSearch(filters.q).split(" ").filter(Boolean);
-    const searchable = normalizeForSearch(
-      [job.title, job.companyName, job.category, job.team ?? "", job.location].join(" "),
-    );
-    if (!queryTokens.every((token) => searchable.includes(token))) return false;
+    const aliases = [
+      job.roleLevel === "New grad" ? "new grad graduate entry level" : "intern internship",
+      job.workplace === "On-site" ? "on site onsite" : job.workplace,
+      /\bsoftware\s+engineer/i.test(job.title) ? "swe" : "",
+      /\bmachine\s+learning/i.test(job.title) ? "ml" : "",
+    ];
+    const searchable = [
+      job.title,
+      job.companyName,
+      job.category,
+      job.team ?? "",
+      locationSearchText(job.location),
+      ...aliases,
+    ].join(" ");
+    if (!searchTermsMatch(filters.q, searchable)) return false;
   }
   return true;
 }
@@ -1307,6 +1525,7 @@ function toListItem(job: CanonicalJob, now: string | Date): JobListItem {
     team: job.team,
     summary: job.summary,
     postedAt: job.employerPostedAt,
+    postedAtPrecision: freshness.kind === "posted" ? freshness.precision : undefined,
     firstSeenAt: job.firstSeenAt,
   };
 }
@@ -1360,12 +1579,22 @@ export function queryJobs(
   if (decodedCursor && snapshot.asOf !== decodedCursor.asOf) {
     throw new InvalidCursorError("The cursor does not belong to this snapshot");
   }
-  const filteredJobs = snapshot.jobs.filter(
-    (job) => job.active && job.firstSeenAt <= asOf && matchesFilters(job, filters),
+  const snapshotRevision = getSnapshotRevision(snapshot);
+  if (decodedCursor && snapshotRevision !== decodedCursor.snapshotRevision) {
+    throw new InvalidCursorError("The jobs changed since this page was loaded");
+  }
+  const filteredJobs = sortJobsForFeed(
+    snapshot.jobs.filter(
+      (job) => job.active && job.firstSeenAt <= asOf && matchesFilters(job, filters),
+    ),
+    evaluatedAt,
   );
   const afterCursor = decodedCursor
     ? filteredJobs.filter(
-        (job) => compareSortTuples(getJobSortTuple(job), decodedCursor.tuple) > 0,
+        (job) => compareFeedSortTuples(
+          getFeedSortTuple(job, evaluatedAt),
+          decodedCursor.tuple,
+        ) > 0,
       )
     : filteredJobs;
   const window = afterCursor.slice(0, limit + 1);
@@ -1373,11 +1602,12 @@ export function queryJobs(
   const hasMore = window.length > limit;
   const lastJob = pageJobs.at(-1);
   const nextCursor = hasMore && lastJob
-    ? encodeJobCursor({
-        version: 1,
+      ? encodeJobCursor({
+        version: 3,
         asOf,
         evaluatedAt,
-        tuple: getJobSortTuple(lastJob),
+        snapshotRevision,
+        tuple: getFeedSortTuple(lastJob, evaluatedAt),
         filtersKey,
       })
     : null;
@@ -1402,7 +1632,8 @@ export function getSourceHealth(options: FeedStatsOptions = {}): SourceHealth[] 
   const now = canonicalTimestamp(options.now ?? new Date(), "now");
   const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
   return SOURCE_CATALOG.map((source, index) => {
-    const lastSuccessfulUpdateAt = subtractMinutes(snapshot.asOf, index * 3);
+    const lastSuccessfulUpdateAt = snapshot.fallbackCapturedAt ??
+      subtractMinutes(snapshot.asOf, index * 3);
     const healthy =
       Date.parse(now) - Date.parse(lastSuccessfulUpdateAt) <=
       (source.expectedCadenceHours + 6) * HOUR_MS;
@@ -1437,7 +1668,7 @@ export function getFeedStats(options: FeedStatsOptions = {}): FeedStats {
     currentSources: SOURCE_CATALOG.length,
     healthySources: sourceHealth.filter((source) => source.healthy).length,
     totalSources: SOURCE_CATALOG.length,
-    lastCompleteUpdateAt: snapshot.asOf,
+    lastCompleteUpdateAt: snapshot.fallbackCapturedAt ?? snapshot.asOf,
     sourceHealth,
     catalogNotice: DEMO_SOURCE_CATALOG_NOTICE,
   };
@@ -1455,7 +1686,11 @@ export function getJobById(
 ): JobListItem | null {
   const now = canonicalTimestamp(options.now ?? new Date(), "now");
   const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
-  const job = snapshot.jobs.find((candidate) => candidate.id === id && candidate.active);
+  const direct = snapshot.jobs.find((candidate) => candidate.id === id && candidate.active);
+  const legacyMatches = direct
+    ? []
+    : snapshot.jobs.filter((candidate) => candidate.legacyId === id && candidate.active);
+  const job = direct ?? (legacyMatches.length === 1 ? legacyMatches[0] : null);
   return job ? toListItem(job, now) : null;
 }
 
@@ -1467,11 +1702,13 @@ export function getNewestPostedJobs(
   const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
   const dayStart = utcDayStart(asDate(now, "now"));
   const limit = normalizeLimit(options.limit ?? 6);
-  return snapshot.jobs
-    .filter((job) => {
+  return sortJobsForFeed(
+    snapshot.jobs.filter((job) => {
       if (!job.active || !job.employerPostedAt) return false;
       return !options.todayOnly || Date.parse(job.employerPostedAt) >= dayStart;
-    })
+    }),
+    now,
+  )
     .slice(0, limit)
     .map((job) => toListItem(job, now));
 }

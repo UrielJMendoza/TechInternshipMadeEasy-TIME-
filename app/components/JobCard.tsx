@@ -38,6 +38,7 @@ export function JobCard({ job, liveRecency = false }: JobCardProps) {
           kind={job.freshnessKind}
           label={job.freshnessLabel}
           timestamp={job.postedAt ?? job.firstSeenAt}
+          precision={job.postedAtPrecision}
           recalculate={liveRecency}
         />
         <span>{job.roleLevel} · {job.workplace}</span>

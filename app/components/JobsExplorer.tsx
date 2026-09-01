@@ -31,8 +31,10 @@ export function JobsExplorer({
 }: JobsExplorerProps) {
   const [jobs, setJobs] = useState(initialJobs);
   const [cursor, setCursor] = useState<string | null>(initialCursor);
+  const [totalCount, setTotalCount] = useState(total);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [paginationStatus, setPaginationStatus] = useState("");
   const [shareStatus, setShareStatus] = useState("");
   const [major, setMajor] = useState<JobFilters["major"]>(initialFilters.major);
   const [niche, setNiche] = useState(initialFilters.niche);
@@ -61,17 +63,43 @@ export function JobsExplorer({
     if (!cursor || loading) return;
     setLoading(true);
     setError("");
+    setPaginationStatus("");
     try {
       const params = new URLSearchParams(initialQuery);
       params.set("cursor", cursor);
       const response = await fetch(`/api/jobs?${params.toString()}`);
+      if (response.status === 409) {
+        const problem = (await response.json()) as { code?: string };
+        if (problem.code !== "CURSOR_REFRESH_REQUIRED") {
+          throw new Error("Unable to refresh jobs");
+        }
+        const refreshParams = new URLSearchParams(initialQuery);
+        refreshParams.delete("cursor");
+        const refreshResponse = await fetch(`/api/jobs?${refreshParams.toString()}`);
+        if (!refreshResponse.ok) throw new Error("Unable to refresh jobs");
+        const refreshed = (await refreshResponse.json()) as {
+          items: JobCardData[];
+          nextCursor: string | null;
+          total: number;
+        };
+        setJobs(refreshed.items);
+        setCursor(refreshed.nextCursor);
+        setTotalCount(refreshed.total);
+        setPaginationStatus("Results refreshed with the same filters because the feed changed.");
+        return;
+      }
       if (!response.ok) throw new Error("Unable to load more jobs");
-      const page = (await response.json()) as { items: JobCardData[]; nextCursor: string | null };
+      const page = (await response.json()) as {
+        items: JobCardData[];
+        nextCursor: string | null;
+        total: number;
+      };
       setJobs((current) => {
         const known = new Set(current.map((job) => job.id));
         return [...current, ...page.items.filter((job) => !known.has(job.id))];
       });
       setCursor(page.nextCursor);
+      setTotalCount(page.total);
     } catch {
       setError("We couldn’t load the next page. Your current results are still here. Please try again.");
     } finally {
@@ -197,7 +225,7 @@ export function JobsExplorer({
         <div className="results-heading">
           <div>
             <h2 id="results-title">{hasActiveFilters ? "Filtered jobs" : "Newest jobs"}</h2>
-            <p>{number(total)} matching opportunities</p>
+            <p>{number(totalCount)} matching opportunities</p>
           </div>
           <div className="results-tools">
             <button type="button" onClick={copySearch}>Copy search link</button>
@@ -226,7 +254,9 @@ export function JobsExplorer({
           ) : jobs.length > 0 ? (
             <p className="end-of-feed">You’ve reached the end of these results.</p>
           ) : null}
-          <p className="pagination-note" aria-live="polite">Showing {number(jobs.length)} of {number(total)} · Results load 36 at a time</p>
+          <p className="pagination-note" aria-live="polite">
+            {paginationStatus || `Showing ${number(jobs.length)} of ${number(totalCount)} · Results load 36 at a time`}
+          </p>
         </div>
       </section>
     </>

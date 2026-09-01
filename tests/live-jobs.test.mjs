@@ -26,6 +26,20 @@ const fallbackDataUrl = `data:text/javascript;base64,${Buffer.from(
   `export const BUNDLED_FALLBACK_CAPTURED_AT = "2026-08-31T22:15:17.000Z"; export const BUNDLED_FALLBACK_ROWS = ${JSON.stringify([fallbackFixture])};`,
 ).toString("base64")}`;
 const liveSource = await readFile(new URL("../lib/jobs/live.ts", import.meta.url), "utf8");
+let freshLiveModuleSequence = 0;
+
+async function loadFreshLiveModule(fallbackRows = [fallbackFixture]) {
+  freshLiveModuleSequence += 1;
+  const marker = `fresh-${freshLiveModuleSequence}`;
+  const freshFallbackUrl = `data:text/javascript;base64,${Buffer.from(
+    `export const BUNDLED_FALLBACK_CAPTURED_AT = "2026-08-31T22:15:17.000Z"; export const BUNDLED_FALLBACK_ROWS = ${JSON.stringify(fallbackRows)}; export const TEST_MARKER = ${JSON.stringify(marker)};`,
+  ).toString("base64")}`;
+  const source = stripTypeScriptTypes(liveSource)
+    .replace(/from "\.\/index";/, `from "${domainUrl}";`)
+    .replace(/from "\.\/fallback-data";/, `from "${freshFallbackUrl}";`);
+  return import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}#${marker}`);
+}
+
 const runnableLiveSource = stripTypeScriptTypes(liveSource)
   .replace(/from "\.\/index";/, `from "${domainUrl}";`)
   .replace(/from "\.\/fallback-data";/, `from "${fallbackDataUrl}";`);
@@ -80,6 +94,117 @@ test("a live repository failure serves a labelled, cursor-stable verified copy",
     globalThis.fetch = originalFetch;
     if (originalMode === undefined) delete process.env.TIMLEY_USE_DEMO_JOBS;
     else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
+  }
+});
+
+test("the live reader requests only rows changed since the verified snapshot", async () => {
+  const freshLive = await loadFreshLiveModule();
+  const originalFetch = globalThis.fetch;
+  const originalMode = process.env.TIMLEY_USE_DEMO_JOBS;
+  const originalVercelEnvironment = process.env.VERCEL_ENV;
+  const requests = [];
+  process.env.TIMLEY_USE_DEMO_JOBS = "false";
+  delete process.env.VERCEL_ENV;
+  globalThis.fetch = async (input) => {
+    requests.push(String(input));
+    return Response.json([
+      liveRow({
+        id: "delta-role",
+        company: "Acme",
+        title: "Security Engineer Intern",
+        primary_apply_url: "https://jobs.lever.co/acme/security-delta",
+        primary_source: "lever:acme",
+        updated_at: "2026-08-31T22:16:00.000Z",
+      }),
+    ], { headers: { "content-range": "0-0/1" } });
+  };
+
+  try {
+    const snapshot = await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+    const requestUrl = new URL(requests[0]);
+
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requestUrl.searchParams.getAll("updated_at"), [
+      "gt.2026-08-31T22:15:17.000Z",
+      `lte.${snapshot.asOf}`,
+    ]);
+    assert.equal(requestUrl.searchParams.has("is_active"), false);
+    assert.equal(snapshot.jobs.length, 2);
+    assert.equal(health.status, "healthy");
+    assert.equal(health.mode, "live");
+    assert.equal(health.baselineRows, 1);
+    assert.equal(health.deltaRows, 1);
+    assert.equal(health.mergedRows, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.TIMLEY_USE_DEMO_JOBS;
+    else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
+    if (originalVercelEnvironment === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = originalVercelEnvironment;
+  }
+});
+
+test("production ignores demo mode and backs off after a failed live refresh", async () => {
+  const freshLive = await loadFreshLiveModule();
+  const originalFetch = globalThis.fetch;
+  const originalMode = process.env.TIMLEY_USE_DEMO_JOBS;
+  const originalVercelEnvironment = process.env.VERCEL_ENV;
+  let requests = 0;
+  process.env.TIMLEY_USE_DEMO_JOBS = "true";
+  process.env.VERCEL_ENV = "production";
+  globalThis.fetch = async () => {
+    requests += 1;
+    return new Response("quota unavailable", { status: 402 });
+  };
+
+  try {
+    const first = await freshLive.getPublicJobsSnapshot();
+    const second = await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+
+    assert.equal(first, second);
+    assert.equal(requests, 1);
+    assert.equal(first.fallbackCapturedAt, "2026-08-31T22:15:17.000Z");
+    assert.equal(first.jobs.length, 1);
+    assert.equal(health.status, "degraded");
+    assert.equal(health.mode, "verified-fallback");
+    assert.equal(health.consecutiveFailures, 1);
+    assert.ok(Date.parse(health.nextRetryAt) > Date.now());
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.TIMLEY_USE_DEMO_JOBS;
+    else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
+    if (originalVercelEnvironment === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = originalVercelEnvironment;
+  }
+});
+
+test("an incomplete delta page cannot replace the verified feed", async () => {
+  const freshLive = await loadFreshLiveModule();
+  const originalFetch = globalThis.fetch;
+  const originalMode = process.env.TIMLEY_USE_DEMO_JOBS;
+  const originalVercelEnvironment = process.env.VERCEL_ENV;
+  process.env.TIMLEY_USE_DEMO_JOBS = "false";
+  delete process.env.VERCEL_ENV;
+  globalThis.fetch = async () => Response.json([
+    liveRow({ id: "only-one-of-two", updated_at: "2026-08-31T22:16:00.000Z" }),
+  ], { headers: { "content-range": "0-0/2" } });
+
+  try {
+    const snapshot = await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+
+    assert.equal(snapshot.fallbackCapturedAt, "2026-08-31T22:15:17.000Z");
+    assert.equal(snapshot.jobs.length, 1);
+    assert.equal(health.mode, "verified-fallback");
+    assert.equal(health.lastSuccessAt, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.TIMLEY_USE_DEMO_JOBS;
+    else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
+    if (originalVercelEnvironment === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = originalVercelEnvironment;
   }
 });
 

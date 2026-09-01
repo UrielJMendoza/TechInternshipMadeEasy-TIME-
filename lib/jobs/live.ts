@@ -28,7 +28,9 @@ const PAGE_SIZE = 1_000;
 const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1_000;
 const MAX_CURSOR_AGE_MS = 10 * 60 * 1_000;
 const REQUEST_TIMEOUT_MS = 15_000;
-const FALLBACK_RETRY_MS = 60_000;
+const FALLBACK_BASE_RETRY_MS = 60_000;
+const FALLBACK_MAX_RETRY_MS = 30 * 60_000;
+const MIN_VERIFIED_FEED_RATIO = 0.65;
 const SELECT_FIELDS = [
   "id",
   "title",
@@ -44,6 +46,7 @@ const SELECT_FIELDS = [
   "first_seen_at",
   "last_seen_at",
   "last_checked_at",
+  "updated_at",
   "is_active",
   "salary_raw",
   "sponsorship",
@@ -59,10 +62,91 @@ type JobsPage = {
   total: number | null;
 };
 
+export type PublicJobsFeedHealth = {
+  status: "starting" | "healthy" | "degraded";
+  mode: "uninitialized" | "live" | "verified-fallback";
+  snapshotAt: string | null;
+  fallbackCapturedAt: string | null;
+  lastAttemptAt: string | null;
+  lastSuccessAt: string | null;
+  nextRetryAt: string | null;
+  consecutiveFailures: number;
+  baselineRows: number;
+  deltaRows: number;
+  mergedRows: number;
+  mappedRows: number;
+  canonicalJobs: number;
+  activeJobs: number;
+  invalidRows: number;
+  duplicateDeltaIds: number;
+  refreshDurationMs: number | null;
+};
+
+type SnapshotBuildResult = {
+  snapshot: DemoSnapshot;
+  mappedRows: number;
+  invalidRows: number;
+};
+
+let feedHealth: PublicJobsFeedHealth = {
+  status: "starting",
+  mode: "uninitialized",
+  snapshotAt: null,
+  fallbackCapturedAt: BUNDLED_FALLBACK_CAPTURED_AT,
+  lastAttemptAt: null,
+  lastSuccessAt: null,
+  nextRetryAt: null,
+  consecutiveFailures: 0,
+  baselineRows: BUNDLED_FALLBACK_ROWS.length,
+  deltaRows: 0,
+  mergedRows: BUNDLED_FALLBACK_ROWS.length,
+  mappedRows: 0,
+  canonicalJobs: 0,
+  activeJobs: 0,
+  invalidRows: 0,
+  duplicateDeltaIds: 0,
+  refreshDurationMs: null,
+};
+let demoGuardLogged = false;
+
 let cachedSnapshot: DemoSnapshot | null = null;
 let cacheExpiresAt = 0;
 const snapshotHistory = new Map<string, { snapshot: DemoSnapshot; expiresAt: number }>();
 const inFlightSnapshots = new Map<string, Promise<DemoSnapshot>>();
+
+function isoNow(): string {
+  return new Date().toISOString();
+}
+
+function feedLog(
+  level: "info" | "warn",
+  event: string,
+  details: Record<string, string | number | boolean | null> = {},
+) {
+  if (process.env.NODE_ENV === "test" || process.env.TIMLEY_FEED_LOGS === "false") return;
+  const payload = JSON.stringify({ service: "timley-jobs", event, ...details });
+  if (level === "warn") console.warn(payload);
+  else console.info(payload);
+}
+
+function nextRetryDelayMs(failures: number): number {
+  const exponent = Math.max(0, Math.min(failures - 1, 8));
+  return Math.min(FALLBACK_BASE_RETRY_MS * 2 ** exponent, FALLBACK_MAX_RETRY_MS);
+}
+
+export function getPublicJobsFeedHealth(): PublicJobsFeedHealth {
+  return { ...feedHealth };
+}
+
+function productionDemoJobsRequested(): boolean {
+  const requested = process.env.TIMLEY_USE_DEMO_JOBS === "true";
+  const production = process.env.VERCEL_ENV === "production";
+  if (requested && production && !demoGuardLogged) {
+    demoGuardLogged = true;
+    feedLog("warn", "production_demo_flag_ignored");
+  }
+  return requested && !production;
+}
 
 function requiredText(value: unknown): string | null {
   if (typeof value !== "string") return null;
@@ -643,28 +727,43 @@ function deduplicateMappedJobs(mapped: CanonicalJob[]): CanonicalJob[] {
   return sortJobsNewestFirst([...groups.values()].map(mergeDuplicateJobs));
 }
 
+function buildLiveSnapshotFromRows(
+  rows: readonly unknown[],
+  asOfInput: string | Date = new Date(),
+): SnapshotBuildResult {
+  const asOfDate = asOfInput instanceof Date ? new Date(asOfInput) : new Date(asOfInput);
+  if (!Number.isFinite(asOfDate.getTime())) throw new TypeError("asOf must be a valid date");
+  const asOf = asOfDate.toISOString();
+  const mapped: CanonicalJob[] = [];
+  let invalidRows = 0;
+  for (const row of rows) {
+    if (typeof row !== "object" || row === null) {
+      invalidRows += 1;
+      continue;
+    }
+    const job = rowToCanonicalJob(row as LiveJobRow, asOf);
+    if (job) mapped.push(job);
+    else invalidRows += 1;
+  }
+  const jobs = sortJobsNewestFirst(deduplicateMappedJobs(sortJobsNewestFirst(mapped)));
+
+  return {
+    snapshot: Object.freeze({
+      asOf,
+      rawRecords: Object.freeze([]),
+      jobs: Object.freeze(jobs),
+    }),
+    mappedRows: mapped.length,
+    invalidRows,
+  };
+}
+
 /** Maps and deduplicates the public repository without trusting its JSON shape. */
 export function createLiveSnapshotFromRows(
   rows: readonly unknown[],
   asOfInput: string | Date = new Date(),
 ): DemoSnapshot {
-  const asOfDate = asOfInput instanceof Date ? new Date(asOfInput) : new Date(asOfInput);
-  if (!Number.isFinite(asOfDate.getTime())) throw new TypeError("asOf must be a valid date");
-  const asOf = asOfDate.toISOString();
-  const mapped = sortJobsNewestFirst(
-    rows.flatMap((row) => {
-      if (typeof row !== "object" || row === null) return [];
-      const job = rowToCanonicalJob(row as LiveJobRow, asOf);
-      return job ? [job] : [];
-    }),
-  );
-  const jobs = sortJobsNewestFirst(deduplicateMappedJobs(mapped));
-
-  return Object.freeze({
-    asOf,
-    rawRecords: Object.freeze([]),
-    jobs: Object.freeze(jobs),
-  });
+  return buildLiveSnapshotFromRows(rows, asOfInput).snapshot;
 }
 
 /** Creates an honestly labelled emergency copy from the last verified public feed export. */
@@ -681,16 +780,16 @@ function parseTotal(contentRange: string | null): number | null {
   return match ? Number(match[1]) : null;
 }
 
-async function fetchJobsPage(
+async function fetchJobsDeltaPage(
   offset: number,
   snapshotAt: string,
   includeCount = false,
 ): Promise<JobsPage> {
   const url = new URL("/rest/v1/jobs", SUPABASE_URL);
   url.searchParams.set("select", SELECT_FIELDS);
-  url.searchParams.set("is_active", "eq.true");
-  url.searchParams.set("created_at", `lte.${snapshotAt}`);
-  url.searchParams.set("order", "sort_date.desc,first_seen_at.desc,id.desc");
+  url.searchParams.append("updated_at", `gt.${BUNDLED_FALLBACK_CAPTURED_AT}`);
+  url.searchParams.append("updated_at", `lte.${snapshotAt}`);
+  url.searchParams.set("order", "updated_at.asc,id.asc");
   url.searchParams.set("limit", String(PAGE_SIZE));
   url.searchParams.set("offset", String(offset));
 
@@ -704,19 +803,24 @@ async function fetchJobsPage(
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   if (!response.ok) {
-    throw new Error(`The public jobs repository returned ${response.status}`);
+    throw new Error(`upstream_http_${response.status}`);
   }
   const payload: unknown = await response.json();
-  if (!Array.isArray(payload)) throw new Error("The public jobs repository returned invalid data");
+  if (!Array.isArray(payload)) throw new Error("upstream_invalid_json_shape");
   return {
     rows: payload.filter((row): row is LiveJobRow => typeof row === "object" && row !== null),
     total: includeCount ? parseTotal(response.headers.get("content-range")) : null,
   };
 }
 
-async function fetchAllLiveRows(snapshotAt: string): Promise<LiveJobRow[]> {
-  const first = await fetchJobsPage(0, snapshotAt, true);
-  if (first.rows.length < PAGE_SIZE) return first.rows;
+async function fetchAllDeltaRows(snapshotAt: string): Promise<LiveJobRow[]> {
+  const first = await fetchJobsDeltaPage(0, snapshotAt, true);
+  if (first.rows.length < PAGE_SIZE) {
+    if (first.total !== null && first.rows.length !== first.total) {
+      throw new Error("upstream_incomplete_delta");
+    }
+    return first.rows;
+  }
 
   if (first.total !== null) {
     const offsets: number[] = [];
@@ -724,29 +828,121 @@ async function fetchAllLiveRows(snapshotAt: string): Promise<LiveJobRow[]> {
       offsets.push(offset);
     }
     const remaining = await Promise.all(
-      offsets.map((offset) => fetchJobsPage(offset, snapshotAt)),
+      offsets.map((offset) => fetchJobsDeltaPage(offset, snapshotAt)),
     );
-    return [first.rows, ...remaining.map((page) => page.rows)].flat();
+    const rows = [first.rows, ...remaining.map((page) => page.rows)].flat();
+    if (rows.length !== first.total) throw new Error("upstream_incomplete_delta");
+    return rows;
   }
 
   const rows = [...first.rows];
   for (let offset = PAGE_SIZE; ; offset += PAGE_SIZE) {
-    const page = await fetchJobsPage(offset, snapshotAt);
+    const page = await fetchJobsDeltaPage(offset, snapshotAt);
     rows.push(...page.rows);
     if (page.rows.length < PAGE_SIZE) return rows;
   }
+}
+
+function mergedVerifiedRows(deltaRows: readonly LiveJobRow[]): LiveJobRow[] {
+  const rowsById = new Map<string, LiveJobRow>();
+  for (const candidate of BUNDLED_FALLBACK_ROWS) {
+    if (typeof candidate !== "object" || candidate === null) continue;
+    const row = candidate as LiveJobRow;
+    const id = requiredText(row.id);
+    if (id) rowsById.set(id, row);
+  }
+  for (const row of deltaRows) {
+    const id = requiredText(row.id);
+    if (id) rowsById.set(id, row);
+  }
+  return [...rowsById.values()];
+}
+
+function duplicateRowIds(rows: readonly LiveJobRow[]): number {
+  const seen = new Set<string>();
+  let duplicates = 0;
+  for (const row of rows) {
+    const id = requiredText(row.id);
+    if (!id) continue;
+    if (seen.has(id)) duplicates += 1;
+    else seen.add(id);
+  }
+  return duplicates;
+}
+
+function minimumVerifiedRowCount(): number {
+  if (BUNDLED_FALLBACK_ROWS.length < 10) return BUNDLED_FALLBACK_ROWS.length;
+  return Math.floor(BUNDLED_FALLBACK_ROWS.length * MIN_VERIFIED_FEED_RATIO);
 }
 
 async function refreshPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot> {
   const snapshotAt = asOf ?? new Date(
     Math.floor(Date.now() / SNAPSHOT_INTERVAL_MS) * SNAPSHOT_INTERVAL_MS,
   ).toISOString();
-  const rows = await fetchAllLiveRows(snapshotAt);
-  const snapshot = createLiveSnapshotFromRows(rows, snapshotAt);
-  if (snapshot.jobs.length === 0) {
-    throw new Error("The public jobs repository did not return any usable listings");
-  }
-  return snapshot;
+  const startedAt = Date.now();
+  feedHealth = { ...feedHealth, lastAttemptAt: isoNow() };
+  feedLog("info", "refresh_started", {
+    snapshotAt,
+    baselineRows: BUNDLED_FALLBACK_ROWS.length,
+  });
+
+  const deltaRows = await fetchAllDeltaRows(snapshotAt);
+  const duplicateDeltaIds = duplicateRowIds(deltaRows);
+  feedHealth = {
+    ...feedHealth,
+    deltaRows: deltaRows.length,
+    duplicateDeltaIds,
+  };
+  if (duplicateDeltaIds > 0) throw new Error("duplicate_delta_ids");
+  const rows = mergedVerifiedRows(deltaRows);
+  feedHealth = { ...feedHealth, mergedRows: rows.length };
+  if (rows.length < minimumVerifiedRowCount()) throw new Error("catastrophic_feed_shrink");
+
+  const built = buildLiveSnapshotFromRows(rows, snapshotAt);
+  const maxInvalidRows = Math.max(3, Math.floor(rows.length * 0.02));
+  if (built.invalidRows > maxInvalidRows) throw new Error("excess_invalid_rows");
+  const activeJobs = built.snapshot.jobs.filter((job) => job.active).length;
+  feedHealth = {
+    ...feedHealth,
+    mappedRows: built.mappedRows,
+    canonicalJobs: built.snapshot.jobs.length,
+    activeJobs,
+    invalidRows: built.invalidRows,
+  };
+  const minActiveJobs = BUNDLED_FALLBACK_ROWS.length < 10
+    ? Math.min(1, BUNDLED_FALLBACK_ROWS.length)
+    : Math.floor(BUNDLED_FALLBACK_ROWS.length * 0.45);
+  if (activeJobs < minActiveJobs) throw new Error("catastrophic_active_feed_shrink");
+
+  const finishedAt = isoNow();
+  feedHealth = {
+    status: "healthy",
+    mode: "live",
+    snapshotAt,
+    fallbackCapturedAt: null,
+    lastAttemptAt: feedHealth.lastAttemptAt,
+    lastSuccessAt: finishedAt,
+    nextRetryAt: null,
+    consecutiveFailures: 0,
+    baselineRows: BUNDLED_FALLBACK_ROWS.length,
+    deltaRows: deltaRows.length,
+    mergedRows: rows.length,
+    mappedRows: built.mappedRows,
+    canonicalJobs: built.snapshot.jobs.length,
+    activeJobs,
+    invalidRows: built.invalidRows,
+    duplicateDeltaIds,
+    refreshDurationMs: Date.now() - startedAt,
+  };
+  feedLog("info", "refresh_succeeded", {
+    snapshotAt,
+    deltaRows: deltaRows.length,
+    mergedRows: rows.length,
+    canonicalJobs: built.snapshot.jobs.length,
+    activeJobs,
+    durationMs: feedHealth.refreshDurationMs,
+  });
+  return built.snapshot;
 }
 
 function currentSnapshotBoundary(): string {
@@ -788,12 +984,23 @@ function unavailableSnapshot(
   });
 }
 
+function safeFailureCode(error: unknown): string {
+  if (
+    error instanceof Error &&
+    /^[a-z0-9_]{1,80}$/.test(error.message)
+  ) {
+    return error.message;
+  }
+  if (error instanceof DOMException && error.name === "TimeoutError") return "upstream_timeout";
+  return "refresh_failed";
+}
+
 /**
  * Production reads Timley's existing public, RLS-protected job repository.
  * Tests opt into the deterministic fixture explicitly and never hit the network.
  */
 export async function getPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot> {
-  if (process.env.TIMLEY_USE_DEMO_JOBS === "true") {
+  if (productionDemoJobsRequested()) {
     return createDemoSnapshot(asOf ?? getDemoSnapshotAt());
   }
 
@@ -830,11 +1037,35 @@ export async function getPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot
         latestExpiresAt: (Math.floor(refreshedAt / SNAPSHOT_INTERVAL_MS) + 1) * SNAPSHOT_INTERVAL_MS,
       });
     })
-    .catch(() => {
+    .catch((error: unknown) => {
       const fallback = unavailableSnapshot(snapshotAt, staleSnapshot);
+      const failures = feedHealth.consecutiveFailures + 1;
+      const retryDelayMs = nextRetryDelayMs(failures);
+      const failedAt = Date.now();
+      feedHealth = {
+        ...feedHealth,
+        status: "degraded",
+        mode: "verified-fallback",
+        snapshotAt,
+        fallbackCapturedAt: fallback.fallbackCapturedAt ?? BUNDLED_FALLBACK_CAPTURED_AT,
+        nextRetryAt: new Date(failedAt + retryDelayMs).toISOString(),
+        consecutiveFailures: failures,
+        canonicalJobs: fallback.jobs.length,
+        activeJobs: fallback.jobs.filter((job) => job.active).length,
+        refreshDurationMs: feedHealth.lastAttemptAt
+          ? Math.max(0, failedAt - Date.parse(feedHealth.lastAttemptAt))
+          : null,
+      };
+      feedLog("warn", "refresh_failed_using_verified_fallback", {
+        snapshotAt,
+        failureCode: safeFailureCode(error),
+        consecutiveFailures: failures,
+        retryDelayMs,
+        fallbackJobs: fallback.jobs.length,
+      });
       return rememberSnapshot(fallback, {
         latest: !asOf,
-        latestExpiresAt: Date.now() + FALLBACK_RETRY_MS,
+        latestExpiresAt: failedAt + retryDelayMs,
       });
     })
     .finally(() => {

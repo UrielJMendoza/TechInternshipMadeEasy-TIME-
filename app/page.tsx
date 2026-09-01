@@ -2,7 +2,6 @@ import { JobCard } from "@/app/components/JobCard";
 import { PopularCompanyRail } from "@/app/components/PopularCompanyRail";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
-import { SnapshotNotice } from "@/app/components/SnapshotNotice";
 import { getFeedStats, getNewestPostedJobs } from "@/lib/jobs";
 import { getPublicJobsSnapshot } from "@/lib/jobs/live";
 
@@ -25,8 +24,6 @@ export default async function Home() {
           <a className="text-link home-intro-link" href="/jobs">Browse jobs</a>
         </div>
       </section>
-
-      <SnapshotNotice capturedAt={snapshot.fallbackCapturedAt} />
 
       <PopularCompanyRail />
 

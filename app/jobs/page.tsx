@@ -2,7 +2,6 @@ import type { Metadata } from "next";
 import { JobsExplorer } from "@/app/components/JobsExplorer";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
-import { SnapshotNotice } from "@/app/components/SnapshotNotice";
 import { JOB_MAJOR_OPTIONS, parseFilters, queryJobs, serializeFilters } from "@/lib/jobs";
 import { getPublicJobsSnapshot } from "@/lib/jobs/live";
 
@@ -26,7 +25,6 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
       <section className="page-intro">
         <h1>Newest jobs, grouped by company</h1>
       </section>
-      <SnapshotNotice capturedAt={snapshot.fallbackCapturedAt} />
       <div className="jobs-shell">
         <JobsExplorer
           key={serializeFilters(filters) || "all-jobs"}

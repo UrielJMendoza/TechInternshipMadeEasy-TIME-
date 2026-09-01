@@ -107,7 +107,6 @@ summary {
 .company-rail,
 .feed-preview,
 .page-intro,
-.snapshot-notice,
 .jobs-shell,
 .content-shell,
 .sources-content,
@@ -546,30 +545,6 @@ summary {
 }
 
 .demo-notice p {
-  margin: 0;
-}
-
-.snapshot-notice {
-  display: grid;
-  grid-template-columns: 118px minmax(0, 760px);
-  gap: 24px;
-  padding: 16px 0;
-  border-bottom: 1px solid var(--line);
-  color: var(--quiet);
-  font-size: 12px;
-  line-height: 1.55;
-}
-
-.snapshot-notice strong {
-  color: var(--paper);
-  font-family: var(--mono);
-  font-size: 10px;
-  font-weight: 400;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-.snapshot-notice p {
   margin: 0;
 }
 
@@ -1554,7 +1529,6 @@ summary {
   .company-rail,
   .feed-preview,
   .page-intro,
-  .snapshot-notice,
   .jobs-shell,
   .content-shell,
   .sources-content,
@@ -1704,8 +1678,7 @@ summary {
     line-height: 42px;
   }
 
-  .demo-notice,
-  .snapshot-notice {
+  .demo-notice {
     grid-template-columns: 1fr;
     gap: 8px;
   }

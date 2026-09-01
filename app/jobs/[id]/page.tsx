@@ -4,7 +4,6 @@ import { Recency } from "@/app/components/Recency";
 import { SaveButton } from "@/app/components/SaveButton";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
-import { SnapshotNotice } from "@/app/components/SnapshotNotice";
 import { getJobById } from "@/lib/jobs";
 import { getPublicJobsSnapshot } from "@/lib/jobs/live";
 
@@ -36,7 +35,6 @@ export default async function JobDetailPage({ params }: JobDetailProps) {
     return (
       <main id="main-content">
         <SiteHeader active="jobs" />
-        <SnapshotNotice capturedAt={snapshot.fallbackCapturedAt} />
         <div className="detail-shell">
           <a className="back-link" href="/jobs"><span aria-hidden="true">←</span> Back to newest jobs</a>
           <div className="empty-state">
@@ -62,7 +60,6 @@ export default async function JobDetailPage({ params }: JobDetailProps) {
   return (
     <main id="main-content">
       <SiteHeader active="jobs" />
-      <SnapshotNotice capturedAt={snapshot.fallbackCapturedAt} />
       <div className="detail-shell">
         <a className="back-link" href="/jobs"><span aria-hidden="true">←</span> Back to newest jobs</a>
         <article className="detail-card">

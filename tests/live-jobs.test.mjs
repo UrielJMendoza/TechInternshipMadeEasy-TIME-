@@ -462,6 +462,127 @@ test("date-only and discovery timestamps keep their honest precision", () => {
   assert.equal(monthOld.items[0].freshnessLabel, "1 month ago");
 });
 
+test("community dates stay source-reported and cannot impersonate a fresh employer post", () => {
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({
+      id: "community-date",
+      title: "Software Engineer Intern",
+      primary_apply_url: "https://jobs.lever.co/community/date-role",
+      primary_source: "speedyapply",
+      posted_date: "2026-08-21",
+      first_seen_at: "2026-08-10T12:00:00.000Z",
+      last_seen_at: "2026-08-21T12:00:00.000Z",
+    }),
+    liveRow({
+      id: "verified-date",
+      company: "Acme",
+      title: "Security Engineer Intern",
+      primary_apply_url: "https://jobs.lever.co/acme/verified-date",
+      primary_source: "lever:acme",
+      posted_date: "2026-08-20",
+      first_seen_at: "2026-08-20T12:00:00.000Z",
+      last_seen_at: "2026-08-21T12:00:00.000Z",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+  const page = queryJobs({}, {
+    snapshot,
+    now: "2026-08-21T22:00:00.000Z",
+  });
+
+  assert.deepEqual(page.items.map((job) => job.id), [
+    snapshot.jobs.find((job) => job.sourceRecordIds.includes("verified-date")).id,
+    snapshot.jobs.find((job) => job.sourceRecordIds.includes("community-date")).id,
+  ]);
+  const community = page.items.find((job) => job.title === "Software Engineer Intern");
+  assert.equal(community?.freshnessKind, "reported");
+  assert.equal(community?.dateProvenance, "source-reported");
+  assert.equal(community?.possibleRepost, true);
+  assert.deepEqual(community?.sourceNames, ["SpeedyApply community list"]);
+});
+
+test("complete duplicate titles win and remaining clipped titles are labelled", () => {
+  const sharedUrl = "https://jobs.ashbyhq.com/notion/e66c6658-9e65-4c58-8db2-844628b6e8f8";
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({
+      id: "clipped-copy",
+      title: "Software Engineering Intern – Platfo...",
+      primary_apply_url: sharedUrl,
+      primary_source: "zapplyjobs",
+    }),
+    liveRow({
+      id: "complete-copy",
+      title: "Software Engineering Intern – Platform Infrastructure",
+      primary_apply_url: sharedUrl,
+      primary_source: "ashby:notion",
+    }),
+    liveRow({
+      id: "only-clipped",
+      company: "Acme",
+      title: "Security Engineering Intern – Detec...",
+      primary_apply_url: "https://jobs.lever.co/acme/clipped",
+      primary_source: "zapplyjobs",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+  const page = queryJobs({}, { snapshot });
+  const merged = page.items.find((job) => job.sourceNames.length === 2);
+  const clipped = page.items.find((job) => job.company === "Acme");
+
+  assert.equal(merged?.title, "Software Engineering Intern – Platform Infrastructure");
+  assert.equal(merged?.titleIncomplete, false);
+  assert.deepEqual(merged?.sourceNames, ["Ashby employer board", "ZApplyJobs community list"]);
+  assert.equal(clipped?.titleIncomplete, true);
+});
+
+test("ambiguous and senior new-grad titles are withheld from the public feed", () => {
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({
+      id: "senior-role",
+      role_type: "new_grad",
+      title: "Senior Software Engineer",
+      primary_apply_url: "https://jobs.lever.co/acme/senior",
+    }),
+    liveRow({
+      id: "level-two-role",
+      role_type: "new_grad",
+      title: "Software Engineer II",
+      primary_apply_url: "https://jobs.lever.co/acme/level-two",
+    }),
+    liveRow({
+      id: "early-role",
+      role_type: "new_grad",
+      title: "Software Engineer, New Grad",
+      primary_apply_url: "https://jobs.lever.co/acme/early",
+    }),
+    liveRow({
+      id: "product-role",
+      role_type: "new_grad",
+      title: "Product Manager, New Grad",
+      category: "product",
+      primary_apply_url: "https://jobs.lever.co/acme/product",
+    }),
+    liveRow({
+      id: "student-senior-role",
+      role_type: "new_grad",
+      title: "Rising Senior Software Engineer Program",
+      primary_apply_url: "https://jobs.lever.co/acme/student-senior",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+  const page = queryJobs({}, { snapshot, limit: 10 });
+
+  assert.deepEqual(
+    new Set(page.items.map((job) => job.title)),
+    new Set([
+      "Software Engineer, New Grad",
+      "Product Manager, New Grad",
+      "Rising Senior Software Engineer Program",
+    ]),
+  );
+  assert.equal(getJobById(
+    snapshot.jobs.find((job) => job.sourceRecordIds.includes("senior-role")).id,
+    { snapshot },
+  ), null);
+});
+
 test("search matches unordered field prefixes and common role aliases", () => {
   const snapshot = createLiveSnapshotFromRows([
     liveRow({ location_type: "remote", display_location: "United States" }),
@@ -479,6 +600,49 @@ test("search matches unordered field prefixes and common role aliases", () => {
   assert.equal(queryJobs({ location: "California" }, {
     snapshot: createLiveSnapshotFromRows([liveRow()], "2026-08-21T22:00:00.000Z"),
   }).total, 1);
+});
+
+test("technical search preserves punctuation, phrases, and workplace intent", () => {
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({
+      id: "cplusplus-role",
+      role_type: "new_grad",
+      title: "C++ Software Engineer, New Grad",
+      primary_apply_url: "https://jobs.lever.co/acme/cplusplus",
+      location_type: "remote",
+    }),
+    liveRow({
+      id: "dotnet-role",
+      role_type: "new_grad",
+      title: "C# / .NET Software Engineer, New Grad",
+      primary_apply_url: "https://jobs.lever.co/acme/dotnet",
+      location_type: "hybrid",
+    }),
+    liveRow({
+      id: "network-role",
+      role_type: "new_grad",
+      title: "Network Engineer, New Grad",
+      primary_apply_url: "https://jobs.lever.co/acme/network",
+      location_type: "onsite",
+    }),
+    liveRow({
+      id: "sre-role",
+      role_type: "new_grad",
+      title: "Site Reliability Engineer, New Grad",
+      primary_apply_url: "https://jobs.lever.co/acme/sre",
+      location_type: "onsite",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+
+  assert.equal(queryJobs({ q: "C++" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "C#" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: ".NET" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "dot net" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "SRE" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: '"site reliability"' }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "remote C++" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "remote network" }, { snapshot }).total, 0);
+  assert.equal(queryJobs({ q: "onsite network" }, { snapshot }).total, 1);
 });
 
 test("location search expands postal codes without treating prose as a state", () => {

@@ -27,6 +27,9 @@ export function JobCard({ job, liveRecency = false }: JobCardProps) {
         <a className="job-card-link" href={`/jobs/${encodeURIComponent(job.id)}`}>
           <h3 id={titleId}>{job.title}</h3>
         </a>
+        {job.titleIncomplete ? (
+          <span className="job-title-note">Source title appears shortened</span>
+        ) : null}
         <p className="job-company">
           <span>{job.company}</span>
           <span aria-hidden="true">/</span>

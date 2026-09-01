@@ -4,7 +4,7 @@ export type JobCardData = {
   title: string;
   location: string;
   freshnessLabel: string;
-  freshnessKind: "posted" | "found";
+  freshnessKind: "posted" | "reported" | "found";
   roleLevel: "Internship" | "New grad";
   workplace: "Remote" | "Hybrid" | "On-site";
   compensation?: string;
@@ -16,9 +16,14 @@ export type JobCardData = {
   sourceNames: string[];
   team?: string;
   summary?: string;
+  titleIncomplete?: boolean;
+  dateProvenance?: "employer-verified" | "source-reported";
+  possibleRepost?: boolean;
   postedAt?: string | null;
   postedAtPrecision?: "date" | "timestamp";
   firstSeenAt?: string;
+  lastSeenAt?: string;
+  lastCheckedAt?: string;
 };
 
 export type JobFilters = {

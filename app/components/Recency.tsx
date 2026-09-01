@@ -1,4 +1,4 @@
-type RecencyKind = "posted" | "found";
+type RecencyKind = "posted" | "reported" | "found";
 
 type RecencyProps = {
   kind: RecencyKind;
@@ -51,7 +51,7 @@ function displayRecencyLabel(
   precision: "date" | "timestamp" = "timestamp",
   recalculate = false,
 ): string {
-  const isLegacy = /^(?:Posted|Found(?: by Timley)?)\s+/i.test(label);
+  const isLegacy = /^(?:Posted|Source reports|Found(?: by Timley)?)\s+/i.test(label);
   if ((recalculate || isLegacy) && timestamp) {
     const currentLabel = precision === "date"
       ? relativeCalendarAge(timestamp)
@@ -61,7 +61,7 @@ function displayRecencyLabel(
 
   if (!isLegacy) return label;
 
-  const compact = label.replace(/^(?:Posted|Found(?: by Timley)?)\s+/i, "");
+  const compact = label.replace(/^(?:Posted|Source reports|Found(?: by Timley)?)\s+/i, "");
   if (/^today$/i.test(compact)) return "Today";
   if (/^yesterday$/i.test(compact)) return "1 day ago";
   if (/^just now$/i.test(compact)) return "Just now";
@@ -110,7 +110,11 @@ export function Recency({
   recalculate = false,
 }: RecencyProps) {
   const displayLabel = displayRecencyLabel(label, timestamp, precision, recalculate);
-  const semanticKind = kind === "posted" ? "Posted" : "Found by Timley";
+  const semanticKind = kind === "posted"
+    ? "Posted"
+    : kind === "reported"
+      ? "Source reports"
+      : "Found by Timley";
   const visibleLabel = `${semanticKind} ${displayLabel.toLowerCase()}`;
   const dateTime = timestamp && Number.isFinite(Date.parse(timestamp)) ? timestamp : undefined;
 

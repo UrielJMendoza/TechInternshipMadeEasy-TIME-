@@ -1,7 +1,9 @@
 import {
+  classifyEarlyCareerEligibility,
   createDemoSnapshot,
   getDemoSnapshotAt,
   InvalidCursorError,
+  isTruncatedJobTitle,
   normalizeAtsHostname,
   normalizeEmployer,
   sanitizeEmployerPostedAt,
@@ -41,6 +43,7 @@ const SELECT_FIELDS = [
   "posted_date",
   "first_seen_at",
   "last_seen_at",
+  "last_checked_at",
   "is_active",
   "salary_raw",
   "sponsorship",
@@ -144,6 +147,39 @@ function sourceIdFor(row: LiveJobRow, applicationUrl: string): SourceId {
   return "simplify";
 }
 
+function rawSourceFor(row: LiveJobRow): string {
+  return optionalText(row.primary_source)?.toLowerCase() ?? "";
+}
+
+function isOfficialConfiguredSource(source: string): boolean {
+  return /^(?:gh|greenhouse|ashby|lever):/.test(source);
+}
+
+function sourceLabelFor(row: LiveJobRow, fallbackSourceId: SourceId): string {
+  const source = rawSourceFor(row);
+  if (/^(?:gh|greenhouse):/.test(source)) return "Greenhouse employer board";
+  if (source.startsWith("ashby:")) return "Ashby employer board";
+  if (source.startsWith("lever:")) return "Lever employer board";
+  switch (source) {
+    case "simplify":
+      return "SimplifyJobs community list";
+    case "speedyapply":
+      return "SpeedyApply community list";
+    case "zapplyjobs":
+      return "ZApplyJobs community list";
+    case "zshah101":
+      return "zshah101 community list";
+    case "vanshb03":
+      return "Vansh internships community list";
+    case "northwesternfintech":
+      return "Northwestern Fintech community list";
+    default:
+      return fallbackSourceId === "github-new-grad"
+        ? "GitHub community list"
+        : "Community-discovered listing";
+  }
+}
+
 function workplace(value: unknown): CanonicalJob["workplace"] {
   if (value === "remote") return "Remote";
   if (value === "hybrid") return "Hybrid";
@@ -192,6 +228,7 @@ function rowToCanonicalJob(row: LiveJobRow, asOf: string): CanonicalJob | null {
   const applicationUrl = safeApplicationUrl(row.primary_apply_url);
   const firstSeenAt = timestamp(row.first_seen_at);
   const lastSeenAt = timestamp(row.last_seen_at) ?? firstSeenAt;
+  const lastCheckedAt = timestamp(row.last_checked_at);
   const rawPostedAt = optionalText(row.posted_date);
   const sanitizedEmployerPostedAt = sanitizeEmployerPostedAt(rawPostedAt, asOf);
   const employerPostedAt = sanitizedEmployerPostedAt &&
@@ -216,6 +253,12 @@ function rowToCanonicalJob(row: LiveJobRow, asOf: string): CanonicalJob | null {
   if (Date.parse(lastSeenAt) < Date.parse(firstSeenAt)) return null;
 
   const primarySourceId = sourceIdFor(row, applicationUrl);
+  const rawSource = rawSourceFor(row);
+  const dateProvenance = employerPostedAt
+    ? isOfficialConfiguredSource(rawSource)
+      ? "employer-verified" as const
+      : "source-reported" as const
+    : undefined;
   const normalizedEmployer = normalizeEmployer(companyName);
   if (!normalizedEmployer) return null;
 
@@ -230,6 +273,11 @@ function rowToCanonicalJob(row: LiveJobRow, asOf: string): CanonicalJob | null {
     sourceRecordIds: [id],
     companyName,
     title,
+    titleQuality: isTruncatedJobTitle(title) ? "truncated" : "complete",
+    eligibilityStatus: classifyEarlyCareerEligibility(
+      title,
+      roleType === "internship" ? "Internship" : "New grad",
+    ),
     location,
     roleLevel: roleType === "internship" ? "Internship" : "New grad",
     workplace: workplace(row.location_type),
@@ -244,11 +292,14 @@ function rowToCanonicalJob(row: LiveJobRow, asOf: string): CanonicalJob | null {
     companyDomain: companyDomain(row),
     applicationUrl,
     employerPostedAt,
+    dateProvenance,
     employerPostedPrecision: employerPostedAt
       ? /^\d{4}-\d{2}-\d{2}$/.test(rawPostedAt ?? "") ? "date" : "timestamp"
       : undefined,
     firstSeenAt,
     lastSeenAt,
+    lastCheckedAt: lastCheckedAt ?? undefined,
+    sourceLabels: [sourceLabelFor(row, primarySourceId)],
     active: row.is_active !== false,
   };
 }
@@ -487,9 +538,19 @@ function stableJobId(identity: string): string {
 function mergeDuplicateJobs(group: CanonicalJob[]): CanonicalJob {
   const ordered = sortJobsNewestFirst(group);
   const primary = ordered[0];
+  const titleRecord = [...group].sort((left, right) =>
+    Number(isTruncatedJobTitle(left.title)) - Number(isTruncatedJobTitle(right.title)) ||
+    Number(left.dateProvenance !== "employer-verified") - Number(right.dateProvenance !== "employer-verified") ||
+    right.title.length - left.title.length ||
+    left.title.localeCompare(right.title)
+  )[0];
   const employerDates = group
     .filter((job) => job.employerPostedAt)
     .sort((a, b) => {
+      const provenanceOrder =
+        Number(a.dateProvenance !== "employer-verified") -
+        Number(b.dateProvenance !== "employer-verified");
+      if (provenanceOrder !== 0) return provenanceOrder;
       const dateOrder = (a.employerPostedAt ?? "").localeCompare(b.employerPostedAt ?? "");
       if (dateOrder !== 0) return dateOrder;
       return Number(a.employerPostedPrecision !== "date") - Number(b.employerPostedPrecision !== "date");
@@ -501,6 +562,9 @@ function mergeDuplicateJobs(group: CanonicalJob[]): CanonicalJob {
   return {
     ...primary,
     id: stableJobId(publicIdentity),
+    title: titleRecord.title,
+    titleQuality: isTruncatedJobTitle(titleRecord.title) ? "truncated" : "complete",
+    eligibilityStatus: classifyEarlyCareerEligibility(titleRecord.title, primary.roleLevel),
     legacyId: stableJobId(legacyVisibleIdentity(primary)),
     legacyIds: [...new Set(group.flatMap((job) => [
       stableJobId(canonicalApplicationKey(job.applicationUrl)),
@@ -510,9 +574,15 @@ function mergeDuplicateJobs(group: CanonicalJob[]): CanonicalJob {
     contributingSourceIds: [...new Set(group.flatMap((job) => job.contributingSourceIds))].sort(),
     sourceRecordIds: [...new Set(group.flatMap((job) => job.sourceRecordIds))].sort(),
     employerPostedAt: dated?.employerPostedAt ?? null,
+    dateProvenance: dated?.dateProvenance,
     employerPostedPrecision: dated?.employerPostedPrecision,
     firstSeenAt: group.map((job) => job.firstSeenAt).sort()[0],
     lastSeenAt: group.map((job) => job.lastSeenAt).sort().at(-1)!,
+    lastCheckedAt: group
+      .flatMap((job) => job.lastCheckedAt ? [job.lastCheckedAt] : [])
+      .sort()
+      .at(-1),
+    sourceLabels: [...new Set(group.flatMap((job) => job.sourceLabels ?? []))].sort(),
     active: group.some((job) => job.active),
   };
 }

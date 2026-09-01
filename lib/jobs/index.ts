@@ -269,6 +269,8 @@ export type CanonicalJob = {
   sourceRecordIds: string[];
   companyName: string;
   title: string;
+  titleQuality?: "complete" | "truncated";
+  eligibilityStatus?: "accepted" | "review" | "quarantined";
   location: string;
   roleLevel: "Internship" | "New grad";
   workplace: "Remote" | "Hybrid" | "On-site";
@@ -285,10 +287,13 @@ export type CanonicalJob = {
   companyDomain?: string;
   applicationUrl: string;
   employerPostedAt: string | null;
+  dateProvenance?: "employer-verified" | "source-reported";
   /** Date-only employer values must not be presented with invented hour precision. */
   employerPostedPrecision?: "date" | "timestamp";
   firstSeenAt: string;
   lastSeenAt: string;
+  lastCheckedAt?: string;
+  sourceLabels?: readonly string[];
   active: boolean;
 };
 
@@ -299,7 +304,7 @@ export type JobListItem = {
   title: string;
   location: string;
   freshnessLabel: string;
-  freshnessKind: "posted" | "found";
+  freshnessKind: "posted" | "reported" | "found";
   roleLevel: "Internship" | "New grad";
   workplace: "Remote" | "Hybrid" | "On-site";
   compensation?: string;
@@ -311,17 +316,22 @@ export type JobListItem = {
   sourceNames: string[];
   team?: string;
   summary?: string;
+  titleIncomplete?: boolean;
+  dateProvenance?: "employer-verified" | "source-reported";
+  possibleRepost?: boolean;
   postedAt?: string | null;
   postedAtPrecision?: "date" | "timestamp";
   firstSeenAt?: string;
+  lastSeenAt?: string;
+  lastCheckedAt?: string;
 };
 
 export type Freshness = {
-  kind: "posted" | "found";
+  kind: "posted" | "reported" | "found";
   at: string;
   label: string;
   precision: "date" | "timestamp";
-  semanticLabel: "Employer posting date" | "First observed by Timley";
+  semanticLabel: "Verified employer posting date" | "Source-reported date" | "First observed by Timley";
 };
 
 export type SourceHealth = {
@@ -359,7 +369,7 @@ export type JobPage = {
 export const DEMO_CANONICAL_JOB_COUNT = 4_416;
 export const DEFAULT_PAGE_SIZE = 36;
 export const MAX_PAGE_SIZE = 60;
-const CURSOR_VERSION = 3;
+const CURSOR_VERSION = 4;
 const HOUR_MS = 60 * 60 * 1_000;
 const DAY_MS = 24 * HOUR_MS;
 const FUTURE_DATE_TOLERANCE_MS = 6 * HOUR_MS;
@@ -467,6 +477,55 @@ export function normalizeRequisitionId(value: string | null | undefined): string
     .replace(/\s+/g, "")
     .toLocaleUpperCase("en-US");
   return normalized || null;
+}
+
+export function isTruncatedJobTitle(value: string): boolean {
+  return /(?:\.{3}|…)(?:\s*)$/u.test(value.normalize("NFKC").trim());
+}
+
+function hasExplicitEarlyCareerEvidence(title: string): boolean {
+  return /\b(?:intern(?:ship)?|co(?:-|\s)?op|new\s*(?:-|\/|\s)\s*grad(?:uate)?|recent\s*(?:-|\/|\s)\s*grad(?:uate)?|university\s+graduate|early\s+career|entry\s*(?:-|\s)\s*level|graduate|student|trainee|apprentice|junior)\b/i.test(title);
+}
+
+/** High-confidence public eligibility rules; ambiguous seniority is held for review. */
+export function classifyEarlyCareerEligibility(
+  title: string,
+  roleLevel: CanonicalJob["roleLevel"],
+): "accepted" | "review" | "quarantined" {
+  const normalized = title.normalize("NFKC").trim();
+  if (roleLevel === "Internship") {
+    return "accepted";
+  }
+  if (
+    /\b(?:principal|head|vice\s+president|vp|postdoctoral|postdoc)\b/i.test(normalized) ||
+    /\bdirector\b(?!['’]s\s+office)/i.test(normalized) ||
+    /\b(?:senior|sr\.?)\b/i.test(normalized) &&
+      !/\b(?:rising|college|university|high\s+school)\s+senior\b/i.test(normalized)
+  ) {
+    return "quarantined";
+  }
+  if (hasExplicitEarlyCareerEvidence(normalized)) return "accepted";
+  if (
+    /\bmanager\b/i.test(normalized) &&
+    !/\b(?:associate|assistant|junior)\s+product\s+manager\b/i.test(normalized) &&
+    !/\bproduct\s+manager\s+(?:associate|graduate)\b/i.test(normalized)
+  ) {
+    return "quarantined";
+  }
+  if (
+    /\b(?:staff|lead|architect)\b/i.test(normalized) ||
+    /\b(?:engineer|developer|scientist|analyst)\s+(?:ii|iii|iv|[2-9])\b/i.test(normalized) ||
+    /\b(?:level|grade)\s*(?:ii|iii|iv|[2-9])\b/i.test(normalized)
+  ) {
+    return "review";
+  }
+  return "accepted";
+}
+
+function isPubliclyEligible(job: CanonicalJob): boolean {
+  return (
+    job.eligibilityStatus ?? classifyEarlyCareerEligibility(job.title, job.roleLevel)
+  ) === "accepted";
 }
 
 export type AtsIdentityInput = Pick<
@@ -600,6 +659,12 @@ export function deduplicateJobs(
       (a, b) => (SOURCE_ORDER.get(a) ?? 999) - (SOURCE_ORDER.get(b) ?? 999),
     );
     const activeEvidence = officialRecords.length > 0 ? officialRecords : group;
+    const titleRecord = [...group].sort((left, right) =>
+      Number(isTruncatedJobTitle(left.title)) - Number(isTruncatedJobTitle(right.title)) ||
+      comparePrimaryRecords(left, right) ||
+      right.title.length - left.title.length
+    )[0];
+    const titleQuality = isTruncatedJobTitle(titleRecord.title) ? "truncated" : "complete";
 
     return {
       id: canonicalJobId(group),
@@ -611,7 +676,9 @@ export function deduplicateJobs(
       contributingSourceIds,
       sourceRecordIds: group.map((record) => record.sourceRecordId).sort(lexicalCompare),
       companyName: primary.companyName,
-      title: primary.title,
+      title: titleRecord.title,
+      titleQuality,
+      eligibilityStatus: classifyEarlyCareerEligibility(titleRecord.title, primary.roleLevel),
       location: primary.location,
       roleLevel: primary.roleLevel,
       workplace: primary.workplace,
@@ -624,6 +691,7 @@ export function deduplicateJobs(
       logoTone: primary.logoTone,
       applicationUrl: primary.applicationUrl,
       employerPostedAt: datedOfficial?.employerPostedAt ?? null,
+      dateProvenance: datedOfficial ? "employer-verified" : undefined,
       employerPostedPrecision: datedOfficial ? "timestamp" : undefined,
       firstSeenAt: group
         .map((record) => record.firstSeenAt)
@@ -632,6 +700,11 @@ export function deduplicateJobs(
         .map((record) => record.lastSeenAt)
         .sort(lexicalCompare)
         .at(-1)!,
+      lastCheckedAt: group
+        .map((record) => record.lastSeenAt)
+        .sort(lexicalCompare)
+        .at(-1)!,
+      sourceLabels: contributingSourceIds.map((sourceId) => sourceFor(sourceId).name),
       active: activeEvidence.some((record) => record.active),
     };
   });
@@ -684,14 +757,15 @@ function relativeCalendarDateLabel(timestamp: string, now: string | Date): strin
 export function getFreshness(job: CanonicalJob, now: string | Date): Freshness {
   if (job.employerPostedAt) {
     const precision = job.employerPostedPrecision ?? "timestamp";
+    const verified = job.dateProvenance === "employer-verified";
     return {
-      kind: "posted",
+      kind: verified ? "posted" : "reported",
       at: job.employerPostedAt,
       label: precision === "date"
         ? relativeCalendarDateLabel(job.employerPostedAt, now)
         : relativeDateLabel(job.employerPostedAt, now),
       precision,
-      semanticLabel: "Employer posting date",
+      semanticLabel: verified ? "Verified employer posting date" : "Source-reported date",
     };
   }
   return {
@@ -704,21 +778,28 @@ export function getFreshness(job: CanonicalJob, now: string | Date): Freshness {
 }
 
 export function isNewThisWeek(job: CanonicalJob, now: string | Date): boolean {
-  if (!job.employerPostedAt) return false;
+  if (!job.employerPostedAt || job.dateProvenance !== "employer-verified") return false;
   const elapsed = asDate(now, "now").getTime() - Date.parse(job.employerPostedAt);
   return elapsed >= 0 && elapsed <= 7 * DAY_MS;
 }
 
 export type JobSortTuple = {
   sortAt: string;
-  freshnessKind: "posted" | "found";
+  freshnessKind: "posted" | "reported" | "found";
   id: string;
 };
 
 export function getJobSortTuple(job: CanonicalJob): JobSortTuple {
+  const usesVerifiedDate = Boolean(
+    job.employerPostedAt && job.dateProvenance === "employer-verified",
+  );
   return {
-    sortAt: job.employerPostedAt ?? job.firstSeenAt,
-    freshnessKind: job.employerPostedAt ? "posted" : "found",
+    sortAt: usesVerifiedDate ? job.employerPostedAt! : job.firstSeenAt,
+    freshnessKind: usesVerifiedDate
+      ? "posted"
+      : job.employerPostedAt
+        ? "reported"
+        : "found",
     id: job.id,
   };
 }
@@ -726,7 +807,8 @@ export function getJobSortTuple(job: CanonicalJob): JobSortTuple {
 function compareSortTuples(a: JobSortTuple, b: JobSortTuple): number {
   if (a.sortAt !== b.sortAt) return a.sortAt > b.sortAt ? -1 : 1;
   if (a.freshnessKind !== b.freshnessKind) {
-    return a.freshnessKind === "posted" ? -1 : 1;
+    const order = { posted: 0, found: 1, reported: 2 } as const;
+    return order[a.freshnessKind] - order[b.freshnessKind];
   }
   return lexicalCompare(a.id, b.id);
 }
@@ -860,7 +942,7 @@ export const parseJobFilters = parseFilters;
 export const serializeJobFilters = serializeFilters;
 
 type CursorPayload = {
-  version: 3;
+  version: 4;
   asOf: string;
   evaluatedAt: string;
   snapshotRevision: string;
@@ -958,7 +1040,7 @@ export function decodeJobCursor(cursor: string): CursorPayload {
     typeof companyKey !== "string" ||
     companyKey.length > 160 ||
     !validCanonicalIso(sortAt) ||
-    (freshnessKind !== "posted" && freshnessKind !== "found") ||
+    (freshnessKind !== "posted" && freshnessKind !== "reported" && freshnessKind !== "found") ||
     typeof id !== "string" ||
     id.length < 1 ||
     id.length > 128 ||
@@ -968,7 +1050,7 @@ export function decodeJobCursor(cursor: string): CursorPayload {
     throw new InvalidCursorError();
   }
   return {
-    version: 3,
+    version: 4,
     asOf,
     evaluatedAt,
     snapshotRevision,
@@ -1303,6 +1385,16 @@ function normalizeForSearch(value: string): string {
     .replace(/\s+/g, " ");
 }
 
+function normalizeTechnicalSearchText(value: string): string {
+  return normalizeForSearch(
+    value
+      .replace(/\bc\+\+(?=\b|\s|$)/gi, " cplusplus ")
+      .replace(/\bc#(?=\b|\s|$)/gi, " csharp ")
+      .replace(/(?:^|\s)\.net(?=\b|\s|$)/gi, " dotnet ")
+      .replace(/\bdot\s+net\b/gi, " dotnet "),
+  );
+}
+
 const US_STATE_ALIASES = [
   ["alabama", "al"], ["alaska", "ak"], ["arizona", "az"], ["arkansas", "ar"],
   ["california", "ca"], ["colorado", "co"], ["connecticut", "ct"], ["delaware", "de"],
@@ -1363,12 +1455,38 @@ function locationSearchText(value: string): string {
   return [...expansions].join(" ");
 }
 
-function searchTermsMatch(query: string, searchable: string): boolean {
-  const wanted = normalizeForSearch(query).split(" ").filter(Boolean);
-  const available = normalizeForSearch(searchable).split(" ").filter(Boolean);
-  return wanted.every((term) => available.some((word) =>
-    term.length <= 2 ? word === term : word.startsWith(term)
-  ));
+type SearchClause = { phrase: boolean; value: string };
+
+function searchClauses(query: string): SearchClause[] {
+  const clauses: SearchClause[] = [];
+  const prepared = query
+    .replace(/\bdot\s+net\b/gi, "dotnet")
+    .replace(/\bon\s*(?:-|\s)\s*site\b/gi, "onsite");
+  for (const match of prepared.matchAll(/"([^"]+)"|(\S+)/g)) {
+    const value = normalizeTechnicalSearchText(match[1] ?? match[2] ?? "");
+    if (value) clauses.push({ phrase: Boolean(match[1]), value });
+  }
+  return clauses;
+}
+
+function searchTermsMatch(query: string, fields: readonly string[]): boolean {
+  const normalizedFields = fields.map(normalizeTechnicalSearchText);
+  const available = normalizedFields.join(" ").split(" ").filter(Boolean);
+  const exactTechnicalTerms = new Set(["cplusplus", "csharp", "dotnet", "sre"]);
+  return searchClauses(query).every((clause) => {
+    if (clause.phrase) {
+      return normalizedFields.some((field) =>
+        ` ${field} `.includes(` ${clause.value} `)
+      );
+    }
+    return clause.value.split(" ").filter(Boolean).every((term) =>
+      available.some((word) =>
+        exactTechnicalTerms.has(term) || term.length <= 2
+          ? word === term
+          : word.startsWith(term)
+      )
+    );
+  });
 }
 
 function locationTermsMatch(query: string, location: string): boolean {
@@ -1489,25 +1607,45 @@ function matchesFilters(job: CanonicalJob, filters: JobFilters): boolean {
   if (filters.q) {
     const aliases = [
       job.roleLevel === "New grad" ? "new grad graduate entry level" : "intern internship",
-      job.workplace === "On-site" ? "on site onsite" : job.workplace,
       /\bsoftware\s+engineer/i.test(job.title) ? "swe" : "",
       /\bmachine\s+learning/i.test(job.title) ? "ml" : "",
+      /\bsite\s+reliability/i.test(`${job.title} ${job.team ?? ""}`) ? "sre" : "",
     ];
-    const searchable = [
+    const searchableFields = [
       job.title,
       job.companyName,
       job.category,
       job.team ?? "",
       locationSearchText(job.location),
       ...aliases,
-    ].join(" ");
-    if (!searchTermsMatch(filters.q, searchable)) return false;
+    ];
+    for (const clause of searchClauses(filters.q)) {
+      if (!clause.phrase && clause.value === "remote") {
+        if (job.workplace !== "Remote") return false;
+        continue;
+      }
+      if (!clause.phrase && clause.value === "hybrid") {
+        if (job.workplace !== "Hybrid") return false;
+        continue;
+      }
+      if (!clause.phrase && (clause.value === "onsite" || clause.value === "on site")) {
+        if (job.workplace !== "On-site") return false;
+        continue;
+      }
+      const serializedClause = clause.phrase ? `"${clause.value}"` : clause.value;
+      if (!searchTermsMatch(serializedClause, searchableFields)) return false;
+    }
   }
   return true;
 }
 
 function toListItem(job: CanonicalJob, now: string | Date): JobListItem {
   const freshness = getFreshness(job, now);
+  const reportedAfterDiscovery = Boolean(
+    job.dateProvenance === "source-reported" &&
+    job.employerPostedAt &&
+    Date.parse(job.employerPostedAt) - Date.parse(job.firstSeenAt) > DAY_MS,
+  );
   return {
     id: job.id,
     company: job.companyName,
@@ -1523,12 +1661,17 @@ function toListItem(job: CanonicalJob, now: string | Date): JobListItem {
     logoTone: job.logoTone,
     companyDomain: job.companyDomain,
     applyUrl: job.applicationUrl,
-    sourceNames: job.contributingSourceIds.map((sourceId) => sourceFor(sourceId).name),
+    sourceNames: [...(job.sourceLabels ?? job.contributingSourceIds.map((sourceId) => sourceFor(sourceId).name))],
     team: job.team,
     summary: job.summary,
+    titleIncomplete: job.titleQuality === "truncated" || isTruncatedJobTitle(job.title),
+    dateProvenance: job.dateProvenance,
+    possibleRepost: reportedAfterDiscovery,
     postedAt: job.employerPostedAt,
-    postedAtPrecision: freshness.kind === "posted" ? freshness.precision : undefined,
+    postedAtPrecision: job.employerPostedAt ? freshness.precision : undefined,
     firstSeenAt: job.firstSeenAt,
+    lastSeenAt: job.lastSeenAt,
+    lastCheckedAt: job.lastCheckedAt,
   };
 }
 
@@ -1587,7 +1730,11 @@ export function queryJobs(
   }
   const filteredJobs = sortJobsForFeed(
     snapshot.jobs.filter(
-      (job) => job.active && job.firstSeenAt <= asOf && matchesFilters(job, filters),
+      (job) =>
+        job.active &&
+        job.firstSeenAt <= asOf &&
+        isPubliclyEligible(job) &&
+        matchesFilters(job, filters),
     ),
     evaluatedAt,
   );
@@ -1605,7 +1752,7 @@ export function queryJobs(
   const lastJob = pageJobs.at(-1);
   const nextCursor = hasMore && lastJob
       ? encodeJobCursor({
-        version: 3,
+        version: 4,
         asOf,
         evaluatedAt,
         snapshotRevision,
@@ -1655,7 +1802,7 @@ export function getFeedStats(options: FeedStatsOptions = {}): FeedStats {
   const now = canonicalTimestamp(options.now ?? new Date(), "now");
   const nowDate = asDate(now, "now");
   const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
-  const activeJobs = snapshot.jobs.filter((job) => job.active);
+  const activeJobs = snapshot.jobs.filter((job) => job.active && isPubliclyEligible(job));
   const dayStart = utcDayStart(nowDate);
   const weekBoundary = nowDate.getTime() - 7 * DAY_MS;
   const sourceHealth = getSourceHealth({ asOf: snapshot.asOf, now, snapshot });
@@ -1688,19 +1835,22 @@ export function getJobById(
 ): JobListItem | null {
   const now = canonicalTimestamp(options.now ?? new Date(), "now");
   const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
-  const direct = snapshot.jobs.find((candidate) => candidate.id === id && candidate.active);
+  const direct = snapshot.jobs.find(
+    (candidate) => candidate.id === id && candidate.active && isPubliclyEligible(candidate),
+  );
   const legacyMatches = direct
     ? []
     : snapshot.jobs.filter(
         (candidate) =>
           candidate.active &&
+          isPubliclyEligible(candidate) &&
           (candidate.legacyId === id || candidate.legacyIds?.includes(id)),
       );
   const job = direct ?? (legacyMatches.length === 1 ? legacyMatches[0] : null);
   return job ? toListItem(job, now) : null;
 }
 
-/** Homepage helper: genuine employer dates only, never discovery-time backfills. */
+/** Homepage helper: supplied dates only, with their provenance kept explicit. */
 export function getNewestPostedJobs(
   options: GetJobOptions & { limit?: number; todayOnly?: boolean } = {},
 ): JobListItem[] {
@@ -1710,7 +1860,7 @@ export function getNewestPostedJobs(
   const limit = normalizeLimit(options.limit ?? 6);
   return sortJobsForFeed(
     snapshot.jobs.filter((job) => {
-      if (!job.active || !job.employerPostedAt) return false;
+      if (!job.active || !isPubliclyEligible(job) || !job.employerPostedAt) return false;
       return !options.todayOnly || Date.parse(job.employerPostedAt) >= dayStart;
     }),
     now,

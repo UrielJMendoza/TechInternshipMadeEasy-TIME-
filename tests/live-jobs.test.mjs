@@ -34,7 +34,7 @@ const liveModule = await import(
 );
 const domainModule = await import(domainUrl);
 
-const { createLiveSnapshotFromRows } = liveModule;
+const { createLiveSnapshotFromRows, providerIdentityFromUrl } = liveModule;
 const { getJobById, InvalidCursorError, parseFilters, queryJobs } = domainModule;
 
 test("bundled fallback preserves the complete last verified public feed", async () => {
@@ -54,8 +54,12 @@ test("bundled fallback preserves the complete last verified public feed", async 
   assert.equal(rows.length, 5_190);
   assert.equal(new Set(rows.map((row) => row.id)).size, 5_190);
   assert.ok(rows.every((row) => row.is_active === true));
-  assert.equal(snapshot.jobs.length, 5_037);
-  assert.equal(new Set(snapshot.jobs.map((job) => job.id)).size, 5_037);
+  assert.equal(snapshot.jobs.length, 4_913);
+  assert.equal(new Set(snapshot.jobs.map((job) => job.id)).size, 4_913);
+  const providerKeys = snapshot.jobs
+    .map((job) => providerIdentityFromUrl(job.applicationUrl, job.companyName)?.key)
+    .filter(Boolean);
+  assert.equal(new Set(providerKeys).size, providerKeys.length);
 });
 
 test("a live repository failure serves a labelled, cursor-stable verified copy", async () => {
@@ -252,6 +256,107 @@ test("live mapping merges mirrored Workday links only when the employer requisit
   assert.deepEqual(brunswick?.sourceRecordIds, ["brunswick-locale", "brunswick-search"]);
 });
 
+test("provider identities merge URL variants without merging different native jobs", () => {
+  const cases = [
+    {
+      provider: "ashby",
+      company: "Notion",
+      first: "https://jobs.ashbyhq.com/notion/e66c6658-9e65-4c58-8db2-844628b6e8f8",
+      mirror: "https://jobs.ashbyhq.com/notion/e66c6658-9e65-4c58-8db2-844628b6e8f8/application?embed=true",
+      other: "https://jobs.ashbyhq.com/notion/11111111-1111-4111-8111-111111111111",
+    },
+    {
+      provider: "greenhouse",
+      company: "Acme",
+      first: "https://job-boards.greenhouse.io/acme/jobs/1234567",
+      mirror: "https://boards.greenhouse.io/acme/jobs/1234567?gh_src=feed",
+      other: "https://job-boards.greenhouse.io/acme/jobs/7654321",
+    },
+    {
+      provider: "icims",
+      company: "SIG",
+      first: "https://careers-sig.icims.com/jobs/13737/software-engineer/job",
+      mirror: "https://jobs-sig.icims.com/jobs/13737/another-slug/job?mobile=false",
+      other: "https://careers-sig.icims.com/jobs/13738/software-engineer/job",
+    },
+    {
+      provider: "bytedance",
+      company: "TikTok",
+      first: "https://jobs.bytedance.com/en/position/7535652251402352903/detail",
+      mirror: "https://lifeattiktok.com/search/7535652251402352903?spread=5MWH5CQ",
+      other: "https://jobs.bytedance.com/en/position/7535652251402352904/detail",
+    },
+    {
+      provider: "workable",
+      company: "Acme",
+      first: "https://apply.workable.com/acme/j/ABCDEF1234/",
+      mirror: "https://apply.workable.com/acme/j/ABCDEF1234/?utm_source=feed",
+      other: "https://apply.workable.com/acme/j/ZZZZZZ9999/",
+    },
+    {
+      provider: "apple",
+      company: "Apple",
+      first: "https://jobs.apple.com/en-us/details/200607100/software-engineer-intern",
+      mirror: "https://jobs.apple.com/en-us/details/200607100-3810",
+      other: "https://jobs.apple.com/en-us/details/200607101/software-engineer-intern",
+    },
+    {
+      provider: "oracle",
+      company: "Oracle",
+      first: "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/123456",
+      mirror: "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/OracleCareers/job/123456?utm_source=feed",
+      other: "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/123457",
+    },
+  ];
+
+  for (const fixture of cases) {
+    const first = providerIdentityFromUrl(fixture.first, fixture.company);
+    const mirror = providerIdentityFromUrl(fixture.mirror, fixture.company);
+    const other = providerIdentityFromUrl(fixture.other, fixture.company);
+    assert.equal(first?.provider, fixture.provider);
+    assert.equal(first?.key, mirror?.key, `${fixture.provider} mirrors should match`);
+    assert.notEqual(first?.key, other?.key, `${fixture.provider} requisitions must stay distinct`);
+
+    const snapshot = createLiveSnapshotFromRows([
+      liveRow({ id: `${fixture.provider}-one`, company: fixture.company, primary_apply_url: fixture.first }),
+      liveRow({ id: `${fixture.provider}-mirror`, company: fixture.company, primary_apply_url: fixture.mirror }),
+      liveRow({ id: `${fixture.provider}-other`, company: fixture.company, primary_apply_url: fixture.other }),
+    ], "2026-08-21T22:00:00.000Z");
+    assert.equal(snapshot.jobs.length, 2, fixture.provider);
+  }
+});
+
+test("provider identities stay scoped to tenant, board, and employer", () => {
+  assert.notEqual(
+    providerIdentityFromUrl("https://jobs.ashbyhq.com/alpha/e66c6658-9e65-4c58-8db2-844628b6e8f8", "Alpha")?.key,
+    providerIdentityFromUrl("https://jobs.ashbyhq.com/beta/e66c6658-9e65-4c58-8db2-844628b6e8f8", "Beta")?.key,
+  );
+  assert.notEqual(
+    providerIdentityFromUrl("https://careers-alpha.icims.com/jobs/12345/role/job", "Alpha")?.key,
+    providerIdentityFromUrl("https://careers-beta.icims.com/jobs/12345/role/job", "Beta")?.key,
+  );
+  assert.notEqual(
+    providerIdentityFromUrl("https://apply.workable.com/alpha/j/ABCDEF1234/", "Alpha")?.key,
+    providerIdentityFromUrl("https://apply.workable.com/beta/j/ABCDEF1234/", "Beta")?.key,
+  );
+});
+
+test("a Workday mirror suffix requires the same tenant, base ID, and job slug", () => {
+  const base = "https://acme.wd1.myworkdayjobs.com/careers/job/Austin/Engineer_R123456";
+  const mirror = "https://acme.wd1.myworkdayjobs.com/private/job/Austin/Engineer_R123456-1";
+  const differentStems = createLiveSnapshotFromRows([
+    liveRow({ id: "suffix-one", company: "Acme", primary_apply_url: mirror }),
+    liveRow({ id: "suffix-two", company: "Acme", primary_apply_url: "https://acme.wd1.myworkdayjobs.com/private/job/Austin/Different-Engineer_R123456-2" }),
+  ], "2026-08-21T22:00:00.000Z");
+  assert.equal(differentStems.jobs.length, 2);
+
+  const withBase = createLiveSnapshotFromRows([
+    liveRow({ id: "base", company: "Acme", primary_apply_url: base }),
+    liveRow({ id: "mirror", company: "Acme", primary_apply_url: mirror }),
+  ], "2026-08-21T22:00:00.000Z");
+  assert.equal(withBase.jobs.length, 1);
+});
+
 test("distinct same-title requisitions keep stable IDs and ambiguous legacy IDs fail closed", () => {
   const newest = liveRow({
     id: "newest-requisition",
@@ -314,6 +419,13 @@ test("live public IDs stay stable when a fresher duplicate source wins", () => {
     older.jobs[0].employerPostedAt,
     "a duplicate refresh must not make an older posting look newly posted",
   );
+});
+
+test("provider canonicalization retains exact prior public URL IDs as aliases", () => {
+  const snapshot = createLiveSnapshotFromRows([liveRow()], "2026-08-21T22:00:00.000Z");
+  const current = snapshot.jobs[0];
+  assert.ok(current.legacyIds?.length);
+  assert.equal(getJobById(current.legacyIds[0], { snapshot })?.id, current.id);
 });
 
 test("date-only and discovery timestamps keep their honest precision", () => {

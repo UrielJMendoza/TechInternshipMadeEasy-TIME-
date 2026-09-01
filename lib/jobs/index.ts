@@ -258,6 +258,8 @@ export type CanonicalJob = {
   id: string;
   /** Compatibility alias for a prior public ID; never used when ambiguous. */
   legacyId?: string;
+  /** Exact prior URL-derived IDs retained when provider canonicalization wins. */
+  legacyIds?: readonly string[];
   dedupeKey: string | null;
   normalizedAtsHostname: string | null;
   normalizedEmployer: string;
@@ -1689,7 +1691,11 @@ export function getJobById(
   const direct = snapshot.jobs.find((candidate) => candidate.id === id && candidate.active);
   const legacyMatches = direct
     ? []
-    : snapshot.jobs.filter((candidate) => candidate.legacyId === id && candidate.active);
+    : snapshot.jobs.filter(
+        (candidate) =>
+          candidate.active &&
+          (candidate.legacyId === id || candidate.legacyIds?.includes(id)),
+      );
   const job = direct ?? (legacyMatches.length === 1 ? legacyMatches[0] : null);
   return job ? toListItem(job, now) : null;
 }

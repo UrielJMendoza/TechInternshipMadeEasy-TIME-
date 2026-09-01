@@ -310,11 +310,158 @@ function legacyVisibleIdentity(job: CanonicalJob): string {
   ].join("\u001f");
 }
 
-function employerRequisitionKey(job: CanonicalJob): string | null {
+type ProviderIdentity = {
+  key: string;
+  provider: "apple" | "ashby" | "bytedance" | "greenhouse" | "icims" | "oracle" | "workable" | "workday";
+  /** Workday mirrors may add a numeric suffix on a different careers board. */
+  mirrorEvidenceKey?: string;
+};
+
+function identityPart(value: string): string {
+  return value
+    .normalize("NFKC")
+    .toLocaleLowerCase("en-US")
+    .trim()
+    .replace(/[^a-z0-9._-]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+/**
+ * Extracts only provider-native identities with a tenant, board, or employer
+ * scope. It deliberately returns null for generic URL segments: visually
+ * similar listings are not proof that two requisitions are the same.
+ */
+export function providerIdentityFromUrl(
+  value: string,
+  companyName = "",
+): ProviderIdentity | null {
+  let url: URL;
+  try {
+    url = new URL(value);
+  } catch {
+    return null;
+  }
+  const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
+  const segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  const employer = identityPart(normalizeEmployer(companyName) ?? companyName);
+
+  if (hostname === "jobs.ashbyhq.com") {
+    const board = identityPart(segments[0] ?? "");
+    const nativeId = segments.find((segment, index) =>
+      index > 0 && /^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(segment)
+    )?.toLowerCase();
+    if (board && nativeId) {
+      return { provider: "ashby", key: ["provider", "ashby", board, nativeId].join("\u001f") };
+    }
+  }
+
+  if (/^(?:boards|job-boards|job-boards\.eu)\.greenhouse\.io$/.test(hostname)) {
+    const jobsIndex = segments.findIndex((segment) => segment.toLowerCase() === "jobs");
+    const board = identityPart(jobsIndex > 0 ? segments[jobsIndex - 1] : segments[0] ?? "");
+    const nativeId = jobsIndex >= 0 && /^\d{5,}$/.test(segments[jobsIndex + 1] ?? "")
+      ? segments[jobsIndex + 1]
+      : url.searchParams.get("gh_jid")?.match(/^\d{5,}$/)?.[0];
+    if (board && nativeId) {
+      return { provider: "greenhouse", key: ["provider", "greenhouse", board, nativeId].join("\u001f") };
+    }
+  }
+
+  const workdayTenant = hostname.match(/^([a-z0-9-]+)\.wd\d+\.myworkdayjobs\.com$/)?.[1];
+  if (workdayTenant) {
+    const tenant = identityPart(workdayTenant);
+    const finalSegment = segments.at(-1) ?? "";
+    const match = finalSegment.match(/^(.*)_([a-z]{1,4}-?\d{5,})(?:-(\d+))?$/i);
+    if (tenant && match) {
+      const stem = identityPart(match[1]);
+      const baseId = match[2].toLocaleUpperCase("en-US");
+      const suffix = match[3];
+      const key = [
+        "provider",
+        "workday",
+        tenant,
+        suffix ? `${baseId}-${suffix}` : baseId,
+      ].join("\u001f");
+      return {
+        provider: "workday",
+        key,
+        mirrorEvidenceKey: stem
+          ? ["workday-mirror", tenant, baseId, stem].join("\u001f")
+          : undefined,
+      };
+    }
+  }
+
+  if (hostname.endsWith(".icims.com")) {
+    const jobsIndex = segments.findIndex((segment) => segment.toLowerCase() === "jobs");
+    const nativeId = jobsIndex >= 0 && /^\d{3,}$/.test(segments[jobsIndex + 1] ?? "")
+      ? segments[jobsIndex + 1]
+      : null;
+    const tenant = identityPart(
+      hostname.match(/^(?:careers?|jobs)-([a-z0-9-]+)\.icims\.com$/)?.[1] ?? employer,
+    );
+    if (tenant && nativeId) {
+      return { provider: "icims", key: ["provider", "icims", tenant, nativeId].join("\u001f") };
+    }
+  }
+
+  if (["jobs.bytedance.com", "lifeattiktok.com", "joinbytedance.com"].includes(hostname)) {
+    const positionIndex = segments.findIndex((segment) => segment.toLowerCase() === "position");
+    const nativeId = positionIndex >= 0 && /^\d{8,}$/.test(segments[positionIndex + 1] ?? "")
+      ? segments[positionIndex + 1]
+      : segments.find((segment) => /^\d{8,}$/.test(segment)) ?? null;
+    if (nativeId) {
+      return { provider: "bytedance", key: ["provider", "bytedance", nativeId].join("\u001f") };
+    }
+  }
+
+  if (hostname === "apply.workable.com" || hostname === "jobs.workable.com") {
+    const jobIndex = segments.findIndex((segment) => segment.toLowerCase() === "j");
+    const viewIndex = segments.findIndex((segment) => segment.toLowerCase() === "view");
+    const nativeId = jobIndex >= 0
+      ? segments[jobIndex + 1]
+      : viewIndex >= 0
+        ? segments[viewIndex + 1]
+        : null;
+    const board = identityPart(jobIndex > 0 ? segments[0] : employer);
+    if (board && nativeId && /^[a-z0-9_-]{6,}$/i.test(nativeId)) {
+      return { provider: "workable", key: ["provider", "workable", board, nativeId.toLowerCase()].join("\u001f") };
+    }
+  }
+
+  if (hostname === "jobs.apple.com") {
+    const detailsIndex = segments.findIndex((segment) => segment.toLowerCase() === "details");
+    const nativeId = detailsIndex >= 0
+      ? segments[detailsIndex + 1]?.match(/^(\d{8,})/)?.[1] ?? null
+      : null;
+    if (nativeId) {
+      return { provider: "apple", key: ["provider", "apple", nativeId].join("\u001f") };
+    }
+  }
+
+  if (hostname.endsWith(".oraclecloud.com")) {
+    const jobIndex = segments.findIndex((segment) => segment.toLowerCase() === "job");
+    const nativeId = jobIndex >= 0 && /^[a-z0-9_-]{3,}$/i.test(segments[jobIndex + 1] ?? "")
+      ? segments[jobIndex + 1]
+      : null;
+    const sitesIndex = segments.findIndex((segment) => segment.toLowerCase() === "sites");
+    const tenant = identityPart(hostname.split(".")[0] ?? "");
+    if (tenant && sitesIndex >= 0 && nativeId) {
+      return { provider: "oracle", key: ["provider", "oracle", tenant, nativeId.toLowerCase()].join("\u001f") };
+    }
+  }
+
+  return null;
+}
+
+function stableIdentity(job: CanonicalJob): string {
+  return providerIdentityFromUrl(job.applicationUrl, job.companyName)?.key
+    ?? canonicalApplicationKey(job.applicationUrl);
+}
+
+function priorWorkdayIdentity(job: CanonicalJob): string | null {
   const url = new URL(job.applicationUrl);
   const atsHostname = normalizeAtsHostname(url.toString());
   if (!atsHostname?.endsWith(".myworkdayjobs.com")) return null;
-
   const finalSegment = url.pathname.split("/").filter(Boolean).at(-1) ?? "";
   const match = finalSegment.match(/_([a-z]{1,4}-?\d{5,})(?:-\d+)?$/i);
   if (!match) return null;
@@ -323,10 +470,6 @@ function employerRequisitionKey(job: CanonicalJob): string | null {
     atsHostname,
     match[1].toLocaleUpperCase("en-US"),
   ].join("\u001f");
-}
-
-function stableIdentity(job: CanonicalJob): string {
-  return employerRequisitionKey(job) ?? canonicalApplicationKey(job.applicationUrl);
 }
 
 function stableJobId(identity: string): string {
@@ -359,6 +502,11 @@ function mergeDuplicateJobs(group: CanonicalJob[]): CanonicalJob {
     ...primary,
     id: stableJobId(publicIdentity),
     legacyId: stableJobId(legacyVisibleIdentity(primary)),
+    legacyIds: [...new Set(group.flatMap((job) => [
+      stableJobId(canonicalApplicationKey(job.applicationUrl)),
+      priorWorkdayIdentity(job) ? stableJobId(priorWorkdayIdentity(job)!) : null,
+      ...(job.legacyIds ?? []),
+    ]).filter((id): id is string => Boolean(id)))].sort(),
     contributingSourceIds: [...new Set(group.flatMap((job) => job.contributingSourceIds))].sort(),
     sourceRecordIds: [...new Set(group.flatMap((job) => job.sourceRecordIds))].sort(),
     employerPostedAt: dated?.employerPostedAt ?? null,
@@ -372,6 +520,9 @@ function mergeDuplicateJobs(group: CanonicalJob[]): CanonicalJob {
 function deduplicateMappedJobs(mapped: CanonicalJob[]): CanonicalJob[] {
   const parents = mapped.map((_, index) => index);
   const ownerByIdentity = new Map<string, number>();
+  const providerIdentities = mapped.map((job) =>
+    providerIdentityFromUrl(job.applicationUrl, job.companyName)
+  );
   const find = (index: number): number => {
     let root = index;
     while (parents[root] !== root) root = parents[root];
@@ -389,16 +540,27 @@ function deduplicateMappedJobs(mapped: CanonicalJob[]): CanonicalJob[] {
   };
 
   mapped.forEach((job, index) => {
-    const requisitionKey = employerRequisitionKey(job);
+    const providerIdentity = providerIdentities[index];
     const identities = [
       `application\u001f${canonicalApplicationKey(job.applicationUrl)}`,
-      requisitionKey && `requisition\u001f${requisitionKey}`,
+      providerIdentity?.key,
     ].filter((identity): identity is string => Boolean(identity));
     for (const identity of identities) {
       const owner = ownerByIdentity.get(identity);
       if (owner === undefined) ownerByIdentity.set(identity, index);
       else union(owner, index);
     }
+  });
+
+  // Workday sometimes exposes one requisition through multiple boards with a
+  // terminal -N suffix. Collapse those variants only when their tenant,
+  // validated base requisition, and pre-ID job slug all agree.
+  const ownerByMirrorEvidence = new Map<string, number>();
+  providerIdentities.forEach((identity, index) => {
+    if (!identity?.mirrorEvidenceKey) return;
+    const owner = ownerByMirrorEvidence.get(identity.mirrorEvidenceKey);
+    if (owner === undefined) ownerByMirrorEvidence.set(identity.mirrorEvidenceKey, index);
+    else union(owner, index);
   });
 
   const groups = new Map<number, CanonicalJob[]>();

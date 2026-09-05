@@ -1031,7 +1031,7 @@ begin
     'quarantined_sources', quarantined_total
   );
 end;
-$function$
+$function$;
 
 
 select cron.schedule('ingest-listings', '15 6,18 * * *', $schedule$
@@ -1064,8 +1064,7 @@ select cron.schedule('ingest-listings', '15 6,18 * * *', $schedule$
       timeout_milliseconds := 60000
     )
     from configuration
-    where length(configuration.function_url) <= 2048
-      and configuration.function_url ~ '^https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+(:[0-9]{1,5})?([/?#][^[:space:]]*)?$'
+    where configuration.function_url = 'https://ogkocdharscqzdrnlpnq.supabase.co/functions/v1/ingest'
       and nullif(btrim(configuration.cron_secret), '') is not null;
   
 $schedule$);
@@ -1100,8 +1099,7 @@ select cron.schedule('timley-ingest-zshah101', '20 6,18 * * *', $schedule$
       timeout_milliseconds := 60000
     )
     from configuration
-    where length(configuration.function_url) <= 2048
-      and configuration.function_url ~ '^https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+(:[0-9]{1,5})?([/?#][^[:space:]]*)?$'
+    where configuration.function_url = 'https://ogkocdharscqzdrnlpnq.supabase.co/functions/v1/ingest'
       and nullif(btrim(configuration.cron_secret), '') is not null;
   
 $schedule$);
@@ -1136,8 +1134,7 @@ select cron.schedule('timley-ingest-zapplyjobs', '25 6,18 * * *', $schedule$
       timeout_milliseconds := 60000
     )
     from configuration
-    where length(configuration.function_url) <= 2048
-      and configuration.function_url ~ '^https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+(:[0-9]{1,5})?([/?#][^[:space:]]*)?$'
+    where configuration.function_url = 'https://ogkocdharscqzdrnlpnq.supabase.co/functions/v1/ingest'
       and nullif(btrim(configuration.cron_secret), '') is not null;
   
 $schedule$);
@@ -1172,8 +1169,7 @@ select cron.schedule('timley-ingest-northwesternfintech', '30 6,18 * * *', $sche
       timeout_milliseconds := 60000
     )
     from configuration
-    where length(configuration.function_url) <= 2048
-      and configuration.function_url ~ '^https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+(:[0-9]{1,5})?([/?#][^[:space:]]*)?$'
+    where configuration.function_url = 'https://ogkocdharscqzdrnlpnq.supabase.co/functions/v1/ingest'
       and nullif(btrim(configuration.cron_secret), '') is not null;
   
 $schedule$);
@@ -1208,8 +1204,7 @@ select cron.schedule('timley-ingest-speedyapply', '35 6,18 * * *', $schedule$
       timeout_milliseconds := 60000
     )
     from configuration
-    where length(configuration.function_url) <= 2048
-      and configuration.function_url ~ '^https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+(:[0-9]{1,5})?([/?#][^[:space:]]*)?$'
+    where configuration.function_url = 'https://ogkocdharscqzdrnlpnq.supabase.co/functions/v1/ingest'
       and nullif(btrim(configuration.cron_secret), '') is not null;
   
 $schedule$);
@@ -1244,8 +1239,7 @@ select cron.schedule('timley-ingest-vanshb03', '40 6,18 * * *', $schedule$
       timeout_milliseconds := 60000
     )
     from configuration
-    where length(configuration.function_url) <= 2048
-      and configuration.function_url ~ '^https://[A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?([.][A-Za-z0-9]([A-Za-z0-9-]*[A-Za-z0-9])?)+(:[0-9]{1,5})?([/?#][^[:space:]]*)?$'
+    where configuration.function_url = 'https://ogkocdharscqzdrnlpnq.supabase.co/functions/v1/ingest'
       and nullif(btrim(configuration.cron_secret), '') is not null;
   
 $schedule$);

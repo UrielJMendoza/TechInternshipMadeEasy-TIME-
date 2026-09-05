@@ -248,7 +248,7 @@ test("job details use record-specific metadata and clear the site-wide image", a
   assert.match(detail, /Employer website/);
   assert.match(detail, /Listing details/);
   assert.match(detail, /<span>Date source<\/span><strong>(?:First observed by Timley|Verified employer date|Source-reported date)<\/strong>/);
-  assert.match(detail, /<span>Last checked<\/span><strong><time dateTime="[^"]+">[^<]+UTC<\/time><\/strong>/);
+  assert.match(detail, /<span>Feed last checked<\/span><strong><time dateTime="[^"]+">[^<]+UTC<\/time><\/strong>/);
   assert.match(detail, /Timley does not have compensation data for this listing|The listing source reports the compensation shown here/);
   assert.doesNotMatch(detail, /is hiring for this early-career/);
   assert.match(detail, /<span>Recency<\/span><strong class="recency recency-(?:newest|fresh|recent|aging|old)"/);

@@ -710,6 +710,26 @@ test("ambiguous titles remain available until employer requirements establish in
   ), null);
 });
 
+test("fresh employer eligibility survives duplicate merging while stale exclusions do not hide jobs", () => {
+  const url='https://jobs.lever.co/acme/experienced-role';
+  const asOf='2026-08-31T22:00:00.000Z';
+  const receipt={status:'verified',checkedAt:'2026-08-31T20:00:00.000Z',sourceUrl:url,contentHash:'a'.repeat(64),title:'Senior Engineer',eligibility:'quarantined',requirements:['Candidates must have 5 years of professional experience.']};
+  const build=evidence=>createLiveSnapshotFromRows([
+    liveRow({id:'evidence-row',role_type:'new_grad',title:'Senior Engineer',primary_apply_url:url,employer_evidence:evidence}),
+    liveRow({id:'community-mirror',role_type:'new_grad',title:'Senior Engineer',primary_apply_url:url,primary_source:'simplify'}),
+  ],asOf);
+  const excluded=build(receipt);
+  assert.equal(excluded.jobs.length,1,'preserve the canonical record for diagnosis');
+  assert.equal(queryJobs({}, {snapshot:excluded}).items.length,0);
+  assert.equal(getJobById(excluded.jobs[0].id,{snapshot:excluded}),null);
+  const graduate=build({...receipt,eligibility:'accepted',requirements:['Fresh PhD graduates are eligible.']});
+  assert.equal(queryJobs({}, {snapshot:graduate}).items.length,1);
+  assert.equal(queryJobs({}, {snapshot:graduate}).items[0].eligibilityNeedsReview,false);
+  const expired=build({...receipt,checkedAt:'2026-08-01T00:00:00.000Z'});
+  assert.equal(queryJobs({}, {snapshot:expired}).items.length,1);
+  assert.equal(queryJobs({}, {snapshot:expired}).items[0].eligibilityNeedsReview,true);
+});
+
 test("search matches unordered field prefixes and common role aliases", () => {
   const snapshot = createLiveSnapshotFromRows([
     liveRow({ location_type: "remote", display_location: "United States" }),

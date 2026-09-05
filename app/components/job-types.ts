@@ -1,5 +1,6 @@
 export type JobCardData = {
   id: string;
+  eligibilityNeedsReview?: boolean;
   evidenceUrl?: string;
   evidenceCheckedAt?: string;
   deadline?: string;

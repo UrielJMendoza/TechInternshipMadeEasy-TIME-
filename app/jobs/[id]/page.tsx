@@ -116,6 +116,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
               {job.requirements?.length ? <><h2>From the employer’s requirements</h2><ul>{job.requirements.map(requirement=><li key={requirement}>{requirement}</li>)}</ul></> : null}
               <h2>Before you apply</h2>
               <ul>
+                {job.eligibilityNeedsReview ? <li>The discovery source lists this as an early-career opportunity. Timley has not confirmed the qualifying graduate or experience requirements; check them with the employer.</li> : null}
                 <li>Review the complete requirements and closing date on the employer’s application page.</li>
                 <li>{compensationNote}</li>
                 <li>Timley does not collect your résumé or application data.</li>
@@ -136,7 +137,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
               <div className="detail-fact"><span>Work style</span><strong>{job.workplace}</strong></div>
               {lastCheckedLabel && job.lastCheckedAt ? (
                 <div className="detail-fact">
-                  <span>Last checked</span>
+                  <span>Feed last checked</span>
                   <strong><time dateTime={job.lastCheckedAt}>{lastCheckedLabel}</time></strong>
                 </div>
               ) : null}

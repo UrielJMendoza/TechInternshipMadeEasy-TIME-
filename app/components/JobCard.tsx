@@ -34,6 +34,7 @@ export function JobCard({ job, liveRecency = false, returnTo = "/jobs" }: JobCar
         {job.titleIncomplete ? (
           <span className="job-title-note">Source title appears shortened</span>
         ) : null}
+        {job.eligibilityNeedsReview ? <span className="job-title-note">Check graduate eligibility with employer</span> : null}
         <p className="job-company">
           <span>{job.company}</span>
           <span aria-hidden="true">/</span>

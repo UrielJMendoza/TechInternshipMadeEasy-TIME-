@@ -308,6 +308,7 @@ export type CanonicalJob = {
 /** Structurally matches the UI's JobCardData type. */
 export type JobListItem = {
   id: string;
+  eligibilityNeedsReview?: boolean;
   evidenceUrl?: string;
   evidenceCheckedAt?: string;
   deadline?: string;
@@ -1678,6 +1679,7 @@ function toListItem(job: CanonicalJob, now: string | Date): JobListItem {
     team: job.team,
     summary: job.summary,
     titleIncomplete: job.titleQuality === "truncated" || isTruncatedJobTitle(job.title),
+    eligibilityNeedsReview: job.eligibilityStatus === "review",
     dateProvenance: job.dateProvenance,
     possibleRepost: reportedAfterDiscovery,
     postedAt: job.employerPostedAt,

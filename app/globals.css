@@ -2470,7 +2470,7 @@ a.company-rail-item:hover {
 
 .active-filter-chips { display:flex;flex-wrap:wrap;gap:8px;margin-top:16px; }
 .active-filter-chips a { font-size:13px;line-height:1.4;padding:7px 10px;border:1px solid var(--line, #d9ded9);border-radius:6px;text-decoration:none;color:inherit; }
-.storage-error { font-size:13px;line-height:1.5;color:#9a3412; }
+.storage-error { font-size:13px;line-height:1.5;color:#f6a898; }
 
 .company-rail-name { display:block; max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 @media(max-width: 600px) { :root { --gutter:20px; } }

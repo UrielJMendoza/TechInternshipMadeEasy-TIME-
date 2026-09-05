@@ -13,7 +13,7 @@ export type EmployerEvidence = {
   compensation?: string;
   deadline?: string;
   postedAt?: string;
-  eligibility?: 'accepted' | 'review';
+  eligibility?: 'accepted' | 'review' | 'quarantined';
   degrees?: string[];
   contentHash?: string;
 };
@@ -45,6 +45,19 @@ export function sponsorshipFromEmployer(description: string): EmployerEvidence['
   ) ? 'Confirmed' : undefined;
 }
 
+/** Exclude only an explicit mandatory professional-experience minimum, with no alternative path. */
+export function eligibilityFromEmployer(title: string, description: string): EmployerEvidence['eligibility'] {
+  const value=plainText(description);
+  if (/\bintern(?:ship)?\b|\b(?:new|recent|fresh)\s+(?:ph\.?d\.?\s+)?grad|\bgraduate\b/i.test(title) ||
+      /\b(?:new|recent|fresh)\s+(?:ph\.?d\.?\s+)?graduates?\b|\b0\s*[-–]\s*[0-3]\s*years\b/i.test(value)) return 'accepted';
+  // An alternative degree, equivalent experience, or a lower experience range needs human review.
+  if (/\b(?:or|alternative|equivalent|substitut\w*|ph\.?d\.?|doctorate)\b|\b[0-3]\+?\s*years\b/i.test(value)) return 'review';
+  const mandatory=value.match(/\b(?:must have|requires?|minimum of|at least)\s+(\d{1,2})\+?\s*years\s+(?:of\s+)?(?:relevant\s+)?(?:professional|industry|full-time)\s+experience\b/i) ||
+    value.match(/\b(\d{1,2})\+?\s*years\s+(?:of\s+)?(?:relevant\s+)?(?:professional|industry|full-time)\s+experience\s+(?:is\s+)?required\b/i);
+  if (mandatory && Number(mandatory[1]) >= 4 && !/\b(?:preferred|desired|ideally)\b/i.test(value)) return 'quarantined';
+  return 'review';
+}
+
 export async function extractEvidence(input: {url:string;title:string;description:string;location?:string;workplace?:string;postedAt?:string;deadline?:string}, now=new Date().toISOString()): Promise<EmployerEvidence> {
   const description=plainText(input.description);
   const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(description));
@@ -56,7 +69,10 @@ export async function extractEvidence(input: {url:string;title:string;descriptio
   const workplace=place==='remote'?'Remote':place==='hybrid'?'Hybrid':place==='onsite'||place==='on-site'?'On-site': !place && /\bremote\b/i.test(input.location??'') && !/\b(?:hybrid|on.?site)\b/i.test(input.location??'') ? 'Remote' : undefined;
   const validDate=(value?:string)=>value && /^\d{4}-\d{2}-\d{2}(?:T.*)?$/.test(value) && Number.isFinite(Date.parse(value)) ? value : undefined;
   const roleText=description.split(/\b(?:About (?:the|this) (?:Role|Job)|Your (?:Role|Impact)|What You(?:’|'|’)ll Do|Responsibilities)\b/i).slice(1).join(' ') || description;
-  const requirements=description.split(/\n+/).map(line=>line.trim()).filter(line=>line.length>30 && /\b(?:fresh|recent|new)\s+(?:Ph[.]?D[.]?\s+)?grad|\b0\s*[-–]\s*3\+?\s*years|\b(?:must|required|minimum|qualifications)\b.{0,100}\b(?:experience|degree|years)\b/i.test(line)).slice(0,3).map(line=>line.length>500?line.slice(0,497).replace(/\s+\S*$/,'')+'…':line);
+  const requirements=description.split(/\n+/).map(line=>line.trim()).filter(line=>line.length>30 &&
+    !/\b(?:hourly rate|salary|compensation|expected to pay|benefits)\b/i.test(line) &&
+    /\b(?:fresh|recent|new)\s+(?:Ph[.]?D[.]?\s+)?grad|\b0\s*[-–]\s*3\+?\s*years|\b(?:currently enrolled|pursuing|must|required|minimum)\b/i.test(line)
+  ).slice(0,3).map(line=>line.length>500?line.slice(0,497).replace(/\s+\S*$/,'')+'…':line);
   const excerpt=roleText.split(/\n+/).map(line=>line.trim()).filter(line=>line.length>80).slice(0,2).join(' ');
   const summary=excerpt.length>650 ? excerpt.slice(0,647).replace(/\s+\S*$/,'')+'…' : excerpt;
   return {
@@ -64,7 +80,7 @@ export async function extractEvidence(input: {url:string;title:string;descriptio
     summary: summary || undefined, requirements,
     location:input.location?.slice(0,500),workplace,compensation,
     sponsorship:sponsorshipFromEmployer(description),degrees,
-    eligibility:/\bintern(?:ship)?\b|\b(?:new|recent|fresh)\s+(?:phd\s+)?grad|\b0\s*[-–]\s*[0-3]\s*\+?\s*years|\bgraduate\b/i.test(input.title+'\n'+description)?'accepted':'review',
+    eligibility:eligibilityFromEmployer(input.title,description),
     postedAt:validDate(input.postedAt),deadline:validDate(input.deadline),
     contentHash:[...new Uint8Array(hash)].map(b=>b.toString(16).padStart(2,'0')).join(''),
   };

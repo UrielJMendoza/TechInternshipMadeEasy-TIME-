@@ -33,7 +33,7 @@ jobs:
           TIMLEY_USE_DEMO_JOBS: "true"
 
       - name: Run domain and rendered-page tests
-        run: node --test tests/jobs-domain.test.mjs tests/live-jobs.test.mjs tests/rendered-html.test.mjs tests/bounded-json.test.mjs
+        run: node --test tests/jobs-domain.test.mjs tests/live-jobs.test.mjs tests/rendered-html.test.mjs tests/bounded-json.test.mjs tests/public-health-monitor.test.mjs
         env:
           NODE_ENV: test
           TIMLEY_USE_DEMO_JOBS: "true"

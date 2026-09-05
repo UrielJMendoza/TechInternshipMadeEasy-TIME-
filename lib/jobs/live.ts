@@ -360,7 +360,7 @@ function rowToCanonicalJob(row: LiveJobRow, asOf: string): CanonicalJob | null {
     companyName,
     title,
     titleQuality: isTruncatedJobTitle(title) ? "truncated" : "complete",
-    eligibilityStatus: classifyEarlyCareerEligibility(
+    eligibilityStatus: evidence.eligibility === "quarantined" || evidence.eligibility === "accepted" || evidence.eligibility === "review" ? evidence.eligibility : classifyEarlyCareerEligibility(
       title,
       roleType === "internship" ? "Internship" : "New grad",
     ),
@@ -670,7 +670,7 @@ function mergeDuplicateJobs(group: CanonicalJob[]): CanonicalJob {
     summary: evidenceRecord?.summary,
     compensation: evidenceRecord?.compensation ?? group.find(job=>job.compensation)?.compensation,
     titleQuality: isTruncatedJobTitle(titleRecord.title) ? "truncated" : "complete",
-    eligibilityStatus: classifyEarlyCareerEligibility(titleRecord.title, primary.roleLevel),
+    eligibilityStatus: evidenceRecord?.eligibilityStatus ?? classifyEarlyCareerEligibility(titleRecord.title, primary.roleLevel),
     legacyId: stableJobId(legacyVisibleIdentity(primary)),
     legacyIds: [...new Set(group.flatMap((job) => [
       stableJobId(canonicalApplicationKey(job.applicationUrl)),

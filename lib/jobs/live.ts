@@ -304,9 +304,9 @@ function logoText(company: string): string {
     .join("") || company.slice(0, 2).toUpperCase();
 }
 
-function rowToCanonicalJob(row: LiveJobRow, asOf: string): CanonicalJob | null {
+function rowToCanonicalJob(row: LiveJobRow, asOf: string, evidenceAsOf = asOf): CanonicalJob | null {
   const id = requiredText(row.id);
-  const evidence = verifiedEvidence(row, asOf);
+  const evidence = verifiedEvidence(row, evidenceAsOf);
   const title = requiredText(evidence.title) ?? requiredText(row.title);
   const companyName = requiredText(row.company);
   const location = requiredText(row.display_location);
@@ -752,6 +752,7 @@ function deduplicateMappedJobs(mapped: CanonicalJob[]): CanonicalJob[] {
 function buildLiveSnapshotFromRows(
   rows: readonly unknown[],
   asOfInput: string | Date = new Date(),
+  evidenceAsOf?: string,
 ): SnapshotBuildResult {
   const asOfDate = asOfInput instanceof Date ? new Date(asOfInput) : new Date(asOfInput);
   if (!Number.isFinite(asOfDate.getTime())) throw new TypeError("asOf must be a valid date");
@@ -763,7 +764,7 @@ function buildLiveSnapshotFromRows(
       invalidRows += 1;
       continue;
     }
-    const job = rowToCanonicalJob(row as LiveJobRow, asOf);
+    const job = rowToCanonicalJob(row as LiveJobRow, asOf, evidenceAsOf ?? asOf);
     if (job) mapped.push(job);
     else invalidRows += 1;
   }
@@ -810,8 +811,13 @@ async function fetchJobsDeltaPage(
   const url = new URL("/rest/v1/jobs", SUPABASE_URL);
   url.searchParams.set("select", SELECT_FIELDS);
   url.searchParams.append("updated_at", `gt.${BUNDLED_FALLBACK_CAPTURED_AT}`);
-  url.searchParams.append("updated_at", `lte.${snapshotAt}`);
-  url.searchParams.set("order", "updated_at.asc,id.asc");
+  // The repository stores current rows, not historical row versions. Filtering
+  // their mutable updated_at by this bucket would hide recently refreshed jobs
+  // and resurrect older bundled copies of jobs that just closed. Only discovery
+  // controls admission to the bucket; current updates and tombstones stay visible.
+  url.searchParams.set("first_seen_at", `lte.${snapshotAt}`);
+  // Source and employer refreshes must not move rows between fetched pages.
+  url.searchParams.set("order", "id.asc");
   url.searchParams.set("limit", String(PAGE_SIZE));
   url.searchParams.set("offset", String(offset));
 
@@ -920,7 +926,9 @@ async function refreshPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot> {
   feedHealth = { ...feedHealth, mergedRows: rows.length };
   if (rows.length < minimumVerifiedRowCount()) throw new Error("catastrophic_feed_shrink");
 
-  const built = buildLiveSnapshotFromRows(rows, snapshotAt);
+  // Evidence belongs to the current rows just collected, even when the receipt
+  // is newer than the discovery bucket. Actual future receipts remain invalid.
+  const built = buildLiveSnapshotFromRows(rows, snapshotAt, new Date(Date.now()).toISOString());
   const maxInvalidRows = Math.max(3, Math.floor(rows.length * 0.02));
   if (built.invalidRows > maxInvalidRows) throw new Error("excess_invalid_rows");
   const activeJobs = built.snapshot.jobs.filter((job) => job.active).length;

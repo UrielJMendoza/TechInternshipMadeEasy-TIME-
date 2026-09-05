@@ -127,8 +127,8 @@ test("the live reader requests only rows changed since the verified snapshot", a
     assert.equal(requests.length, 1);
     assert.deepEqual(requestUrl.searchParams.getAll("updated_at"), [
       "gt.2026-08-31T22:15:17.000Z",
-      `lte.${snapshot.asOf}`,
     ]);
+    assert.equal(requestUrl.searchParams.get("first_seen_at"), `lte.${snapshot.asOf}`);
     assert.equal(requestUrl.searchParams.has("is_active"), false);
     assert.equal(snapshot.jobs.length, 2);
     assert.equal(health.status, "healthy");
@@ -142,6 +142,176 @@ test("the live reader requests only rows changed since the verified snapshot", a
     else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
     if (originalVercelEnvironment === undefined) delete process.env.VERCEL_ENV;
     else process.env.VERCEL_ENV = originalVercelEnvironment;
+  }
+});
+
+// Model the current-row filtering and ordering performed by PostgREST. Updating
+// a row replaces its prior version; an updated_at cutoff cannot recover it.
+function currentRepositoryFetch(rows, onPage) {
+  return async (input) => {
+    const url = new URL(String(input));
+    const filtered = rows.filter((row) => ["updated_at", "first_seen_at"].every((field) =>
+      url.searchParams.getAll(field).every((filter) => {
+        const separator = filter.indexOf(".");
+        const operator = filter.slice(0, separator);
+        const value = Date.parse(filter.slice(separator + 1));
+        return operator === "gt" ? Date.parse(row[field]) > value : Date.parse(row[field]) <= value;
+      })
+    ));
+    const order = (url.searchParams.get("order") ?? "id.asc").split(",").map((part) => part.split(".")[0]);
+    filtered.sort((a, b) => {
+      for (const field of order) {
+        const comparison = String(a[field]).localeCompare(String(b[field]));
+        if (comparison) return comparison;
+      }
+      return 0;
+    });
+    const offset = Number(url.searchParams.get("offset") ?? 0);
+    const page = filtered.slice(offset, offset + Number(url.searchParams.get("limit") ?? 1000));
+    const response = Response.json(page, { headers: { "content-range": `${offset}-${offset + page.length - 1}/${filtered.length}` } });
+    onPage?.(url);
+    return response;
+  };
+}
+
+async function withCurrentRepository(rows, verify, onPage) {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  const originalMode = process.env.TIMLEY_USE_DEMO_JOBS;
+  process.env.TIMLEY_USE_DEMO_JOBS = "false";
+  Date.now = () => Date.parse("2026-09-05T17:14:00.000Z");
+  globalThis.fetch = currentRepositoryFetch(rows, onPage);
+  try {
+    await verify(await loadFreshLiveModule());
+  } finally {
+    globalThis.fetch = originalFetch;
+    Date.now = originalNow;
+    if (originalMode === undefined) delete process.env.TIMLEY_USE_DEMO_JOBS;
+    else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
+  }
+}
+
+test("refreshes inside a discovery bucket retain current jobs and apply closure tombstones", async () => {
+  const rows = [
+    { ...fallbackFixture, is_active: false, updated_at: "2026-09-05T17:10:06.000Z" },
+    liveRow({
+      id: "recently-refreshed-role", company: "ABB", title: "Product Marketing Intern",
+      primary_apply_url: "https://jobs.lever.co/abb/product-marketing",
+      first_seen_at: "2026-09-04T06:15:06.000Z", last_seen_at: "2026-09-05T17:10:06.000Z",
+      updated_at: "2026-09-05T17:10:06.000Z",
+    }),
+    ...Array.from({ length: 10 }, (_, index) => liveRow({
+      id: `not-discovered-at-boundary-${index}`,
+      primary_apply_url: `https://jobs.lever.co/acme/new-discovery-${index}`,
+      first_seen_at: "2026-09-05T17:12:00.000Z", last_seen_at: "2026-09-05T17:12:00.000Z",
+      updated_at: "2026-09-05T17:12:00.000Z",
+    })),
+  ];
+  await withCurrentRepository(rows, async (freshLive) => {
+    const snapshot = await freshLive.getPublicJobsSnapshot();
+    const page = queryJobs({}, { snapshot });
+    assert.equal(snapshot.asOf, "2026-09-05T17:10:00.000Z");
+    assert.equal(page.total, 1);
+    assert.equal(page.items[0].company, "ABB");
+    assert.equal(snapshot.jobs.find(job => job.sourceRecordIds.includes(fallbackFixture.id)).active, false);
+    assert.equal(snapshot.jobs.some(job => job.sourceRecordIds.some(id => id.startsWith("not-discovered"))), false);
+    assert.equal(freshLive.getPublicJobsFeedHealth().mode, "live");
+    assert.equal(freshLive.getPublicJobsFeedHealth().invalidRows, 0);
+  });
+});
+
+test("an employer refresh cannot move current rows between database pages", async () => {
+  const rows = Array.from({ length: 1002 }, (_, index) => liveRow({
+    id: `page-${String(index).padStart(4, "0")}`,
+    primary_apply_url: `https://jobs.lever.co/acme/page-${index}`,
+    updated_at: "2026-09-05T17:08:00.000Z",
+  }));
+  let pages = 0;
+  await withCurrentRepository(rows, async (freshLive) => {
+    const snapshot = await freshLive.getPublicJobsSnapshot();
+    const sourceIds = new Set(snapshot.jobs.flatMap(job => job.sourceRecordIds));
+    assert.equal(pages, 2);
+    assert.equal(freshLive.getPublicJobsFeedHealth().mode, "live");
+    assert.equal(freshLive.getPublicJobsFeedHealth().deltaRows, 1002);
+    assert.equal(freshLive.getPublicJobsFeedHealth().duplicateDeltaIds, 0);
+    for (const row of rows) assert.ok(sourceIds.has(row.id), `missing ${row.id}`);
+  }, () => {
+    pages += 1;
+    if (pages === 1) rows[0].updated_at = "2026-09-05T17:09:00.000Z";
+  });
+});
+
+test("same-bucket reconstruction on another instance rejects a changed cursor revision", async () => {
+  const rows = [liveRow({ id: "changing-role", updated_at: "2026-09-05T17:09:00.000Z" })];
+  await withCurrentRepository(rows, async (firstInstance) => {
+    const first = await firstInstance.getPublicJobsSnapshot();
+    const firstPage = queryJobs({}, { snapshot: first, limit: 1 });
+    assert.ok(firstPage.nextCursor);
+    rows[0].title = "Security Engineer Intern";
+    rows[0].updated_at = "2026-09-05T17:13:00.000Z";
+    assert.equal(await firstInstance.getPublicJobsSnapshot(first.asOf), first);
+    const secondInstance = await loadFreshLiveModule();
+    const rebuilt = await secondInstance.getPublicJobsSnapshot(first.asOf);
+    assert.equal(rebuilt.asOf, first.asOf);
+    assert.throws(() => queryJobs({}, { snapshot: rebuilt, cursor: firstPage.nextCursor }), InvalidCursorError);
+  });
+});
+
+test("live employer receipts use collection time while future receipts remain untrusted", async () => {
+  const makeEvidenceRow = (id, checkedAt, eligibility = "accepted") => {
+    const url = `https://jobs.lever.co/acme/${id}`;
+    return liveRow({
+      id, primary_apply_url: url, updated_at: "2026-09-05T17:13:00.000Z",
+      employer_evidence: { status: "verified", sourceUrl: url, contentHash: "a".repeat(64),
+        checkedAt, title: "Verified employer title", sponsorship: "Not offered", eligibility },
+    });
+  };
+  const rows = [
+    makeEvidenceRow("fresh-receipt", "2026-09-05T17:13:00.000Z"),
+    makeEvidenceRow("future-receipt", "2026-09-05T17:15:00.000Z"),
+    makeEvidenceRow("newly-quarantined", "2026-09-05T17:13:00.000Z", "quarantined"),
+  ];
+  await withCurrentRepository(rows, async (freshLive) => {
+    const snapshot = await freshLive.getPublicJobsSnapshot();
+    const find = id => snapshot.jobs.find(job => job.sourceRecordIds.includes(id));
+    assert.equal(find("fresh-receipt").sponsorship, "Not offered");
+    assert.equal(find("fresh-receipt").title, "Verified employer title");
+    assert.equal(find("future-receipt").sponsorship, undefined);
+    assert.equal(find("future-receipt").title, "Software Engineer Intern");
+    assert.equal(find("newly-quarantined").eligibilityStatus, "quarantined");
+    const publicIds = new Set(queryJobs({}, { snapshot }).items.map(job => job.id));
+    assert.equal(publicIds.has(find("newly-quarantined").id), false);
+    const deterministic = createLiveSnapshotFromRows(rows, snapshot.asOf);
+    assert.equal(deterministic.jobs.find(job => job.sourceRecordIds.includes("fresh-receipt")).sponsorship, undefined);
+  });
+});
+
+test("cursor revisions detect evidence-only changes to eligibility and date provenance", async () => {
+  for (const change of ["eligibility", "dateProvenance"]) {
+    const url = "https://jobs.lever.co/acme/evidence-change";
+    const row = liveRow({
+      id: "evidence-change", primary_apply_url: url, primary_source: "simplify",
+      posted_date: "2026-09-04", first_seen_at: "2026-09-01T12:00:00.000Z",
+      last_seen_at: "2026-09-05T17:09:00.000Z", updated_at: "2026-09-05T17:09:00.000Z",
+    });
+    await withCurrentRepository([row], async (firstInstance) => {
+      const first = await firstInstance.getPublicJobsSnapshot();
+      const firstPage = queryJobs({}, { snapshot: first, limit: 1 });
+      assert.ok(firstPage.nextCursor);
+      row.updated_at = "2026-09-05T17:13:00.000Z";
+      row.employer_evidence = {
+        status: "verified", sourceUrl: url, contentHash: "b".repeat(64), checkedAt: row.updated_at,
+        ...(change === "eligibility" ? { eligibility: "quarantined" } : { postedAt: row.posted_date }),
+      };
+      const secondInstance = await loadFreshLiveModule();
+      const rebuilt = await secondInstance.getPublicJobsSnapshot(first.asOf);
+      const find = snapshot => snapshot.jobs.find(job => job.sourceRecordIds.includes(row.id));
+      assert.equal(find(first).title, find(rebuilt).title);
+      assert.equal(find(first).employerPostedAt, find(rebuilt).employerPostedAt);
+      assert.notEqual(find(first)[change === "eligibility" ? "eligibilityStatus" : change],
+        find(rebuilt)[change === "eligibility" ? "eligibilityStatus" : change]);
+      assert.throws(() => queryJobs({}, { snapshot: rebuilt, cursor: firstPage.nextCursor }), InvalidCursorError, change);
+    });
   }
 });
 

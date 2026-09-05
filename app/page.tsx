@@ -50,18 +50,6 @@ export default async function Home() {
 
       <PopularCompanyRail companies={popularCompanies} />
 
-      <section className="how-it-works" aria-labelledby="how-it-works-title">
-        <div className="section-heading">
-          <h2 id="how-it-works-title">How Timley works</h2>
-          <a href="/how-it-works">Full methodology</a>
-        </div>
-        <ol>
-          <li><strong>Find</strong><span>Timley brings together employer-board links and clearly named community discovery sources.</span></li>
-          <li><strong>Clarify</strong><span>Provider job IDs remove exact duplicates, while posting dates and Timley discovery dates stay separate.</span></li>
-          <li><strong>Apply</strong><span>Every Apply button opens the employer’s site. Timley does not collect your résumé or require an account.</span></li>
-        </ol>
-      </section>
-
       <section className="feed-preview" aria-labelledby="newest-listings-title">
         <div className="section-heading">
           <h2 id="newest-listings-title">Newest listings</h2>

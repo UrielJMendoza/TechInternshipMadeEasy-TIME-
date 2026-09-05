@@ -16,7 +16,13 @@ export async function GET(request: Request) {
     );
   } catch (error) {
     if (error instanceof InvalidCursorError) {
-      return Response.json({ error: "That page link is no longer valid. Reload the feed to continue." }, { status: 400 });
+      return Response.json(
+        {
+          code: "CURSOR_REFRESH_REQUIRED",
+          error: "The jobs changed since this page was loaded. Refreshing keeps your filters intact.",
+        },
+        { status: 409 },
+      );
     }
     return Response.json({ error: "The live jobs feed is temporarily unavailable. Please try again." }, { status: 503 });
   }

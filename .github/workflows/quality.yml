@@ -1,0 +1,61 @@
+name: Quality
+
+on:
+  pull_request:
+  push:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.16.0
+          cache: npm
+
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run typecheck
+
+      - name: Build the test artifact
+        run: npm run build
+        env:
+          TIMLEY_USE_DEMO_JOBS: "true"
+
+      - name: Run domain and rendered-page tests
+        run: node --test tests/jobs-domain.test.mjs tests/live-jobs.test.mjs tests/rendered-html.test.mjs tests/bounded-json.test.mjs tests/public-health-monitor.test.mjs
+        env:
+          NODE_ENV: test
+          TIMLEY_USE_DEMO_JOBS: "true"
+
+      - name: Build the exact Vercel artifact
+        run: npm run build:vercel
+        env:
+          TIMLEY_USE_DEMO_JOBS: "true"
+
+      - name: Exercise the Vercel function artifact
+        run: node --test tests/rendered-html.test.mjs
+        env:
+          NODE_ENV: test
+          TIMLEY_USE_DEMO_JOBS: "true"
+          TIMLEY_TEST_ARTIFACT: vercel
+
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.9.6
+
+      - name: Verify ingestion authorization, failures and employer evidence
+        run: deno test --allow-env --allow-read --config supabase/functions/ingest/deno.json --node-modules-dir=none supabase/functions/ingest/ingest.test.ts supabase/functions/ingest/evidence.test.ts
+
+      - name: Check dependency advisories
+        run: npm audit --audit-level=high

@@ -8,6 +8,7 @@ import { getPublicJobsSnapshot } from "@/lib/jobs/live";
 export const metadata: Metadata = {
   title: "Newest jobs, grouped by company · Timley",
   description: "Browse internships and new-grad roles by major, specialization, location, and work style. No account required.",
+  alternates: { canonical: "/jobs" },
 };
 
 type JobsPageProps = {

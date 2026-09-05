@@ -26,6 +26,20 @@ const fallbackDataUrl = `data:text/javascript;base64,${Buffer.from(
   `export const BUNDLED_FALLBACK_CAPTURED_AT = "2026-08-31T22:15:17.000Z"; export const BUNDLED_FALLBACK_ROWS = ${JSON.stringify([fallbackFixture])};`,
 ).toString("base64")}`;
 const liveSource = await readFile(new URL("../lib/jobs/live.ts", import.meta.url), "utf8");
+let freshLiveModuleSequence = 0;
+
+async function loadFreshLiveModule(fallbackRows = [fallbackFixture]) {
+  freshLiveModuleSequence += 1;
+  const marker = `fresh-${freshLiveModuleSequence}`;
+  const freshFallbackUrl = `data:text/javascript;base64,${Buffer.from(
+    `export const BUNDLED_FALLBACK_CAPTURED_AT = "2026-08-31T22:15:17.000Z"; export const BUNDLED_FALLBACK_ROWS = ${JSON.stringify(fallbackRows)}; export const TEST_MARKER = ${JSON.stringify(marker)};`,
+  ).toString("base64")}`;
+  const source = stripTypeScriptTypes(liveSource)
+    .replace(/from "\.\/index";/, `from "${domainUrl}";`)
+    .replace(/from "\.\/fallback-data";/, `from "${freshFallbackUrl}";`);
+  return import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}#${marker}`);
+}
+
 const runnableLiveSource = stripTypeScriptTypes(liveSource)
   .replace(/from "\.\/index";/, `from "${domainUrl}";`)
   .replace(/from "\.\/fallback-data";/, `from "${fallbackDataUrl}";`);
@@ -34,7 +48,7 @@ const liveModule = await import(
 );
 const domainModule = await import(domainUrl);
 
-const { createLiveSnapshotFromRows } = liveModule;
+const { createLiveSnapshotFromRows, providerIdentityFromUrl } = liveModule;
 const { getJobById, InvalidCursorError, parseFilters, queryJobs } = domainModule;
 
 test("bundled fallback preserves the complete last verified public feed", async () => {
@@ -54,8 +68,12 @@ test("bundled fallback preserves the complete last verified public feed", async 
   assert.equal(rows.length, 5_190);
   assert.equal(new Set(rows.map((row) => row.id)).size, 5_190);
   assert.ok(rows.every((row) => row.is_active === true));
-  assert.equal(snapshot.jobs.length, 5_037);
-  assert.equal(new Set(snapshot.jobs.map((job) => job.id)).size, 5_037);
+  assert.equal(snapshot.jobs.length, 4_857);
+  assert.equal(new Set(snapshot.jobs.map((job) => job.id)).size, 4_857);
+  const providerKeys = snapshot.jobs
+    .map((job) => providerIdentityFromUrl(job.applicationUrl, job.companyName)?.key)
+    .filter(Boolean);
+  assert.equal(new Set(providerKeys).size, providerKeys.length);
 });
 
 test("a live repository failure serves a labelled, cursor-stable verified copy", async () => {
@@ -76,6 +94,117 @@ test("a live repository failure serves a labelled, cursor-stable verified copy",
     globalThis.fetch = originalFetch;
     if (originalMode === undefined) delete process.env.TIMLEY_USE_DEMO_JOBS;
     else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
+  }
+});
+
+test("the live reader requests only rows changed since the verified snapshot", async () => {
+  const freshLive = await loadFreshLiveModule();
+  const originalFetch = globalThis.fetch;
+  const originalMode = process.env.TIMLEY_USE_DEMO_JOBS;
+  const originalVercelEnvironment = process.env.VERCEL_ENV;
+  const requests = [];
+  process.env.TIMLEY_USE_DEMO_JOBS = "false";
+  delete process.env.VERCEL_ENV;
+  globalThis.fetch = async (input) => {
+    requests.push(String(input));
+    return Response.json([
+      liveRow({
+        id: "delta-role",
+        company: "Acme",
+        title: "Security Engineer Intern",
+        primary_apply_url: "https://jobs.lever.co/acme/security-delta",
+        primary_source: "lever:acme",
+        updated_at: "2026-08-31T22:16:00.000Z",
+      }),
+    ], { headers: { "content-range": "0-0/1" } });
+  };
+
+  try {
+    const snapshot = await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+    const requestUrl = new URL(requests[0]);
+
+    assert.equal(requests.length, 1);
+    assert.deepEqual(requestUrl.searchParams.getAll("updated_at"), [
+      "gt.2026-08-31T22:15:17.000Z",
+      `lte.${snapshot.asOf}`,
+    ]);
+    assert.equal(requestUrl.searchParams.has("is_active"), false);
+    assert.equal(snapshot.jobs.length, 2);
+    assert.equal(health.status, "healthy");
+    assert.equal(health.mode, "live");
+    assert.equal(health.baselineRows, 1);
+    assert.equal(health.deltaRows, 1);
+    assert.equal(health.mergedRows, 2);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.TIMLEY_USE_DEMO_JOBS;
+    else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
+    if (originalVercelEnvironment === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = originalVercelEnvironment;
+  }
+});
+
+test("production ignores demo mode and backs off after a failed live refresh", async () => {
+  const freshLive = await loadFreshLiveModule();
+  const originalFetch = globalThis.fetch;
+  const originalMode = process.env.TIMLEY_USE_DEMO_JOBS;
+  const originalVercelEnvironment = process.env.VERCEL_ENV;
+  let requests = 0;
+  process.env.TIMLEY_USE_DEMO_JOBS = "true";
+  process.env.VERCEL_ENV = "production";
+  globalThis.fetch = async () => {
+    requests += 1;
+    return new Response("quota unavailable", { status: 402 });
+  };
+
+  try {
+    const first = await freshLive.getPublicJobsSnapshot();
+    const second = await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+
+    assert.equal(first, second);
+    assert.equal(requests, 1);
+    assert.equal(first.fallbackCapturedAt, "2026-08-31T22:15:17.000Z");
+    assert.equal(first.jobs.length, 1);
+    assert.equal(health.status, "degraded");
+    assert.equal(health.mode, "verified-fallback");
+    assert.equal(health.consecutiveFailures, 1);
+    assert.ok(Date.parse(health.nextRetryAt) > Date.now());
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.TIMLEY_USE_DEMO_JOBS;
+    else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
+    if (originalVercelEnvironment === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = originalVercelEnvironment;
+  }
+});
+
+test("an incomplete delta page cannot replace the verified feed", async () => {
+  const freshLive = await loadFreshLiveModule();
+  const originalFetch = globalThis.fetch;
+  const originalMode = process.env.TIMLEY_USE_DEMO_JOBS;
+  const originalVercelEnvironment = process.env.VERCEL_ENV;
+  process.env.TIMLEY_USE_DEMO_JOBS = "false";
+  delete process.env.VERCEL_ENV;
+  globalThis.fetch = async () => Response.json([
+    liveRow({ id: "only-one-of-two", updated_at: "2026-08-31T22:16:00.000Z" }),
+  ], { headers: { "content-range": "0-0/2" } });
+
+  try {
+    const snapshot = await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+
+    assert.equal(snapshot.fallbackCapturedAt, "2026-08-31T22:15:17.000Z");
+    assert.equal(snapshot.jobs.length, 1);
+    assert.equal(health.mode, "verified-fallback");
+    assert.equal(health.lastSuccessAt, null);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalMode === undefined) delete process.env.TIMLEY_USE_DEMO_JOBS;
+    else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
+    if (originalVercelEnvironment === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = originalVercelEnvironment;
   }
 });
 
@@ -132,10 +261,10 @@ test("live mapping keeps real employer links and rejects placeholder destination
   assert.equal(snapshot.jobs.length, 1);
   assert.equal(snapshot.jobs[0].applicationUrl, liveRow().primary_apply_url);
   assert.equal(snapshot.jobs[0].companyDomain, "notion.so");
-  assert.equal(snapshot.jobs[0].sponsorship, "Confirmed");
+  assert.equal(snapshot.jobs[0].sponsorship, undefined);
 });
 
-test("live mapping understands current sponsorship values and exact empty taxonomy", () => {
+test("community sponsorship claims stay unconfirmed while exact empty taxonomy is preserved", () => {
   const snapshot = createLiveSnapshotFromRows([
     liveRow({ sponsorship: "offers", major_ids: [], niche_ids: [] }),
     liveRow({
@@ -152,8 +281,8 @@ test("live mapping understands current sponsorship values and exact empty taxono
   const restricted = snapshot.jobs.find((job) => job.title === "Hardware Engineering Intern");
   assert.deepEqual(noMajor?.majorIds, []);
   assert.deepEqual(noMajor?.nicheIds, []);
-  assert.equal(noMajor?.sponsorship, "Confirmed");
-  assert.equal(restricted?.sponsorship, "Not offered");
+  assert.equal(noMajor?.sponsorship, undefined);
+  assert.equal(restricted?.sponsorship, undefined);
   assert.equal(queryJobs({ major: "computer-science" }, { snapshot }).total, 0);
 });
 
@@ -252,6 +381,107 @@ test("live mapping merges mirrored Workday links only when the employer requisit
   assert.deepEqual(brunswick?.sourceRecordIds, ["brunswick-locale", "brunswick-search"]);
 });
 
+test("provider identities merge URL variants without merging different native jobs", () => {
+  const cases = [
+    {
+      provider: "ashby",
+      company: "Notion",
+      first: "https://jobs.ashbyhq.com/notion/e66c6658-9e65-4c58-8db2-844628b6e8f8",
+      mirror: "https://jobs.ashbyhq.com/notion/e66c6658-9e65-4c58-8db2-844628b6e8f8/application?embed=true",
+      other: "https://jobs.ashbyhq.com/notion/11111111-1111-4111-8111-111111111111",
+    },
+    {
+      provider: "greenhouse",
+      company: "Acme",
+      first: "https://job-boards.greenhouse.io/acme/jobs/1234567",
+      mirror: "https://boards.greenhouse.io/acme/jobs/1234567?gh_src=feed",
+      other: "https://job-boards.greenhouse.io/acme/jobs/7654321",
+    },
+    {
+      provider: "icims",
+      company: "SIG",
+      first: "https://careers-sig.icims.com/jobs/13737/software-engineer/job",
+      mirror: "https://jobs-sig.icims.com/jobs/13737/another-slug/job?mobile=false",
+      other: "https://careers-sig.icims.com/jobs/13738/software-engineer/job",
+    },
+    {
+      provider: "bytedance",
+      company: "TikTok",
+      first: "https://jobs.bytedance.com/en/position/7535652251402352903/detail",
+      mirror: "https://lifeattiktok.com/search/7535652251402352903?spread=5MWH5CQ",
+      other: "https://jobs.bytedance.com/en/position/7535652251402352904/detail",
+    },
+    {
+      provider: "workable",
+      company: "Acme",
+      first: "https://apply.workable.com/acme/j/ABCDEF1234/",
+      mirror: "https://apply.workable.com/acme/j/ABCDEF1234/?utm_source=feed",
+      other: "https://apply.workable.com/acme/j/ZZZZZZ9999/",
+    },
+    {
+      provider: "apple",
+      company: "Apple",
+      first: "https://jobs.apple.com/en-us/details/200607100/software-engineer-intern",
+      mirror: "https://jobs.apple.com/en-us/details/200607100-3810",
+      other: "https://jobs.apple.com/en-us/details/200607101/software-engineer-intern",
+    },
+    {
+      provider: "oracle",
+      company: "Oracle",
+      first: "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/123456",
+      mirror: "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/OracleCareers/job/123456?utm_source=feed",
+      other: "https://eeho.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/CX_1/job/123457",
+    },
+  ];
+
+  for (const fixture of cases) {
+    const first = providerIdentityFromUrl(fixture.first, fixture.company);
+    const mirror = providerIdentityFromUrl(fixture.mirror, fixture.company);
+    const other = providerIdentityFromUrl(fixture.other, fixture.company);
+    assert.equal(first?.provider, fixture.provider);
+    assert.equal(first?.key, mirror?.key, `${fixture.provider} mirrors should match`);
+    assert.notEqual(first?.key, other?.key, `${fixture.provider} requisitions must stay distinct`);
+
+    const snapshot = createLiveSnapshotFromRows([
+      liveRow({ id: `${fixture.provider}-one`, company: fixture.company, primary_apply_url: fixture.first }),
+      liveRow({ id: `${fixture.provider}-mirror`, company: fixture.company, primary_apply_url: fixture.mirror }),
+      liveRow({ id: `${fixture.provider}-other`, company: fixture.company, primary_apply_url: fixture.other }),
+    ], "2026-08-21T22:00:00.000Z");
+    assert.equal(snapshot.jobs.length, 2, fixture.provider);
+  }
+});
+
+test("provider identities stay scoped to tenant, board, and employer", () => {
+  assert.notEqual(
+    providerIdentityFromUrl("https://jobs.ashbyhq.com/alpha/e66c6658-9e65-4c58-8db2-844628b6e8f8", "Alpha")?.key,
+    providerIdentityFromUrl("https://jobs.ashbyhq.com/beta/e66c6658-9e65-4c58-8db2-844628b6e8f8", "Beta")?.key,
+  );
+  assert.notEqual(
+    providerIdentityFromUrl("https://careers-alpha.icims.com/jobs/12345/role/job", "Alpha")?.key,
+    providerIdentityFromUrl("https://careers-beta.icims.com/jobs/12345/role/job", "Beta")?.key,
+  );
+  assert.notEqual(
+    providerIdentityFromUrl("https://apply.workable.com/alpha/j/ABCDEF1234/", "Alpha")?.key,
+    providerIdentityFromUrl("https://apply.workable.com/beta/j/ABCDEF1234/", "Beta")?.key,
+  );
+});
+
+test("a Workday mirror suffix requires the same tenant, base ID, and job slug", () => {
+  const base = "https://acme.wd1.myworkdayjobs.com/careers/job/Austin/Engineer_R123456";
+  const mirror = "https://acme.wd1.myworkdayjobs.com/private/job/Austin/Engineer_R123456-1";
+  const differentStems = createLiveSnapshotFromRows([
+    liveRow({ id: "suffix-one", company: "Acme", primary_apply_url: mirror }),
+    liveRow({ id: "suffix-two", company: "Acme", primary_apply_url: "https://acme.wd1.myworkdayjobs.com/private/job/Austin/Different-Engineer_R123456-2" }),
+  ], "2026-08-21T22:00:00.000Z");
+  assert.equal(differentStems.jobs.length, 2);
+
+  const withBase = createLiveSnapshotFromRows([
+    liveRow({ id: "base", company: "Acme", primary_apply_url: base }),
+    liveRow({ id: "mirror", company: "Acme", primary_apply_url: mirror }),
+  ], "2026-08-21T22:00:00.000Z");
+  assert.equal(withBase.jobs.length, 1);
+});
+
 test("distinct same-title requisitions keep stable IDs and ambiguous legacy IDs fail closed", () => {
   const newest = liveRow({
     id: "newest-requisition",
@@ -316,6 +546,13 @@ test("live public IDs stay stable when a fresher duplicate source wins", () => {
   );
 });
 
+test("provider canonicalization retains exact prior public URL IDs as aliases", () => {
+  const snapshot = createLiveSnapshotFromRows([liveRow()], "2026-08-21T22:00:00.000Z");
+  const current = snapshot.jobs[0];
+  assert.ok(current.legacyIds?.length);
+  assert.equal(getJobById(current.legacyIds[0], { snapshot })?.id, current.id);
+});
+
 test("date-only and discovery timestamps keep their honest precision", () => {
   const snapshot = createLiveSnapshotFromRows([
     liveRow(),
@@ -350,6 +587,149 @@ test("date-only and discovery timestamps keep their honest precision", () => {
   assert.equal(monthOld.items[0].freshnessLabel, "1 month ago");
 });
 
+test("community dates stay source-reported and cannot impersonate a fresh employer post", () => {
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({
+      id: "community-date",
+      title: "Software Engineer Intern",
+      primary_apply_url: "https://jobs.lever.co/community/date-role",
+      primary_source: "speedyapply",
+      posted_date: "2026-08-21",
+      first_seen_at: "2026-08-10T12:00:00.000Z",
+      last_seen_at: "2026-08-21T12:00:00.000Z",
+    }),
+    liveRow({
+      id: "verified-date",
+      company: "Acme",
+      title: "Security Engineer Intern",
+      primary_apply_url: "https://jobs.lever.co/acme/verified-date",
+      primary_source: "lever:acme",
+      posted_date: "2026-08-20",
+      first_seen_at: "2026-08-20T12:00:00.000Z",
+      last_seen_at: "2026-08-21T12:00:00.000Z",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+  const page = queryJobs({}, {
+    snapshot,
+    now: "2026-08-21T22:00:00.000Z",
+  });
+
+  assert.deepEqual(page.items.map((job) => job.id), [
+    snapshot.jobs.find((job) => job.sourceRecordIds.includes("verified-date")).id,
+    snapshot.jobs.find((job) => job.sourceRecordIds.includes("community-date")).id,
+  ]);
+  const community = page.items.find((job) => job.title === "Software Engineer Intern");
+  assert.equal(community?.freshnessKind, "reported");
+  assert.equal(community?.dateProvenance, "source-reported");
+  assert.equal(community?.possibleRepost, true);
+  assert.deepEqual(community?.sourceNames, ["SpeedyApply community list"]);
+});
+
+test("complete duplicate titles win and remaining clipped titles are labelled", () => {
+  const sharedUrl = "https://jobs.ashbyhq.com/notion/e66c6658-9e65-4c58-8db2-844628b6e8f8";
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({
+      id: "clipped-copy",
+      title: "Software Engineering Intern – Platfo...",
+      primary_apply_url: sharedUrl,
+      primary_source: "zapplyjobs",
+    }),
+    liveRow({
+      id: "complete-copy",
+      title: "Software Engineering Intern – Platform Infrastructure",
+      primary_apply_url: sharedUrl,
+      primary_source: "ashby:notion",
+    }),
+    liveRow({
+      id: "only-clipped",
+      company: "Acme",
+      title: "Security Engineering Intern – Detec...",
+      primary_apply_url: "https://jobs.lever.co/acme/clipped",
+      primary_source: "zapplyjobs",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+  const page = queryJobs({}, { snapshot });
+  const merged = page.items.find((job) => job.sourceNames.length === 2);
+  const clipped = page.items.find((job) => job.company === "Acme");
+
+  assert.equal(merged?.title, "Software Engineering Intern – Platform Infrastructure");
+  assert.equal(merged?.titleIncomplete, false);
+  assert.deepEqual(merged?.sourceNames, ["Ashby employer board", "ZApplyJobs community list"]);
+  assert.equal(clipped?.titleIncomplete, true);
+});
+
+test("ambiguous titles remain available until employer requirements establish ineligibility", () => {
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({
+      id: "senior-role",
+      role_type: "new_grad",
+      title: "Senior Software Engineer",
+      primary_apply_url: "https://jobs.lever.co/acme/senior",
+    }),
+    liveRow({
+      id: "level-two-role",
+      role_type: "new_grad",
+      title: "Software Engineer II",
+      primary_apply_url: "https://jobs.lever.co/acme/level-two",
+    }),
+    liveRow({
+      id: "early-role",
+      role_type: "new_grad",
+      title: "Software Engineer, New Grad",
+      primary_apply_url: "https://jobs.lever.co/acme/early",
+    }),
+    liveRow({
+      id: "product-role",
+      role_type: "new_grad",
+      title: "Product Manager, New Grad",
+      category: "product",
+      primary_apply_url: "https://jobs.lever.co/acme/product",
+    }),
+    liveRow({
+      id: "student-senior-role",
+      role_type: "new_grad",
+      title: "Rising Senior Software Engineer Program",
+      primary_apply_url: "https://jobs.lever.co/acme/student-senior",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+  const page = queryJobs({}, { snapshot, limit: 10 });
+
+  assert.deepEqual(
+    new Set(page.items.map((job) => job.title)),
+    new Set([
+      "Senior Software Engineer",
+      "Software Engineer II",
+      "Software Engineer, New Grad",
+      "Product Manager, New Grad",
+      "Rising Senior Software Engineer Program",
+    ]),
+  );
+  assert.notEqual(getJobById(
+    snapshot.jobs.find((job) => job.sourceRecordIds.includes("senior-role")).id,
+    { snapshot },
+  ), null);
+});
+
+test("fresh employer eligibility survives duplicate merging while stale exclusions do not hide jobs", () => {
+  const url='https://jobs.lever.co/acme/experienced-role';
+  const asOf='2026-08-31T22:00:00.000Z';
+  const receipt={status:'verified',checkedAt:'2026-08-31T20:00:00.000Z',sourceUrl:url,contentHash:'a'.repeat(64),title:'Senior Engineer',eligibility:'quarantined',requirements:['Candidates must have 5 years of professional experience.']};
+  const build=evidence=>createLiveSnapshotFromRows([
+    liveRow({id:'evidence-row',role_type:'new_grad',title:'Senior Engineer',primary_apply_url:url,employer_evidence:evidence}),
+    liveRow({id:'community-mirror',role_type:'new_grad',title:'Senior Engineer',primary_apply_url:url,primary_source:'simplify'}),
+  ],asOf);
+  const excluded=build(receipt);
+  assert.equal(excluded.jobs.length,1,'preserve the canonical record for diagnosis');
+  assert.equal(queryJobs({}, {snapshot:excluded}).items.length,0);
+  assert.equal(getJobById(excluded.jobs[0].id,{snapshot:excluded}),null);
+  const graduate=build({...receipt,eligibility:'accepted',requirements:['Fresh PhD graduates are eligible.']});
+  assert.equal(queryJobs({}, {snapshot:graduate}).items.length,1);
+  assert.equal(queryJobs({}, {snapshot:graduate}).items[0].eligibilityNeedsReview,false);
+  const expired=build({...receipt,checkedAt:'2026-08-01T00:00:00.000Z'});
+  assert.equal(queryJobs({}, {snapshot:expired}).items.length,1);
+  assert.equal(queryJobs({}, {snapshot:expired}).items[0].eligibilityNeedsReview,true);
+});
+
 test("search matches unordered field prefixes and common role aliases", () => {
   const snapshot = createLiveSnapshotFromRows([
     liveRow({ location_type: "remote", display_location: "United States" }),
@@ -367,6 +747,49 @@ test("search matches unordered field prefixes and common role aliases", () => {
   assert.equal(queryJobs({ location: "California" }, {
     snapshot: createLiveSnapshotFromRows([liveRow()], "2026-08-21T22:00:00.000Z"),
   }).total, 1);
+});
+
+test("technical search preserves punctuation, phrases, and workplace intent", () => {
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({
+      id: "cplusplus-role",
+      role_type: "new_grad",
+      title: "C++ Software Engineer, New Grad",
+      primary_apply_url: "https://jobs.lever.co/acme/cplusplus",
+      location_type: "remote",
+    }),
+    liveRow({
+      id: "dotnet-role",
+      role_type: "new_grad",
+      title: "C# / .NET Software Engineer, New Grad",
+      primary_apply_url: "https://jobs.lever.co/acme/dotnet",
+      location_type: "hybrid",
+    }),
+    liveRow({
+      id: "network-role",
+      role_type: "new_grad",
+      title: "Network Engineer, New Grad",
+      primary_apply_url: "https://jobs.lever.co/acme/network",
+      location_type: "onsite",
+    }),
+    liveRow({
+      id: "sre-role",
+      role_type: "new_grad",
+      title: "Site Reliability Engineer, New Grad",
+      primary_apply_url: "https://jobs.lever.co/acme/sre",
+      location_type: "onsite",
+    }),
+  ], "2026-08-21T22:00:00.000Z");
+
+  assert.equal(queryJobs({ q: "C++" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "C#" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: ".NET" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "dot net" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "SRE" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: '"site reliability"' }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "remote C++" }, { snapshot }).total, 1);
+  assert.equal(queryJobs({ q: "remote network" }, { snapshot }).total, 0);
+  assert.equal(queryJobs({ q: "onsite network" }, { snapshot }).total, 1);
 });
 
 test("location search expands postal codes without treating prose as a state", () => {
@@ -530,4 +953,41 @@ test("production taxonomy drives the existing major and specialization filters",
   assert.equal(page.total, 1);
   assert.equal(page.items[0].company, "Notion");
   assert.equal(page.items[0].applyUrl, liveRow().primary_apply_url);
+});
+
+test("numeric and multipart Workday identities preserve distinct requisitions and old links", () => {
+  const base = 'https://hp.wd5.myworkdayjobs.com';
+  const urls = [`${base}/external/job/Texas/Software-Intern_3161388`, `${base}/external-eu/job/Texas/Software-Intern_3161388-2`, `${base}/external/job/Texas/Software-Intern_3161399`];
+  const snapshot = createLiveSnapshotFromRows(urls.map((url,i)=>liveRow({id:`numeric-${i}`,company:'HP',primary_apply_url:url})), '2026-08-31T22:15:17.000Z');
+  assert.equal(snapshot.jobs.length,2);
+  const merged=snapshot.jobs.find(j=>j.sourceRecordIds.length===2);
+  assert.ok(merged);
+  for (const alias of merged.legacyIds) assert.equal(getJobById(alias,{snapshot}).id,merged.id);
+  assert.match(providerIdentityFromUrl('https://alcon.wd5.myworkdayjobs.com/jobs/job/Texas/Intern_R-2026-49480','Alcon').key,/R-2026-49480$/);
+  assert.equal(providerIdentityFromUrl(`${base}/external/job/Texas/Intern_2027`,'HP'),null);
+  assert.equal(providerIdentityFromUrl(`${base}/external/job/%XX`,'HP'),null);
+});
+
+test("sponsorship requires fresh matching employer evidence and preserves explicit restrictions", () => {
+  const asOf='2026-08-31T22:15:17.000Z';
+  const url='https://abb.wd3.myworkdayjobs.com/jobs/job/Tennessee/Intern_JR00045260';
+  const evidence={status:'verified',checkedAt:'2026-08-31T20:00:00.000Z',sourceUrl:url,contentHash:'a'.repeat(64),sponsorship:'Not offered',title:'Product Marketing Intern - Summer 2027',compensation:'$20 - $34/hour'};
+  const make=ev=>createLiveSnapshotFromRows([liveRow({primary_apply_url:url,sponsorship:'offers-sponsorship',employer_evidence:ev})],asOf).jobs[0];
+  assert.equal(make(undefined).sponsorship,undefined);
+  assert.equal(make(evidence).sponsorship,'Not offered');
+  assert.equal(make(evidence).compensation,'$20 - $34/hour');
+  assert.equal(make({...evidence,sponsorship:'Confirmed'}).sponsorship,'Confirmed');
+  assert.equal(make({...evidence,checkedAt:'2026-08-01T00:00:00Z'}).sponsorship,undefined);
+  assert.equal(make({...evidence,sourceUrl:url+'9'}).sponsorship,undefined);
+  assert.equal(make({...evidence,checkedAt:'2026-09-01T00:00:00Z'}).sponsorship,undefined);
+});
+
+test("newly imported older listings do not outrank recent postings", () => {
+  const snapshot=createLiveSnapshotFromRows([
+    liveRow({id:'old-import',company:'AAA',primary_apply_url:'https://jobs.lever.co/aaa/old-import',primary_source:'simplify',posted_date:'2026-08-01',first_seen_at:'2026-08-31T12:00:00Z',last_seen_at:'2026-08-31T12:00:00Z'}),
+    liveRow({id:'recent-job',company:'ZZZ',primary_apply_url:'https://jobs.lever.co/zzz/recent',primary_source:'simplify',posted_date:'2026-08-30',first_seen_at:'2026-08-30T12:00:00Z',last_seen_at:'2026-08-31T12:00:00Z'}),
+  ],'2026-08-31T22:15:00Z');
+  const page=queryJobs({}, {snapshot,now:'2026-08-31T22:15:00Z'});
+  assert.equal(page.items[0].company,'ZZZ');
+  assert.equal(page.items[1].freshnessKind,'reported');
 });

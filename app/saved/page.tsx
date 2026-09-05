@@ -6,6 +6,11 @@ import { SiteHeader } from "@/app/components/SiteHeader";
 export const metadata: Metadata = {
   title: "Saved jobs · Timley",
   description: "Jobs you saved locally on this device. No Timley account required.",
+  alternates: { canonical: "/saved" },
+  robots: {
+    index: false,
+    follow: true,
+  },
 };
 
 export default function SavedPage() {
@@ -16,7 +21,7 @@ export default function SavedPage() {
         <div>
           <h1>Saved jobs</h1>
         </div>
-        <p>Stored only in this browser. Nothing is uploaded, and clearing browser data clears the list.</p>
+        <p>Your saved list and notes are stored only in this browser. Clearing browser data clears them.</p>
       </section>
       <div className="content-shell saved-shell">
         <SavedJobs />

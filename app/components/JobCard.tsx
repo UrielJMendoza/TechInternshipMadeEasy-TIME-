@@ -4,29 +4,37 @@ import type { JobCardData } from "./job-types";
 import { CompanyLogo } from "./CompanyLogo";
 import { Recency } from "./Recency";
 import { SaveButton } from "./SaveButton";
+import { jobDetailHref } from "@/lib/navigation/job-return-path";
 
 type JobCardProps = {
   job: JobCardData;
   liveRecency?: boolean;
+  returnTo?: string;
 };
 
-export function JobCard({ job, liveRecency = false }: JobCardProps) {
+export function JobCard({ job, liveRecency = false, returnTo = "/jobs" }: JobCardProps) {
   const titleId = `job-${job.id}-title`;
-  const compensation = (job.compensation ?? "Compensation not listed").replace(/[–—]/g, " to ");
+  const cardId = `listing-${job.id}`;
+  const compensation = job.compensation?.replace(/[–—]/g, " to ");
   const sponsorship =
     job.sponsorship === "Confirmed"
       ? "Visa support confirmed"
       : job.sponsorship === "Not offered"
         ? "No visa support"
         : undefined;
+  const compensationAndSponsorship = [compensation, sponsorship].filter(Boolean).join(" · ");
 
   return (
-    <article className="job-card" aria-labelledby={titleId}>
+    <article className="job-card" id={cardId} aria-labelledby={titleId}>
       <CompanyLogo company={job.company} domain={job.companyDomain} />
       <div className="job-primary">
-        <a className="job-card-link" href={`/jobs/${encodeURIComponent(job.id)}`}>
+        <a className="job-card-link" href={jobDetailHref(job.id, `${returnTo}#${cardId}`)}>
           <h3 id={titleId}>{job.title}</h3>
         </a>
+        {job.titleIncomplete ? (
+          <span className="job-title-note">Source title appears shortened</span>
+        ) : null}
+        {job.eligibilityNeedsReview ? <span className="job-title-note">Check graduate eligibility with employer</span> : null}
         <p className="job-company">
           <span>{job.company}</span>
           <span aria-hidden="true">/</span>
@@ -42,7 +50,7 @@ export function JobCard({ job, liveRecency = false }: JobCardProps) {
           recalculate={liveRecency}
         />
         <span>{job.roleLevel} · {job.workplace}</span>
-        <span>{compensation}{sponsorship ? ` · ${sponsorship}` : ""}</span>
+        {compensationAndSponsorship ? <span>{compensationAndSponsorship}</span> : null}
       </div>
       <div className="job-actions">
         <SaveButton job={job} />

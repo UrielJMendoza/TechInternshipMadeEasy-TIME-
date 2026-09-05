@@ -1,6 +1,6 @@
 "use client";
 
-import { useSyncExternalStore } from "react";
+import { useState, useSyncExternalStore } from "react";
 import type { JobCardData } from "./job-types";
 
 const STORAGE_KEY = "timley:saved-jobs:v1";
@@ -16,7 +16,7 @@ function hasUsableApplicationUrl(value: unknown): value is string {
     const url = new URL(value);
     const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
     return (
-      (url.protocol === "https:" || url.protocol === "http:") &&
+      url.protocol === "https:" && !url.username && !url.password &&
       hostname !== "example.com" &&
       hostname !== "example.org" &&
       hostname !== "example.net" &&
@@ -45,7 +45,7 @@ function parseSavedJobs(raw: string): JobCardData[] {
         (candidate.freshnessKind === "posted" || candidate.freshnessKind === "reported" || candidate.freshnessKind === "found") &&
         (candidate.postedAtPrecision === undefined || candidate.postedAtPrecision === "date" || candidate.postedAtPrecision === "timestamp") &&
         (candidate.roleLevel === "Internship" || candidate.roleLevel === "New grad") &&
-        (candidate.workplace === "Remote" || candidate.workplace === "Hybrid" || candidate.workplace === "On-site") &&
+        (candidate.workplace === "Remote" || candidate.workplace === "Hybrid" || candidate.workplace === "On-site" || candidate.workplace === "Not confirmed") &&
         typeof candidate.logoText === "string" &&
         typeof candidate.logoTone === "string" &&
         (candidate.companyDomain === undefined || typeof candidate.companyDomain === "string") &&
@@ -109,16 +109,17 @@ export function useSavedJobs(): JobCardData[] {
   return useSyncExternalStore(subscribeToSavedJobs, getSavedSnapshot, () => EMPTY_SAVED_JOBS);
 }
 
-function writeSavedJobs(jobs: JobCardData[]) {
+export function writeSavedJobs(jobs: JobCardData[]) {
   const serialized = JSON.stringify(jobs);
   try {
     window.localStorage.setItem(STORAGE_KEY, serialized);
   } catch {
-    // Keep the in-page shortlist usable when browser storage is unavailable.
+    return false;
   }
   cachedRaw = serialized;
   cachedJobs = jobs;
   emitSavedChange();
+  return true;
 }
 
 type SaveButtonProps = {
@@ -127,16 +128,19 @@ type SaveButtonProps = {
 
 export function SaveButton({ job }: SaveButtonProps) {
   const savedJobs = useSavedJobs();
-  const saved = savedJobs.some((item) => item.id === job.id);
+  const [storageError, setStorageError] = useState("");
+  const matches = (item: JobCardData) => item.id === job.id || Boolean(job.legacyIds?.includes(item.id)) || Boolean(item.legacyIds?.includes(job.id));
+  const saved = savedJobs.some(matches);
 
   function toggleSaved() {
     const next = saved
-      ? savedJobs.filter((item) => item.id !== job.id)
-      : [job, ...savedJobs.filter((item) => item.id !== job.id)];
-    writeSavedJobs(next);
+      ? savedJobs.filter((item) => !matches(item))
+      : [job, ...savedJobs.filter((item) => !matches(item))];
+    setStorageError(writeSavedJobs(next) ? "" : "Your browser could not save this change. Enable browser storage and try again.");
   }
 
   return (
+    <>
     <button
       className={`save-button${saved ? " is-saved" : ""}`}
       type="button"
@@ -146,5 +150,7 @@ export function SaveButton({ job }: SaveButtonProps) {
     >
       <span>{saved ? "Saved" : "Save"}</span>
     </button>
+    {storageError ? <span className="storage-error" role="status">{storageError}</span> : null}
+    </>
   );
 }

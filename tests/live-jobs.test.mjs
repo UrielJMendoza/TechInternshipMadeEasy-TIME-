@@ -68,8 +68,8 @@ test("bundled fallback preserves the complete last verified public feed", async 
   assert.equal(rows.length, 5_190);
   assert.equal(new Set(rows.map((row) => row.id)).size, 5_190);
   assert.ok(rows.every((row) => row.is_active === true));
-  assert.equal(snapshot.jobs.length, 4_913);
-  assert.equal(new Set(snapshot.jobs.map((job) => job.id)).size, 4_913);
+  assert.equal(snapshot.jobs.length, 4_857);
+  assert.equal(new Set(snapshot.jobs.map((job) => job.id)).size, 4_857);
   const providerKeys = snapshot.jobs
     .map((job) => providerIdentityFromUrl(job.applicationUrl, job.companyName)?.key)
     .filter(Boolean);
@@ -261,10 +261,10 @@ test("live mapping keeps real employer links and rejects placeholder destination
   assert.equal(snapshot.jobs.length, 1);
   assert.equal(snapshot.jobs[0].applicationUrl, liveRow().primary_apply_url);
   assert.equal(snapshot.jobs[0].companyDomain, "notion.so");
-  assert.equal(snapshot.jobs[0].sponsorship, "Confirmed");
+  assert.equal(snapshot.jobs[0].sponsorship, undefined);
 });
 
-test("live mapping understands current sponsorship values and exact empty taxonomy", () => {
+test("community sponsorship claims stay unconfirmed while exact empty taxonomy is preserved", () => {
   const snapshot = createLiveSnapshotFromRows([
     liveRow({ sponsorship: "offers", major_ids: [], niche_ids: [] }),
     liveRow({
@@ -281,8 +281,8 @@ test("live mapping understands current sponsorship values and exact empty taxono
   const restricted = snapshot.jobs.find((job) => job.title === "Hardware Engineering Intern");
   assert.deepEqual(noMajor?.majorIds, []);
   assert.deepEqual(noMajor?.nicheIds, []);
-  assert.equal(noMajor?.sponsorship, "Confirmed");
-  assert.equal(restricted?.sponsorship, "Not offered");
+  assert.equal(noMajor?.sponsorship, undefined);
+  assert.equal(restricted?.sponsorship, undefined);
   assert.equal(queryJobs({ major: "computer-science" }, { snapshot }).total, 0);
 });
 
@@ -658,7 +658,7 @@ test("complete duplicate titles win and remaining clipped titles are labelled", 
   assert.equal(clipped?.titleIncomplete, true);
 });
 
-test("ambiguous and senior new-grad titles are withheld from the public feed", () => {
+test("ambiguous titles remain available until employer requirements establish ineligibility", () => {
   const snapshot = createLiveSnapshotFromRows([
     liveRow({
       id: "senior-role",
@@ -697,12 +697,14 @@ test("ambiguous and senior new-grad titles are withheld from the public feed", (
   assert.deepEqual(
     new Set(page.items.map((job) => job.title)),
     new Set([
+      "Senior Software Engineer",
+      "Software Engineer II",
       "Software Engineer, New Grad",
       "Product Manager, New Grad",
       "Rising Senior Software Engineer Program",
     ]),
   );
-  assert.equal(getJobById(
+  assert.notEqual(getJobById(
     snapshot.jobs.find((job) => job.sourceRecordIds.includes("senior-role")).id,
     { snapshot },
   ), null);
@@ -931,4 +933,41 @@ test("production taxonomy drives the existing major and specialization filters",
   assert.equal(page.total, 1);
   assert.equal(page.items[0].company, "Notion");
   assert.equal(page.items[0].applyUrl, liveRow().primary_apply_url);
+});
+
+test("numeric and multipart Workday identities preserve distinct requisitions and old links", () => {
+  const base = 'https://hp.wd5.myworkdayjobs.com';
+  const urls = [`${base}/external/job/Texas/Software-Intern_3161388`, `${base}/external-eu/job/Texas/Software-Intern_3161388-2`, `${base}/external/job/Texas/Software-Intern_3161399`];
+  const snapshot = createLiveSnapshotFromRows(urls.map((url,i)=>liveRow({id:`numeric-${i}`,company:'HP',primary_apply_url:url})), '2026-08-31T22:15:17.000Z');
+  assert.equal(snapshot.jobs.length,2);
+  const merged=snapshot.jobs.find(j=>j.sourceRecordIds.length===2);
+  assert.ok(merged);
+  for (const alias of merged.legacyIds) assert.equal(getJobById(alias,{snapshot}).id,merged.id);
+  assert.match(providerIdentityFromUrl('https://alcon.wd5.myworkdayjobs.com/jobs/job/Texas/Intern_R-2026-49480','Alcon').key,/R-2026-49480$/);
+  assert.equal(providerIdentityFromUrl(`${base}/external/job/Texas/Intern_2027`,'HP'),null);
+  assert.equal(providerIdentityFromUrl(`${base}/external/job/%XX`,'HP'),null);
+});
+
+test("sponsorship requires fresh matching employer evidence and preserves explicit restrictions", () => {
+  const asOf='2026-08-31T22:15:17.000Z';
+  const url='https://abb.wd3.myworkdayjobs.com/jobs/job/Tennessee/Intern_JR00045260';
+  const evidence={status:'verified',checkedAt:'2026-08-31T20:00:00.000Z',sourceUrl:url,contentHash:'a'.repeat(64),sponsorship:'Not offered',title:'Product Marketing Intern - Summer 2027',compensation:'$20 - $34/hour'};
+  const make=ev=>createLiveSnapshotFromRows([liveRow({primary_apply_url:url,sponsorship:'offers-sponsorship',employer_evidence:ev})],asOf).jobs[0];
+  assert.equal(make(undefined).sponsorship,undefined);
+  assert.equal(make(evidence).sponsorship,'Not offered');
+  assert.equal(make(evidence).compensation,'$20 - $34/hour');
+  assert.equal(make({...evidence,sponsorship:'Confirmed'}).sponsorship,'Confirmed');
+  assert.equal(make({...evidence,checkedAt:'2026-08-01T00:00:00Z'}).sponsorship,undefined);
+  assert.equal(make({...evidence,sourceUrl:url+'9'}).sponsorship,undefined);
+  assert.equal(make({...evidence,checkedAt:'2026-09-01T00:00:00Z'}).sponsorship,undefined);
+});
+
+test("newly imported older listings do not outrank recent postings", () => {
+  const snapshot=createLiveSnapshotFromRows([
+    liveRow({id:'old-import',company:'AAA',primary_apply_url:'https://jobs.lever.co/aaa/old-import',primary_source:'simplify',posted_date:'2026-08-01',first_seen_at:'2026-08-31T12:00:00Z',last_seen_at:'2026-08-31T12:00:00Z'}),
+    liveRow({id:'recent-job',company:'ZZZ',primary_apply_url:'https://jobs.lever.co/zzz/recent',primary_source:'simplify',posted_date:'2026-08-30',first_seen_at:'2026-08-30T12:00:00Z',last_seen_at:'2026-08-31T12:00:00Z'}),
+  ],'2026-08-31T22:15:00Z');
+  const page=queryJobs({}, {snapshot,now:'2026-08-31T22:15:00Z'});
+  assert.equal(page.items[0].company,'ZZZ');
+  assert.equal(page.items[1].freshnessKind,'reported');
 });

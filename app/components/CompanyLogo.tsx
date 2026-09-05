@@ -23,7 +23,6 @@ export function CompanyLogo({
 }: CompanyLogoProps) {
   const domain = suppliedDomain?.trim().toLowerCase() || companyDomain(company);
   const src = domain ? logoUrl(domain) : null;
-  const [loaded, setLoaded] = useState(false);
   const [failed, setFailed] = useState(() => !src);
 
   return (
@@ -34,7 +33,7 @@ export function CompanyLogo({
     >
       {src && !failed ? (
         <Image
-          className={`company-logo-image${loaded ? " is-loaded" : ""}`}
+          className="company-logo-image"
           src={src}
           alt=""
           width={128}
@@ -45,7 +44,6 @@ export function CompanyLogo({
           unoptimized
           decoding="async"
           referrerPolicy="no-referrer"
-          onLoad={() => setLoaded(true)}
           onError={() => setFailed(true)}
         />
       ) : null}

@@ -1,12 +1,19 @@
 export type JobCardData = {
   id: string;
+  evidenceUrl?: string;
+  evidenceCheckedAt?: string;
+  deadline?: string;
+  degrees?: readonly string[];
+  requirements?: readonly string[];
+  legacyIds?: readonly string[];
+
   company: string;
   title: string;
   location: string;
   freshnessLabel: string;
   freshnessKind: "posted" | "reported" | "found";
   roleLevel: "Internship" | "New grad";
-  workplace: "Remote" | "Hybrid" | "On-site";
+  workplace: "Remote" | "Hybrid" | "On-site" | "Not confirmed";
   compensation?: string;
   sponsorship?: "Confirmed" | "Not offered";
   logoText: string;
@@ -28,6 +35,7 @@ export type JobCardData = {
 
 export type JobFilters = {
   q: string;
+  company: string;
   level: "all" | "internship" | "new-grad";
   major: "all" | "computer-science" | "engineering" | "business";
   niche: string;

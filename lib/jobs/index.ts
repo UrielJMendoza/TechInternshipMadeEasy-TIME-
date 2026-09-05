@@ -208,6 +208,8 @@ const JOB_MAJOR_BY_ID = new Map(
 /** Structurally matches app/components/job-types.ts. */
 export type JobFilters = {
   q: string;
+  /** Exact employer filter used by shareable company links. */
+  company: string;
   level: JobLevelFilter;
   major: JobMajorFilter;
   niche: string;
@@ -219,6 +221,7 @@ export type JobFilters = {
 
 export const DEFAULT_FILTERS: Readonly<JobFilters> = Object.freeze({
   q: "",
+  company: "",
   level: "all",
   major: "all",
   niche: "all",
@@ -236,7 +239,7 @@ export type RawJobRecord = {
   title: string;
   location: string;
   roleLevel: "Internship" | "New grad";
-  workplace: "Remote" | "Hybrid" | "On-site";
+  workplace: "Remote" | "Hybrid" | "On-site" | "Not confirmed";
   category: string;
   team?: string;
   summary?: string;
@@ -273,7 +276,7 @@ export type CanonicalJob = {
   eligibilityStatus?: "accepted" | "review" | "quarantined";
   location: string;
   roleLevel: "Internship" | "New grad";
-  workplace: "Remote" | "Hybrid" | "On-site";
+  workplace: "Remote" | "Hybrid" | "On-site" | "Not confirmed";
   category: string;
   /** Exact taxonomy supplied by the production jobs repository, when present. */
   majorIds?: readonly string[];
@@ -294,19 +297,31 @@ export type CanonicalJob = {
   lastSeenAt: string;
   lastCheckedAt?: string;
   sourceLabels?: readonly string[];
+  evidenceUrl?: string;
+  evidenceCheckedAt?: string;
+  deadline?: string;
+  degrees?: readonly string[];
+  requirements?: readonly string[];
   active: boolean;
 };
 
 /** Structurally matches the UI's JobCardData type. */
 export type JobListItem = {
   id: string;
+  evidenceUrl?: string;
+  evidenceCheckedAt?: string;
+  deadline?: string;
+  degrees?: readonly string[];
+  requirements?: readonly string[];
+  legacyIds?: readonly string[];
+
   company: string;
   title: string;
   location: string;
   freshnessLabel: string;
   freshnessKind: "posted" | "reported" | "found";
   roleLevel: "Internship" | "New grad";
-  workplace: "Remote" | "Hybrid" | "On-site";
+  workplace: "Remote" | "Hybrid" | "On-site" | "Not confirmed";
   compensation?: string;
   sponsorship?: "Confirmed" | "Not offered";
   logoText: string;
@@ -324,6 +339,12 @@ export type JobListItem = {
   firstSeenAt?: string;
   lastSeenAt?: string;
   lastCheckedAt?: string;
+};
+
+export type PopularCompany = {
+  name: string;
+  domain?: string;
+  recentPostings: number;
 };
 
 export type Freshness = {
@@ -369,7 +390,7 @@ export type JobPage = {
 export const DEMO_CANONICAL_JOB_COUNT = 4_416;
 export const DEFAULT_PAGE_SIZE = 36;
 export const MAX_PAGE_SIZE = 60;
-const CURSOR_VERSION = 4;
+const CURSOR_VERSION = 5;
 const HOUR_MS = 60 * 60 * 1_000;
 const DAY_MS = 24 * HOUR_MS;
 const FUTURE_DATE_TOLERANCE_MS = 6 * HOUR_MS;
@@ -487,45 +508,20 @@ function hasExplicitEarlyCareerEvidence(title: string): boolean {
   return /\b(?:intern(?:ship)?|co(?:-|\s)?op|new\s*(?:-|\/|\s)\s*grad(?:uate)?|recent\s*(?:-|\/|\s)\s*grad(?:uate)?|university\s+graduate|early\s+career|entry\s*(?:-|\s)\s*level|graduate|student|trainee|apprentice|junior)\b/i.test(title);
 }
 
-/** High-confidence public eligibility rules; ambiguous seniority is held for review. */
+/** Title signals request review; only employer evidence can exclude a discovered role. */
 export function classifyEarlyCareerEligibility(
   title: string,
   roleLevel: CanonicalJob["roleLevel"],
 ): "accepted" | "review" | "quarantined" {
   const normalized = title.normalize("NFKC").trim();
-  if (roleLevel === "Internship") {
-    return "accepted";
-  }
-  if (
-    /\b(?:principal|head|vice\s+president|vp|postdoctoral|postdoc)\b/i.test(normalized) ||
-    /\bdirector\b(?!['’]s\s+office)/i.test(normalized) ||
-    /\b(?:senior|sr\.?)\b/i.test(normalized) &&
-      !/\b(?:rising|college|university|high\s+school)\s+senior\b/i.test(normalized)
-  ) {
-    return "quarantined";
-  }
-  if (hasExplicitEarlyCareerEvidence(normalized)) return "accepted";
-  if (
-    /\bmanager\b/i.test(normalized) &&
-    !/\b(?:associate|assistant|junior)\s+product\s+manager\b/i.test(normalized) &&
-    !/\bproduct\s+manager\s+(?:associate|graduate)\b/i.test(normalized)
-  ) {
-    return "quarantined";
-  }
-  if (
-    /\b(?:staff|lead|architect)\b/i.test(normalized) ||
-    /\b(?:engineer|developer|scientist|analyst)\s+(?:ii|iii|iv|[2-9])\b/i.test(normalized) ||
-    /\b(?:level|grade)\s*(?:ii|iii|iv|[2-9])\b/i.test(normalized)
-  ) {
-    return "review";
-  }
+  if (roleLevel === "Internship" || hasExplicitEarlyCareerEvidence(normalized)) return "accepted";
+  if (/\b(?:senior|sr|principal|staff|lead|architect|director|manager|head|vice president|vp|postdoc|postdoctoral)\b/i.test(normalized) ||
+      /\b(?:engineer|developer|scientist|analyst|level|grade)\s+(?:ii|iii|iv|[2-9])\b/i.test(normalized)) return "review";
   return "accepted";
 }
 
 function isPubliclyEligible(job: CanonicalJob): boolean {
-  return (
-    job.eligibilityStatus ?? classifyEarlyCareerEligibility(job.title, job.roleLevel)
-  ) === "accepted";
+  return job.eligibilityStatus !== "quarantined";
 }
 
 export type AtsIdentityInput = Pick<
@@ -794,7 +790,9 @@ export function getJobSortTuple(job: CanonicalJob): JobSortTuple {
     job.employerPostedAt && job.dateProvenance === "employer-verified",
   );
   return {
-    sortAt: usesVerifiedDate ? job.employerPostedAt! : job.firstSeenAt,
+    sortAt: usesVerifiedDate ? job.employerPostedAt! :
+      job.employerPostedAt && Date.parse(job.employerPostedAt) < Date.parse(job.firstSeenAt)
+        ? job.employerPostedAt : job.firstSeenAt,
     freshnessKind: usesVerifiedDate
       ? "posted"
       : job.employerPostedAt
@@ -890,6 +888,7 @@ function inputBoolean(value: string): boolean {
 /** Parses and validates all shareable feed filters. Unknown values fail closed. */
 export function parseFilters(input: FilterInput = undefined): JobFilters {
   const q = cleanText(inputValue(input, "q"), 120);
+  const company = cleanText(inputValue(input, "company"), 120);
   const location = cleanText(inputValue(input, "location"), 80);
   const levelValue = inputValue(input, "level");
   const level: JobLevelFilter =
@@ -908,6 +907,7 @@ export function parseFilters(input: FilterInput = undefined): JobFilters {
 
   return {
     q,
+    company,
     level,
     major,
     niche,
@@ -924,6 +924,7 @@ export function serializeFilters(filtersInput: FilterInput = undefined): string 
   const params = new URLSearchParams();
   if (filters.level !== "all") params.set("level", filters.level);
   if (filters.q) params.set("q", filters.q);
+  if (filters.company) params.set("company", filters.company);
   if (filters.major !== "all") params.set("major", filters.major);
   if (filters.niche !== "all") params.set("niche", filters.niche);
   if (filters.location) params.set("location", filters.location);
@@ -942,7 +943,7 @@ export const parseJobFilters = parseFilters;
 export const serializeJobFilters = serializeFilters;
 
 type CursorPayload = {
-  version: 4;
+  version: 5;
   asOf: string;
   evaluatedAt: string;
   snapshotRevision: string;
@@ -1050,7 +1051,7 @@ export function decodeJobCursor(cursor: string): CursorPayload {
     throw new InvalidCursorError();
   }
   return {
-    version: 4,
+    version: 5,
     asOf,
     evaluatedAt,
     snapshotRevision,
@@ -1585,6 +1586,12 @@ function matchesNiche(job: CanonicalJob, niche: string): boolean {
 
 function matchesFilters(job: CanonicalJob, filters: JobFilters): boolean {
   if (
+    filters.company &&
+    normalizeEmployer(job.companyName) !== normalizeEmployer(filters.company)
+  ) {
+    return false;
+  }
+  if (
     filters.level === "internship" && job.roleLevel !== "Internship" ||
     filters.level === "new-grad" && job.roleLevel !== "New grad"
   ) {
@@ -1661,6 +1668,12 @@ function toListItem(job: CanonicalJob, now: string | Date): JobListItem {
     logoTone: job.logoTone,
     companyDomain: job.companyDomain,
     applyUrl: job.applicationUrl,
+    evidenceUrl: job.evidenceUrl,
+    evidenceCheckedAt: job.evidenceCheckedAt,
+    deadline: job.deadline,
+    degrees: job.degrees,
+    requirements: job.requirements,
+    legacyIds: job.legacyIds,
     sourceNames: [...(job.sourceLabels ?? job.contributingSourceIds.map((sourceId) => sourceFor(sourceId).name))],
     team: job.team,
     summary: job.summary,
@@ -1752,7 +1765,7 @@ export function queryJobs(
   const lastJob = pageJobs.at(-1);
   const nextCursor = hasMore && lastJob
       ? encodeJobCursor({
-        version: 4,
+        version: 5,
         asOf,
         evaluatedAt,
         snapshotRevision,
@@ -1867,4 +1880,67 @@ export function getNewestPostedJobs(
   )
     .slice(0, limit)
     .map((job) => toListItem(job, now));
+}
+
+/**
+ * Homepage company rail, ranked by Timley's own recent discovery evidence.
+ * Employer-supplied dates are deliberately not used for this ranking.
+ */
+export function getPopularCompanies(
+  options: GetJobOptions & { limit?: number; recentDays?: number } = {},
+): PopularCompany[] {
+  const now = canonicalTimestamp(options.now ?? new Date(), "now");
+  const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
+  const limit = normalizeLimit(options.limit ?? 30);
+  const recentDays = options.recentDays ?? 30;
+  if (!Number.isInteger(recentDays) || recentDays < 1 || recentDays > 365) {
+    throw new RangeError("recentDays must be an integer between 1 and 365");
+  }
+  const nowMs = Date.parse(now);
+  const cutoff = nowMs - recentDays * DAY_MS;
+  const companies = new Map<
+    string,
+    PopularCompany & { latestDiscoveryAt: number }
+  >();
+
+  for (const job of snapshot.jobs) {
+    const discoveredAt = Date.parse(job.firstSeenAt);
+    if (
+      !job.active ||
+      !isPubliclyEligible(job) ||
+      !Number.isFinite(discoveredAt) ||
+      discoveredAt < cutoff ||
+      discoveredAt > nowMs
+    ) {
+      continue;
+    }
+    const key = normalizeEmployer(job.companyName);
+    if (!key) continue;
+    const current = companies.get(key);
+    if (current) {
+      current.recentPostings += 1;
+      current.latestDiscoveryAt = Math.max(current.latestDiscoveryAt, discoveredAt);
+      if (!current.domain && job.companyDomain) current.domain = job.companyDomain;
+      continue;
+    }
+    companies.set(key, {
+      name: job.companyName,
+      domain: job.companyDomain,
+      recentPostings: 1,
+      latestDiscoveryAt: discoveredAt,
+    });
+  }
+
+  return [...companies.values()]
+    .sort((a, b) =>
+      b.recentPostings - a.recentPostings ||
+      b.latestDiscoveryAt - a.latestDiscoveryAt ||
+      a.name.localeCompare(b.name, "en-US"),
+    )
+    .slice(0, limit)
+    .map((company) => ({
+      name: company.name,
+      domain: company.domain,
+      recentPostings: company.recentPostings,
+    }));
 }

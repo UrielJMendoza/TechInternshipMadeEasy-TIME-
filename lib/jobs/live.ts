@@ -2,6 +2,7 @@ import {
   classifyEarlyCareerEligibility,
   createDemoSnapshot,
   getDemoSnapshotAt,
+  getJobById,
   InvalidCursorError,
   isTruncatedJobTitle,
   normalizeAtsHostname,
@@ -53,6 +54,8 @@ const SELECT_FIELDS = [
   "company_domain",
   "company_domain_confidence",
   "primary_source",
+  "employer_evidence",
+  "employer_checked_at",
 ].join(",");
 
 type LiveJobRow = Record<string, unknown>;
@@ -267,24 +270,22 @@ function sourceLabelFor(row: LiveJobRow, fallbackSourceId: SourceId): string {
 function workplace(value: unknown): CanonicalJob["workplace"] {
   if (value === "remote") return "Remote";
   if (value === "hybrid") return "Hybrid";
-  return "On-site";
+  if (value === "onsite" || value === "on-site") return "On-site";
+  return "Not confirmed";
 }
 
-function sponsorship(value: unknown): CanonicalJob["sponsorship"] {
-  const normalized = optionalText(value)?.toLowerCase() ?? "";
-  if (
-    normalized === "offers" ||
-    normalized === "offers-sponsorship" ||
-    normalized === "confirmed"
-  ) {
-    return "Confirmed";
-  }
-  if (
-    /not.offered|does.not.sponsor|no.sponsorship|restricted|citizens.only|us.citizenship/.test(normalized)
-  ) {
-    return "Not offered";
-  }
-  return undefined;
+function verifiedEvidence(row: LiveJobRow, asOf: string): Record<string, unknown> {
+  const value = row.employer_evidence;
+  if (!value || typeof value !== "object" || Array.isArray(value)) return {};
+  const evidence = value as Record<string, unknown>;
+  const checkedAt = timestamp(evidence.checkedAt);
+  const sourceUrl = safeApplicationUrl(evidence.sourceUrl);
+  if (evidence.status !== "verified" || !checkedAt || !sourceUrl ||
+    !/^[a-f0-9]{64}$/.test(String(evidence.contentHash ?? "")) ||
+    Date.parse(checkedAt) > Date.parse(asOf) || Date.parse(asOf) - Date.parse(checkedAt) > 14 * 86_400_000) return {};
+  const currentUrl = safeApplicationUrl(row.primary_apply_url);
+  if (!currentUrl || canonicalApplicationKey(sourceUrl) !== canonicalApplicationKey(currentUrl)) return {};
+  return evidence;
 }
 
 function categoryLabel(value: string): string {
@@ -305,7 +306,8 @@ function logoText(company: string): string {
 
 function rowToCanonicalJob(row: LiveJobRow, asOf: string): CanonicalJob | null {
   const id = requiredText(row.id);
-  const title = requiredText(row.title);
+  const evidence = verifiedEvidence(row, asOf);
+  const title = requiredText(evidence.title) ?? requiredText(row.title);
   const companyName = requiredText(row.company);
   const location = requiredText(row.display_location);
   const category = requiredText(row.category);
@@ -313,7 +315,7 @@ function rowToCanonicalJob(row: LiveJobRow, asOf: string): CanonicalJob | null {
   const firstSeenAt = timestamp(row.first_seen_at);
   const lastSeenAt = timestamp(row.last_seen_at) ?? firstSeenAt;
   const lastCheckedAt = timestamp(row.last_checked_at);
-  const rawPostedAt = optionalText(row.posted_date);
+  const rawPostedAt = optionalText(evidence.postedAt) ?? optionalText(row.posted_date);
   const sanitizedEmployerPostedAt = sanitizeEmployerPostedAt(rawPostedAt, asOf);
   const employerPostedAt = sanitizedEmployerPostedAt &&
     Date.parse(sanitizedEmployerPostedAt) <= Date.parse(asOf)
@@ -339,7 +341,7 @@ function rowToCanonicalJob(row: LiveJobRow, asOf: string): CanonicalJob | null {
   const primarySourceId = sourceIdFor(row, applicationUrl);
   const rawSource = rawSourceFor(row);
   const dateProvenance = employerPostedAt
-    ? isOfficialConfiguredSource(rawSource)
+    ? Boolean(evidence.postedAt) || isOfficialConfiguredSource(rawSource)
       ? "employer-verified" as const
       : "source-reported" as const
     : undefined;
@@ -364,13 +366,20 @@ function rowToCanonicalJob(row: LiveJobRow, asOf: string): CanonicalJob | null {
     ),
     location,
     roleLevel: roleType === "internship" ? "Internship" : "New grad",
-    workplace: workplace(row.location_type),
+    workplace: ["Remote", "Hybrid", "On-site"].includes(String(evidence.workplace))
+      ? evidence.workplace as CanonicalJob["workplace"] : (workplace(row.location_type) === "On-site" && /\bremote\b/i.test(location)) ? "Not confirmed" : workplace(row.location_type),
     category,
     majorIds: stringArray(row.major_ids),
     nicheIds: stringArray(row.niche_ids),
     team: categoryLabel(category),
-    compensation: optionalText(row.salary_raw) ?? undefined,
-    sponsorship: sponsorship(row.sponsorship),
+    summary: optionalText(evidence.summary) ?? undefined,
+    compensation: optionalText(evidence.compensation) ?? optionalText(row.salary_raw) ?? undefined,
+    sponsorship: evidence.sponsorship === "Confirmed" || evidence.sponsorship === "Not offered" ? evidence.sponsorship : undefined,
+    evidenceUrl: optionalText(evidence.sourceUrl) ?? undefined,
+    evidenceCheckedAt: optionalText(evidence.checkedAt) ?? undefined,
+    deadline: optionalText(evidence.deadline) ?? undefined,
+    degrees: stringArray(evidence.degrees),
+    requirements: stringArray(evidence.requirements),
     logoText: logoText(companyName),
     logoTone: "ink",
     companyDomain: companyDomain(row),
@@ -477,7 +486,8 @@ export function providerIdentityFromUrl(
     return null;
   }
   const hostname = url.hostname.toLowerCase().replace(/^www\./, "");
-  const segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+  let segments: string[];
+  try { segments = url.pathname.split("/").filter(Boolean).map(decodeURIComponent); } catch { return null; }
   const employer = identityPart(normalizeEmployer(companyName) ?? companyName);
 
   if (hostname === "jobs.ashbyhq.com") {
@@ -505,7 +515,8 @@ export function providerIdentityFromUrl(
   if (workdayTenant) {
     const tenant = identityPart(workdayTenant);
     const finalSegment = segments.at(-1) ?? "";
-    const match = finalSegment.match(/^(.*)_([a-z]{1,4}-?\d{5,})(?:-(\d+))?$/i);
+    const match = finalSegment.match(/^(.*)_([a-z]{1,5}\d{2}_\d{5,})(?:-(\d))?$/i)
+      ?? finalSegment.match(/^(.*)_((?:[a-z]{1,5}-?\d{4,}(?:[-_]\d{2,})*|\d{6,}|\d{4}[-_]\d{4,}))(?:-(\d))?$/i);
     if (tenant && match) {
       const stem = identityPart(match[1]);
       const baseId = match[2].toLocaleUpperCase("en-US");
@@ -622,7 +633,10 @@ function stableJobId(identity: string): string {
 function mergeDuplicateJobs(group: CanonicalJob[]): CanonicalJob {
   const ordered = sortJobsNewestFirst(group);
   const primary = ordered[0];
+  const evidenceRecord = [...group].filter(job => job.evidenceCheckedAt)
+    .sort((a,b) => (b.evidenceCheckedAt ?? "").localeCompare(a.evidenceCheckedAt ?? ""))[0];
   const titleRecord = [...group].sort((left, right) =>
+    Number(!left.evidenceCheckedAt) - Number(!right.evidenceCheckedAt) ||
     Number(isTruncatedJobTitle(left.title)) - Number(isTruncatedJobTitle(right.title)) ||
     Number(left.dateProvenance !== "employer-verified") - Number(right.dateProvenance !== "employer-verified") ||
     right.title.length - left.title.length ||
@@ -647,6 +661,14 @@ function mergeDuplicateJobs(group: CanonicalJob[]): CanonicalJob {
     ...primary,
     id: stableJobId(publicIdentity),
     title: titleRecord.title,
+    sponsorship: evidenceRecord?.sponsorship,
+    evidenceUrl: evidenceRecord?.evidenceUrl,
+    evidenceCheckedAt: evidenceRecord?.evidenceCheckedAt,
+    deadline: evidenceRecord?.deadline,
+    degrees: evidenceRecord?.degrees,
+    requirements: evidenceRecord?.requirements,
+    summary: evidenceRecord?.summary,
+    compensation: evidenceRecord?.compensation ?? group.find(job=>job.compensation)?.compensation,
     titleQuality: isTruncatedJobTitle(titleRecord.title) ? "truncated" : "complete",
     eligibilityStatus: classifyEarlyCareerEligibility(titleRecord.title, primary.roleLevel),
     legacyId: stableJobId(legacyVisibleIdentity(primary)),
@@ -1073,4 +1095,37 @@ export async function getPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot
     });
   inFlightSnapshots.set(requestKey, request);
   return request;
+}
+
+export async function getPublicIngestHealth(): Promise<{healthy:boolean;sources:unknown[]}|null> {
+  try {
+    const response = await fetch(new URL("/rest/v1/rpc/public_ingest_health", SUPABASE_URL), {
+      method:"POST",cache:"no-store",headers:{apikey:SUPABASE_PUBLISHABLE_KEY,"Content-Type":"application/json"},
+      body:"{}",signal:AbortSignal.timeout(5_000),
+    });
+    if (!response.ok) return null;
+    const result = await response.json();
+    return typeof result?.healthy === "boolean" && Array.isArray(result.sources) ? result : null;
+  } catch { return null; }
+}
+
+/** Durable aliases are consulted only when a saved or external ID leaves the current snapshot. */
+export async function getPublicJobsByIds(ids: string[], snapshot: DemoSnapshot) {
+  const result = new Map(ids.map(id => [id, getJobById(id, { snapshot })]));
+  const missing = ids.filter(id => !result.get(id));
+  if (!missing.length || missing.length > 100 || !missing.every(id => /^job_[a-f0-9]{16}$/.test(id))) return result;
+  try {
+    const response = await fetch(new URL("/rest/v1/rpc/resolve_public_job_ids", SUPABASE_URL), {
+      method: "POST", cache: "no-store", headers: { apikey: SUPABASE_PUBLISHABLE_KEY, "Content-Type": "application/json" },
+      body: JSON.stringify({ p_ids: missing }), signal: AbortSignal.timeout(5000),
+    });
+    if (!response.ok) return result;
+    const aliases = await response.json() as { requested_id: string; job_ids: string[] }[];
+    for (const alias of aliases) {
+      if (!result.has(alias.requested_id) || !Array.isArray(alias.job_ids)) continue;
+      const candidates = snapshot.jobs.filter(job => job.active && job.sourceRecordIds.some(id => alias.job_ids.includes(id)));
+      if (candidates.length === 1) result.set(alias.requested_id, getJobById(candidates[0].id, { snapshot }));
+    }
+  } catch { /* A failed alias lookup must not hide current direct matches. */ }
+  return result;
 }

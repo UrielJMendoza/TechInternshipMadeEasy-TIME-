@@ -33,6 +33,7 @@ const {
   getFreshness,
   getJobById,
   getNewestPostedJobs,
+  getPopularCompanies,
   isNewThisWeek,
   normalizeAtsHostname,
   normalizeEmployer,
@@ -307,6 +308,7 @@ test("uncertain matches, different employers, and different requisitions remain 
 test("filters parse defensively and serialize to one canonical copied URL", () => {
   const params = new URLSearchParams();
   params.set("q", "  Data   science  ");
+  params.set("company", "  Acme,   Inc.  ");
   params.set("level", "new-grad");
   params.set("major", "computer-science");
   params.set("niche", "data-ml");
@@ -319,6 +321,7 @@ test("filters parse defensively and serialize to one canonical copied URL", () =
   const filters = parseFilters(params);
   assert.deepEqual(filters, {
     q: "Data science",
+    company: "Acme, Inc.",
     level: "new-grad",
     major: "computer-science",
     niche: "data-ml",
@@ -329,18 +332,103 @@ test("filters parse defensively and serialize to one canonical copied URL", () =
   });
   assert.equal(
     serializeFilters(filters),
-    "level=new-grad&q=Data+science&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&source=lever",
+    "level=new-grad&q=Data+science&company=Acme%2C+Inc.&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&source=lever",
   );
   assert.equal(
     buildJobsUrl(filters),
-    "/jobs?level=new-grad&q=Data+science&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&source=lever",
+    "/jobs?level=new-grad&q=Data+science&company=Acme%2C+Inc.&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&source=lever",
   );
 
   assert.deepEqual(
     parseFilters({ level: "not-a-level", major: "invalid", niche: "finance", source: "unknown", remote: "false" }),
-    { q: "", level: "all", major: "all", niche: "all", location: "", remote: false, sponsorship: false, source: "" },
+    { q: "", company: "", level: "all", major: "all", niche: "all", location: "", remote: false, sponsorship: false, source: "" },
   );
   assert.equal(parseFilters({ major: "business", niche: "security" }).niche, "all");
+});
+
+test("the company filter is exact, normalized, and shareable", () => {
+  const jobs = deduplicateJobs([
+    rawRecord({ sourceRecordId: "greenhouse:acme-1", requisitionId: "REQ-101" }),
+    rawRecord({
+      sourceRecordId: "greenhouse:acme-2",
+      companyName: "ACME",
+      requisitionId: "REQ-102",
+      applicationUrl: "https://example.com/jobs/req-102",
+    }),
+    rawRecord({
+      sourceRecordId: "greenhouse:acme-labs",
+      companyName: "Acme Labs",
+      canonicalEmployerId: "acme-labs",
+      requisitionId: "REQ-103",
+      applicationUrl: "https://example.com/jobs/req-103",
+    }),
+  ], { now: NOW });
+  const snapshot = { asOf: AS_OF, rawRecords: [], jobs };
+  const filters = parseFilters({ company: "  Acme, Inc. " });
+  const page = queryJobs(filters, { snapshot, now: NOW });
+
+  assert.equal(serializeFilters(filters), "company=Acme%2C+Inc.");
+  assert.equal(buildJobsUrl(filters), "/jobs?company=Acme%2C+Inc.");
+  assert.equal(page.total, 2);
+  assert.ok(page.items.every((job) => normalizeEmployer(job.company) === "acme"));
+  assert.ok(page.items.every((job) => normalizeEmployer(job.company) !== "acme labs"));
+});
+
+test("the homepage company rail is ranked from recent public discoveries", () => {
+  const jobs = deduplicateJobs([
+    rawRecord({
+      sourceRecordId: "greenhouse:alpha-1",
+      companyName: "Alpha",
+      canonicalEmployerId: "alpha",
+      requisitionId: "ALPHA-1",
+      applicationUrl: "https://example.com/jobs/alpha-1",
+    }),
+    rawRecord({
+      sourceRecordId: "greenhouse:alpha-2",
+      companyName: "Alpha",
+      canonicalEmployerId: "alpha",
+      requisitionId: "ALPHA-2",
+      applicationUrl: "https://example.com/jobs/alpha-2",
+      firstSeenAt: "2026-08-18T14:30:00.000Z",
+    }),
+    rawRecord({
+      sourceRecordId: "greenhouse:beta",
+      companyName: "Beta",
+      canonicalEmployerId: "beta",
+      requisitionId: "BETA-1",
+      applicationUrl: "https://example.com/jobs/beta-1",
+      employerPostedAt: "2026-08-19T17:30:00.000Z",
+    }),
+    rawRecord({
+      sourceRecordId: "greenhouse:old",
+      companyName: "Old Company",
+      canonicalEmployerId: "old-company",
+      requisitionId: "OLD-1",
+      applicationUrl: "https://example.com/jobs/old-1",
+      firstSeenAt: "2026-06-01T14:30:00.000Z",
+    }),
+    rawRecord({
+      sourceRecordId: "greenhouse:senior",
+      companyName: "Senior Company",
+      canonicalEmployerId: "senior-company",
+      requisitionId: "SENIOR-1",
+      applicationUrl: "https://example.com/jobs/senior-1",
+      title: "Senior Product Analyst",
+      roleLevel: "New grad",
+    }),
+  ], { now: NOW });
+  const snapshot = { asOf: AS_OF, rawRecords: [], jobs };
+  const companies = getPopularCompanies({ snapshot, now: NOW, recentDays: 30 });
+
+  assert.deepEqual(companies, [
+    { name: "Alpha", domain: undefined, recentPostings: 2 },
+    { name: "Beta", domain: undefined, recentPostings: 1 },
+    { name: "Senior Company", domain: undefined, recentPostings: 1 },
+  ]);
+  assert.throws(
+    () => getPopularCompanies({ snapshot, now: NOW, recentDays: 0 }),
+    /recentDays must be an integer between 1 and 365/,
+  );
 });
 
 test("major search restores the original Timley taxonomy", () => {

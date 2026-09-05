@@ -1,9 +1,11 @@
 import {
   getPublicJobsFeedHealth,
+  getPublicIngestHealth,
   getPublicJobsSnapshot,
 } from "@/lib/jobs/live";
 
 export async function GET() {
+  const ingestionRequest = getPublicIngestHealth();
   try {
     await getPublicJobsSnapshot();
   } catch {
@@ -11,12 +13,14 @@ export async function GET() {
   }
 
   const health = getPublicJobsFeedHealth();
-  const healthy = health.status === "healthy" && health.mode === "live";
+  const ingestion = await ingestionRequest;
+  const healthy = health.status === "healthy" && health.mode === "live" && ingestion?.healthy === true;
 
   return Response.json(
     {
       ok: healthy,
-      status: health.status,
+      status: healthy ? "healthy" : "degraded",
+      ingestion,
       mode: health.mode,
       snapshotAt: health.snapshotAt,
       fallbackCapturedAt: health.fallbackCapturedAt,

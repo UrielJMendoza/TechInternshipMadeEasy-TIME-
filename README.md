@@ -24,6 +24,6 @@ CI runs these checks on pushes and pull requests. Production ignores the demo-da
 
 ## Operations and release
 
-See [operations and recovery](docs/operations.md) before changing ingestion schedules or applying migrations. Two prepared schedule migrations still require their recorded rollout approval; do not blindly apply every local migration.
+See [operations and recovery](docs/operations.md) before changing ingestion schedules or applying migrations. Both refresh schedules were approved and applied on September 5, 2026. Match the connected migration history before applying local files; management-API timestamps can differ from source filenames.
 
 The Git-connected Vercel project creates a preview for repair branches. Promote only the exact reviewed release after its checks pass. Keep database changes additive and preserve the preceding deployment and data manifests for recovery.

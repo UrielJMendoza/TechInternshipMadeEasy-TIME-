@@ -32,7 +32,7 @@ The original local checkout is preserved. The isolated repair branch contains th
 
 The deployed importer v19 source and the pre-change ingestion SQL are backed up in the task's working area. If an importer release fails, restore its prior Edge source and matching expected-code checksum together. If only a source fails, retain the other successful sources and investigate its parser/quarantine record. Do not force a failed snapshot through deactivation safeguards.
 
-The separate backend rollout document records the exact pending schedule and timing change. That migration is not applied until the requested explicit approval arrives.
+The staggered community schedule and employer verification schedule were explicitly approved and applied on September 5, 2026. Community sources run individually at minutes 15, 20, 25, 30, 35 and 40 of 06:00 and 18:00 UTC. Official boards retain their existing schedule.
 
 ## Recurring checks and identities
 
@@ -42,6 +42,6 @@ Run `node scripts/reconcile-job-identities.mjs` for a read-only current-feed man
 
 The employer queue allows at most six distinct canonical jobs per invocation and skips groups checked in the preceding 24 hours. A verified receipt is valid for displayed confirmations for 14 days. Explicit mandatory professional experience can exclude a role only when the employer evidence provides no alternative graduate path; ambiguous roles remain visible with an eligibility note.
 
-Pending migrations: `20260905020428_stagger_community_ingestion.sql` and `20260905052620_schedule_employer_verification.sql`. Check the connected database migration history before any CLI push: migrations applied through the management API may have different version timestamps from their source filenames.
+Applied schedule migrations: `20260905020428_stagger_community_ingestion.sql` and `20260905052620_schedule_employer_verification.sql`. Check the connected database migration history before any CLI push: migrations applied through the management API may have different version timestamps from their source filenames.
 
 The current importer is v20, code checksum `759352793254ebdf26f17214dbb89c1b70adfeb5d6eeebf1876789445599e05f`. The employer worker is independently deployed as v3. Its additional files are not imported by the importer entrypoint. Before a future importer deployment, regenerate `manifest.ts` with `node scripts/build-ingest-manifest.mjs`, deploy that exact source, and update the database's expected code version together. The checksum generator hashes the current function directory, so adding enrichment-only files changes a future generated checksum without changing the already deployed v20 importer.

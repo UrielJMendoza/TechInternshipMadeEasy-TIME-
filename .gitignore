@@ -40,3 +40,6 @@ yarn-error.log*
 /outputs/
 /work/
 /supabase/.temp/
+
+# TypeScript incremental build cache
+*.tsbuildinfo

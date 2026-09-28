@@ -25,6 +25,8 @@ const fallbackFixture = {
 const fallbackDataUrl = `data:text/javascript;base64,${Buffer.from(
   `export const BUNDLED_FALLBACK_CAPTURED_AT = "2026-08-31T22:15:17.000Z"; export const BUNDLED_FALLBACK_ROWS = ${JSON.stringify([fallbackFixture])};`,
 ).toString("base64")}`;
+const publicConfigSource = await readFile(new URL("../lib/supabase/public-config.ts", import.meta.url), "utf8");
+const publicConfigUrl = `data:text/javascript;base64,${Buffer.from(stripTypeScriptTypes(publicConfigSource)).toString("base64")}`;
 const liveSource = await readFile(new URL("../lib/jobs/live.ts", import.meta.url), "utf8");
 let freshLiveModuleSequence = 0;
 
@@ -36,13 +38,15 @@ async function loadFreshLiveModule(fallbackRows = [fallbackFixture]) {
   ).toString("base64")}`;
   const source = stripTypeScriptTypes(liveSource)
     .replace(/from "\.\/index";/, `from "${domainUrl}";`)
-    .replace(/from "\.\/fallback-data";/, `from "${freshFallbackUrl}";`);
+    .replace(/from "\.\/fallback-data";/, `from "${freshFallbackUrl}";`)
+    .replace(/from "@\/lib\/supabase\/public-config";/, `from "${publicConfigUrl}";`);
   return import(`data:text/javascript;base64,${Buffer.from(source).toString("base64")}#${marker}`);
 }
 
 const runnableLiveSource = stripTypeScriptTypes(liveSource)
   .replace(/from "\.\/index";/, `from "${domainUrl}";`)
-  .replace(/from "\.\/fallback-data";/, `from "${fallbackDataUrl}";`);
+  .replace(/from "\.\/fallback-data";/, `from "${fallbackDataUrl}";`)
+  .replace(/from "@\/lib\/supabase\/public-config";/, `from "${publicConfigUrl}";`);
 const liveModule = await import(
   `data:text/javascript;base64,${Buffer.from(runnableLiveSource).toString("base64")}`
 );

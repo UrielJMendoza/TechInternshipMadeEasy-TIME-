@@ -17,13 +17,7 @@ import {
   BUNDLED_FALLBACK_CAPTURED_AT,
   BUNDLED_FALLBACK_ROWS,
 } from "./fallback-data";
-
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ??
-  "https://ogkocdharscqzdrnlpnq.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-  "sb_publishable_ejWVjfUaEx5WAdrN72s7FQ_RwO7CDEh";
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/lib/supabase/public-config";
 
 const PAGE_SIZE = 1_000;
 const SNAPSHOT_INTERVAL_MS = 5 * 60 * 1_000;

@@ -21,9 +21,12 @@ export async function GET(request: Request) {
           code: "CURSOR_REFRESH_REQUIRED",
           error: "The jobs changed since this page was loaded. Refreshing keeps your filters intact.",
         },
-        { status: 409 },
+        { status: 409, headers: { "cache-control": "no-store" } },
       );
     }
-    return Response.json({ error: "The live jobs feed is temporarily unavailable. Please try again." }, { status: 503 });
+    return Response.json(
+      { error: "The live jobs feed is temporarily unavailable. Please try again." },
+      { status: 503, headers: { "cache-control": "no-store" } },
+    );
   }
 }

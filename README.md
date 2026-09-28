@@ -8,7 +8,9 @@ An account-free internship and new-graduate job feed at [timley.dev](https://tim
 - Vite/Nitro builds the Vercel artifact with `npm run build:vercel`; `vercel.json` defines the build and response headers.
 - Supabase Postgres stores source observations, job facts, evidence receipts, aliases and private reports. Row-level security protects private operations.
 - The `ingest` Edge Function refreshes six community lists and three configured employer boards. `enrich-employer-evidence` checks bounded public employer data using a private queue.
-- The browser receives public job data only. Ingestion and enrichment use server-side custom authorization; privileged keys never belong in client environment variables.
+- The browser receives public job data only. Ingestion and enrichment use server-side custom authorization; privileged keys never belong in client environment variables. `lib/supabase/public-config.ts` refuses secret and service-role keys even if one is misconfigured.
+- `vercel.json` sets the CSP, HSTS and related response headers. State-changing API routes reject cross-site requests and require a JSON body.
+- Pages publish canonical URLs, share cards, a web app manifest and escaped JSON-LD (`lib/seo/structured-data.ts`). `JobPosting` markup is emitted only when the page shows a verified employer description and an unambiguous US location; other listings get breadcrumbs only, so the site never publishes job markup that search-engine policies would reject.
 
 ## Development and verification
 

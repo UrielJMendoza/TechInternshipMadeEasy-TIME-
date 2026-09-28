@@ -45,6 +45,13 @@ test("homepage renders the focused account-free product and bespoke sharing meta
   assert.match(html, /4,416/);
   assert.match(html, /https:\/\/timley\.dev\/og\.png/);
   assert.match(html, /<link rel="canonical" href="https:\/\/timley\.dev"\/>/);
+  assert.match(html, /<meta property="og:url" content="https:\/\/timley\.dev"\/>/);
+  assert.match(html, /<meta name="theme-color" content="#080808"\/>/);
+  assert.match(html, /<link rel="manifest" href="\/manifest\.webmanifest"\/>/);
+  assert.match(html, /<link rel="apple-touch-icon" href="\/apple-touch-icon\.png" sizes="180x180"\/>/);
+  const homeJsonLd = JSON.parse(html.match(/<script type="application\/ld\+json">([^<]+)<\/script>/)?.[1] ?? "null");
+  assert.deepEqual(homeJsonLd?.["@graph"]?.map((node) => node["@type"]), ["WebSite", "Organization"]);
+  assert.match(html, /href="\/how-it-works">How it works<\/a>/);
   assert.match(html, /Companies with recent postings/);
   assert.match(html, />Pause logos<\/button>/);
   assert.doesNotMatch(html, /Companies students are watching/);
@@ -198,6 +205,7 @@ test("crawl metadata stays canonical and missing routes return a real 404", asyn
   ]);
 
   assert.match(jobs, /<link rel="canonical" href="https:\/\/timley\.dev\/jobs"\/>/);
+  assert.match(jobs, /<meta property="og:url" content="https:\/\/timley\.dev\/jobs"\/>/);
 
   assert.equal(robotsResponse.status, 200);
   assert.match(robotsResponse.headers.get("content-type") ?? "", /^text\/plain\b/i);
@@ -211,6 +219,8 @@ test("crawl metadata stays canonical and missing routes return a real 404", asyn
   assert.match(sitemap, /<loc>https:\/\/timley\.dev<\/loc>/);
   assert.match(sitemap, /<loc>https:\/\/timley\.dev\/jobs<\/loc>/);
   assert.doesNotMatch(sitemap, /\/saved<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/timley\.dev\/how-it-works<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/timley\.dev\/jobs\/job_[a-f0-9]{16}<\/loc>\s*<lastmod>/);
 
   for (const response of [missingJob, missingPage]) {
     assert.equal(response.status, 404);
@@ -255,4 +265,28 @@ test("job details use record-specific metadata and clear the site-wide image", a
   assert.doesNotMatch(detail, /Source details|Primary source|Contributing sources/);
   assert.match(detail, /class="apply" href="https:\/\/[^"]+" target="_blank" rel="noopener noreferrer"/);
   assert.doesNotMatch(detail, /property="og:image"|name="twitter:image"/);
+  assert.match(detail, new RegExp(`<meta property="og:url" content="https://timley\\.dev/jobs/${firstJobId}"/?>`));
+  const description = detail.match(/<meta name="description" content="([^"]*)"\/?>/)?.[1] ?? "";
+  assert.ok(description.length > 0 && description.length <= 160, "job descriptions should fit search snippets");
+  const detailJsonLd = [...detail.matchAll(/<script type="application\/ld\+json">([^<]+)<\/script>/g)]
+    .map((match) => JSON.parse(match[1]));
+  const breadcrumb = detailJsonLd.find((node) => node["@type"] === "BreadcrumbList");
+  assert.equal(breadcrumb?.itemListElement.at(-1).item, `https://timley.dev/jobs/${firstJobId}`);
+  for (const posting of detailJsonLd.filter((node) => node["@type"] === "JobPosting")) {
+    assert.ok(posting.description && posting.datePosted && posting.hiringOrganization?.name);
+    assert.ok(posting.jobLocation || posting.jobLocationType === "TELECOMMUTE");
+  }
+});
+
+test("the web app manifest is served with installable icons", async () => {
+  const response = await render("/manifest.webmanifest");
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /^application\/manifest\+json\b/i);
+  const manifest = await response.json();
+  assert.equal(manifest.short_name, "Timley");
+  assert.equal(manifest.start_url, "/");
+  assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ["192x192", "512x512", "512x512"]);
+  for (const icon of manifest.icons) {
+    await readFile(new URL(`../public${icon.src}`, import.meta.url));
+  }
 });

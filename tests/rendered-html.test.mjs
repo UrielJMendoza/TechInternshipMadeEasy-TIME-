@@ -278,6 +278,33 @@ test("job details use record-specific metadata and clear the site-wide image", a
   }
 });
 
+test("pages allow only nonce-bearing inline scripts", async () => {
+  const nonces = new Set();
+  for (const path of ["/", "/jobs", "/saved", "/how-it-works", "/definitely-missing"]) {
+    const response = await render(path);
+    const policy = response.headers.get("content-security-policy") ?? "";
+    const scriptSrc = policy.split(";").map((part) => part.trim()).find((part) => part.startsWith("script-src")) ?? "";
+    const nonce = scriptSrc.match(/'nonce-([A-Za-z0-9+/=]{16,})'/)?.[1];
+    assert.ok(nonce, `${path} should send a script nonce`);
+    assert.doesNotMatch(scriptSrc, /unsafe-inline|unsafe-eval/, path);
+    assert.match(policy, /frame-ancestors 'none'/, path);
+    nonces.add(nonce);
+
+    const html = await response.text();
+    const inlineScripts = [...html.matchAll(/<script\b([^>]*)>/g)]
+      .map((match) => match[1])
+      .filter((attributes) => !/\bsrc=/.test(attributes) && !/type="application\/ld\+json"/.test(attributes));
+    assert.ok(inlineScripts.length > 0, `${path} should include framework inline scripts`);
+    for (const attributes of inlineScripts) {
+      assert.ok(attributes.includes(`nonce="${nonce}"`), `${path} inline script without the page nonce: <script${attributes}>`);
+    }
+  }
+  assert.equal(nonces.size, 5, "every response needs a fresh nonce");
+
+  const api = await render("/api/jobs");
+  assert.doesNotMatch(api.headers.get("content-security-policy") ?? "", /nonce-/, "API routes are not page renders");
+});
+
 test("the web app manifest is served with installable icons", async () => {
   const response = await render("/manifest.webmanifest");
   assert.equal(response.status, 200);

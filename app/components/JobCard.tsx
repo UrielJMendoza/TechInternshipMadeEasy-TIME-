@@ -59,7 +59,7 @@ export function JobCard({ job, liveRecency = false, returnTo = "/jobs" }: JobCar
           href={job.applyUrl}
           target="_blank"
           rel="noopener noreferrer"
-          aria-label={`Apply for ${job.title} at ${job.company} on the employer website`}
+          aria-label={`Apply for ${job.title} at ${job.company} on the employer website (opens in a new tab)`}
         >
           Apply
         </a>

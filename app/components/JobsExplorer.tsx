@@ -351,7 +351,9 @@ export function JobsExplorer({
               const headingId = `company-group-${index}-heading`;
               const jobsId = `company-group-${index}-jobs`;
               return (
-                <section className="company-job-group" aria-labelledby={headingId} key={group.key}>
+                // A company can recur across recency groups, so these are
+                // named groups rather than duplicate region landmarks.
+                <div className="company-job-group" role="group" aria-labelledby={headingId} key={group.key}>
                   <div className="company-group-heading">
                     <div>
                       <h3 id={headingId}>{group.company}</h3>
@@ -372,7 +374,7 @@ export function JobsExplorer({
                       <JobCard job={job} key={job.id} returnTo={returnPath} />
                     ))}
                   </div>
-                </section>
+                </div>
               );
             })}
           </div>

@@ -1,5 +1,15 @@
 @import "../node_modules/tailwindcss/index.css";
 
+/* Metric-matched Arial keeps text in place while Hanken Grotesk loads (no CLS). */
+@font-face {
+  font-family: "Hanken Grotesk Fallback";
+  src: local("Arial"), local("ArialMT"), local("Liberation Sans"), local("LiberationSans");
+  size-adjust: 100.94%;
+  ascent-override: 99.07%;
+  descent-override: 30.02%;
+  line-gap-override: 0%;
+}
+
 :root {
   --gutter: 32px;
   --ink: #080808;
@@ -15,7 +25,7 @@
   --blue-hover: #3558d8;
   --apply-fill: #3b5ddd;
   --apply-hover: #4667e0;
-  --sans: "Hanken Grotesk Variable", "Helvetica Neue", Arial, sans-serif;
+  --sans: "Hanken Grotesk Variable", "Hanken Grotesk Fallback", "Helvetica Neue", Arial, sans-serif;
   --mono: "Fragment Mono", "SFMono-Regular", Consolas, monospace;
 }
 

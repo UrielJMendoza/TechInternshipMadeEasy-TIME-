@@ -144,7 +144,7 @@ export function SaveButton({ job }: SaveButtonProps) {
     <button
       className={`save-button${saved ? " is-saved" : ""}`}
       type="button"
-      aria-label={`${saved ? "Remove" : "Save"} ${job.title} at ${job.company}${saved ? " from saved jobs" : ""}`}
+      aria-label={`${saved ? "Saved" : "Save"} ${job.title} at ${job.company}`}
       aria-pressed={saved}
       onClick={toggleSaved}
     >

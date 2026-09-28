@@ -114,7 +114,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
             </div>
             <div className="detail-actions">
               <SaveButton job={job} />
-              <a className="apply" href={job.applyUrl} target="_blank" rel="noopener noreferrer" aria-label={`Apply for ${job.title} at ${job.company} on the employer website`}>
+              <a className="apply" href={job.applyUrl} target="_blank" rel="noopener noreferrer" aria-label={`Apply now for ${job.title} at ${job.company} on the employer website (opens in a new tab)`}>
                 Apply now
               </a>
             </div>

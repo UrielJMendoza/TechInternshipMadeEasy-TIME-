@@ -3,14 +3,14 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 import { brotliCompressSync, gzipSync } from "node:zlib";
 
-async function render(pathname = "/") {
+async function render(pathname = "/", headers = {}) {
   const workerUrl = new URL(process.env.TIMLEY_TEST_ARTIFACT === "vercel" ? "../.vercel/output/functions/__server.func/index.mjs" : "../dist/server/index.js", import.meta.url);
   workerUrl.searchParams.set("test", `${process.pid}-${Date.now()}-${Math.random()}`);
   const { default: worker } = await import(workerUrl.href);
 
   return worker.fetch(
     new Request(new URL(pathname, "http://localhost"), {
-      headers: { accept: "text/html", host: "localhost" },
+      headers: { accept: "text/html", host: "localhost", ...headers },
     }),
     {
       ASSETS: { fetch: async () => new Response("Not found", { status: 404 }) },
@@ -288,5 +288,25 @@ test("the web app manifest is served with installable icons", async () => {
   assert.deepEqual(manifest.icons.map((icon) => icon.sizes), ["192x192", "512x512", "512x512"]);
   for (const icon of manifest.icons) {
     await readFile(new URL(`../public${icon.src}`, import.meta.url));
+  }
+});
+
+test("job metadata is in the document head for browsers and every crawler", async () => {
+  const jobsHtml = await htmlFor("/jobs");
+  const jobId = jobsHtml.match(/\/jobs\/(job_[a-f0-9]+)/)?.[1];
+  assert.ok(jobId);
+  assert.match(jobsHtml, /<div class="company-job-group" role="group" aria-labelledby="company-group-0-heading">/);
+  assert.doesNotMatch(jobsHtml, /<section class="company-job-group"/, "company groups should not be duplicate landmarks");
+  for (const userAgent of [
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0 Safari/537.36",
+    "Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)",
+    "facebookexternalhit/1.1",
+  ]) {
+    const response = await render(`/jobs/${jobId}`, { "user-agent": userAgent });
+    assert.equal(response.status, 200);
+    const head = (await response.text()).split("</head>")[0];
+    assert.match(head, /<title>[^<]+ · Timley<\/title>/, userAgent);
+    assert.match(head, /<meta name="description" content="[^"]+"\/?>/, userAgent);
+    assert.match(head, new RegExp(`<link rel="canonical" href="https://timley\\.dev/jobs/${jobId}"`), userAgent);
   }
 });

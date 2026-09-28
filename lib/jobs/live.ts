@@ -25,6 +25,13 @@ const MAX_CURSOR_AGE_MS = 10 * 60 * 1_000;
 const REQUEST_TIMEOUT_MS = 15_000;
 const FALLBACK_BASE_RETRY_MS = 60_000;
 const FALLBACK_MAX_RETRY_MS = 30 * 60_000;
+// Warm instances fetch only rows changed since their last sync. The overlap
+// re-reads recent rows because Postgres stamps updated_at at transaction
+// start, so a long import can commit rows older than the latest one seen.
+const INCREMENTAL_OVERLAP_MS = 15 * 60_000;
+// Periodically replace the incremental store with a complete read so any
+// missed or physically deleted row cannot persist for long.
+const FULL_RESYNC_INTERVAL_MS = 6 * 60 * 60_000;
 const MIN_VERIFIED_FEED_RATIO = 0.65;
 const SELECT_FIELDS = [
   "id",
@@ -77,6 +84,25 @@ export type PublicJobsFeedHealth = {
   invalidRows: number;
   duplicateDeltaIds: number;
   refreshDurationMs: number | null;
+  /** Whether the last successful sync read every delta row or only changes. */
+  lastSyncMode: "full" | "incremental" | null;
+  /** Rows transferred by the last sync; a full read is the expensive path. */
+  lastSyncFetchedRows: number;
+  /** Sanitized code for the last failed refresh, such as `upstream_http_402`. */
+  lastFailureCode: string | null;
+};
+
+/**
+ * Current delta rows (updated after the bundled snapshot) kept by this
+ * instance so later refreshes transfer only what changed. Rows are admitted
+ * through `admittedThrough`; older snapshots filter by first_seen_at locally.
+ */
+type DeltaRowStore = {
+  rowsById: ReadonlyMap<string, LiveJobRow>;
+  admittedThrough: string;
+  /** When the last successful read began; the next one starts before it. */
+  syncStartedAt: number;
+  fullSyncedAt: number;
 };
 
 type SnapshotBuildResult = {
@@ -103,8 +129,12 @@ let feedHealth: PublicJobsFeedHealth = {
   invalidRows: 0,
   duplicateDeltaIds: 0,
   refreshDurationMs: null,
+  lastSyncMode: null,
+  lastSyncFetchedRows: 0,
+  lastFailureCode: null,
 };
 let demoGuardLogged = false;
+let deltaRowStore: DeltaRowStore | null = null;
 
 let cachedSnapshot: DemoSnapshot | null = null;
 let cacheExpiresAt = 0;
@@ -801,10 +831,12 @@ async function fetchJobsDeltaPage(
   offset: number,
   snapshotAt: string,
   includeCount = false,
+  changedAfter?: string,
 ): Promise<JobsPage> {
   const url = new URL("/rest/v1/jobs", SUPABASE_URL);
   url.searchParams.set("select", SELECT_FIELDS);
   url.searchParams.append("updated_at", `gt.${BUNDLED_FALLBACK_CAPTURED_AT}`);
+  if (changedAfter) url.searchParams.append("updated_at", `gt.${changedAfter}`);
   // The repository stores current rows, not historical row versions. Filtering
   // their mutable updated_at by this bucket would hide recently refreshed jobs
   // and resurrect older bundled copies of jobs that just closed. Only discovery
@@ -835,8 +867,8 @@ async function fetchJobsDeltaPage(
   };
 }
 
-async function fetchAllDeltaRows(snapshotAt: string): Promise<LiveJobRow[]> {
-  const first = await fetchJobsDeltaPage(0, snapshotAt, true);
+async function fetchAllDeltaRows(snapshotAt: string, changedAfter?: string): Promise<LiveJobRow[]> {
+  const first = await fetchJobsDeltaPage(0, snapshotAt, true, changedAfter);
   if (first.rows.length < PAGE_SIZE) {
     if (first.total !== null && first.rows.length !== first.total) {
       throw new Error("upstream_incomplete_delta");
@@ -850,7 +882,7 @@ async function fetchAllDeltaRows(snapshotAt: string): Promise<LiveJobRow[]> {
       offsets.push(offset);
     }
     const remaining = await Promise.all(
-      offsets.map((offset) => fetchJobsDeltaPage(offset, snapshotAt)),
+      offsets.map((offset) => fetchJobsDeltaPage(offset, snapshotAt, false, changedAfter)),
     );
     const rows = [first.rows, ...remaining.map((page) => page.rows)].flat();
     if (rows.length !== first.total) throw new Error("upstream_incomplete_delta");
@@ -859,10 +891,72 @@ async function fetchAllDeltaRows(snapshotAt: string): Promise<LiveJobRow[]> {
 
   const rows = [...first.rows];
   for (let offset = PAGE_SIZE; ; offset += PAGE_SIZE) {
-    const page = await fetchJobsDeltaPage(offset, snapshotAt);
+    const page = await fetchJobsDeltaPage(offset, snapshotAt, false, changedAfter);
     rows.push(...page.rows);
     if (page.rows.length < PAGE_SIZE) return rows;
   }
+}
+
+type DeltaSync = {
+  store: DeltaRowStore;
+  mode: "full" | "incremental";
+  fetchedRows: number;
+  duplicateIds: number;
+};
+
+function laterIso(left: string, right: string): string {
+  return Date.parse(left) >= Date.parse(right) ? left : right;
+}
+
+/**
+ * Bring this instance's delta rows up to date. A cold or expired store reads
+ * every row changed since the bundle; a warm one reads only rows changed
+ * since its previous read began (minus the overlap) and merges them by ID. The
+ * caller commits the returned store only after the snapshot passes its
+ * safety checks, so a rejected sync never becomes the next sync's baseline.
+ */
+async function syncDeltaRows(admitThrough: string): Promise<DeltaSync> {
+  const now = Date.now();
+  const previous = deltaRowStore;
+  const incremental = previous !== null && now - previous.fullSyncedAt < FULL_RESYNC_INTERVAL_MS;
+  const admittedThrough = incremental ? laterIso(previous.admittedThrough, admitThrough) : admitThrough;
+  // Anything changed after the previous read began carries a later
+  // updated_at, less at most one transaction's duration. New discoveries up
+  // to the new boundary are covered too: the previous boundary was at most
+  // one snapshot interval before that read, well inside the overlap.
+  const changedAfter = incremental
+    ? laterIso(
+        BUNDLED_FALLBACK_CAPTURED_AT,
+        new Date(previous.syncStartedAt - INCREMENTAL_OVERLAP_MS).toISOString(),
+      )
+    : undefined;
+
+  const fetched = await fetchAllDeltaRows(admittedThrough, changedAfter);
+  const rowsById = new Map(incremental ? previous.rowsById : []);
+  for (const row of fetched) {
+    const id = requiredText(row.id);
+    if (id) rowsById.set(id, row);
+  }
+  return {
+    store: {
+      rowsById,
+      admittedThrough,
+      syncStartedAt: now,
+      fullSyncedAt: incremental ? previous.fullSyncedAt : now,
+    },
+    mode: incremental ? "incremental" : "full",
+    fetchedRows: fetched.length,
+    duplicateIds: duplicateRowIds(fetched),
+  };
+}
+
+/** Rows discovered by the snapshot boundary, matching the server-side filter. */
+function rowsAdmittedBy(store: DeltaRowStore, snapshotAt: string): LiveJobRow[] {
+  const boundary = Date.parse(snapshotAt);
+  return [...store.rowsById.values()].filter((row) => {
+    const firstSeenAt = timestamp(row.first_seen_at);
+    return firstSeenAt !== null && Date.parse(firstSeenAt) <= boundary;
+  });
 }
 
 function mergedVerifiedRows(deltaRows: readonly LiveJobRow[]): LiveJobRow[] {
@@ -908,8 +1002,9 @@ async function refreshPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot> {
     baselineRows: BUNDLED_FALLBACK_ROWS.length,
   });
 
-  const deltaRows = await fetchAllDeltaRows(snapshotAt);
-  const duplicateDeltaIds = duplicateRowIds(deltaRows);
+  const sync = await syncDeltaRows(laterIso(snapshotAt, currentSnapshotBoundary()));
+  const duplicateDeltaIds = sync.duplicateIds;
+  const deltaRows = rowsAdmittedBy(sync.store, snapshotAt);
   feedHealth = {
     ...feedHealth,
     deltaRows: deltaRows.length,
@@ -957,9 +1052,15 @@ async function refreshPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot> {
     invalidRows: built.invalidRows,
     duplicateDeltaIds,
     refreshDurationMs: Date.now() - startedAt,
+    lastSyncMode: sync.mode,
+    lastSyncFetchedRows: sync.fetchedRows,
+    lastFailureCode: null,
   };
+  deltaRowStore = sync.store;
   feedLog("info", "refresh_succeeded", {
     snapshotAt,
+    syncMode: sync.mode,
+    fetchedRows: sync.fetchedRows,
     deltaRows: deltaRows.length,
     mergedRows: rows.length,
     canonicalJobs: built.snapshot.jobs.length,
@@ -1074,6 +1175,7 @@ export async function getPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot
         fallbackCapturedAt: fallback.fallbackCapturedAt ?? BUNDLED_FALLBACK_CAPTURED_AT,
         nextRetryAt: new Date(failedAt + retryDelayMs).toISOString(),
         consecutiveFailures: failures,
+        lastFailureCode: safeFailureCode(error),
         canonicalJobs: fallback.jobs.length,
         activeJobs: fallback.jobs.filter((job) => job.active).length,
         refreshDurationMs: feedHealth.lastAttemptAt

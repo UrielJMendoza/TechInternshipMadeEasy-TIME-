@@ -17,12 +17,24 @@ export function validatePublicHealth(health, now = Date.now()) {
   return { canonicalJobs: health.counts.canonicalJobs, activeJobs: health.counts.activeJobs, healthySources: health.ingestion.sources.length };
 }
 
+/** Explain a degraded response from its sanitized failure code, if any. */
+export function describeUnhealthy(health) {
+  const code = typeof health?.lastFailureCode === 'string' && /^[a-z0-9_]{1,80}$/.test(health.lastFailureCode) ? health.lastFailureCode : null;
+  const captured = typeof health?.fallbackCapturedAt === 'string' && !Number.isNaN(Date.parse(health.fallbackCapturedAt)) ? new Date(health.fallbackCapturedAt).toISOString() : null;
+  const parts = [];
+  if (code) parts.push(`Live feed failure: ${code}.`);
+  if (code === 'upstream_http_402') parts.push('Supabase restricted the project, usually because the organization exceeded its plan quota; check Supabase billing and usage.');
+  if (captured) parts.push(`Visitors are seeing bundled data captured ${captured}.`);
+  return parts.join(' ');
+}
+
 async function main() {
   for (let attempt = 1; attempt <= 3; attempt++) {
     try {
       const response = await fetch('https://timley.dev/api/health/jobs', { signal: AbortSignal.timeout(30000), headers: { accept: 'application/json' }, redirect: 'error' });
-      if (!response.ok) throw new Error(`Health route returned HTTP ${response.status}.`);
-      const summary = validatePublicHealth(await response.json());
+      const health = await response.json().catch(() => null);
+      if (!response.ok) throw new Error(`Health route returned HTTP ${response.status}. ${describeUnhealthy(health)}`.trim());
+      const summary = validatePublicHealth(health);
       console.log(JSON.stringify({ checkedAt: new Date().toISOString(), ...summary }));
       return;
     } catch (error) {

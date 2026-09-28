@@ -28,6 +28,8 @@ export async function GET() {
       lastSuccessAt: health.lastSuccessAt,
       nextRetryAt: health.nextRetryAt,
       consecutiveFailures: health.consecutiveFailures,
+      lastFailureCode: health.lastFailureCode,
+      sync: { mode: health.lastSyncMode, fetchedRows: health.lastSyncFetchedRows },
       counts: {
         baselineRows: health.baselineRows,
         deltaRows: health.deltaRows,

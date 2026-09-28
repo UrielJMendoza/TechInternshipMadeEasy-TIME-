@@ -195,6 +195,161 @@ async function withCurrentRepository(rows, verify, onPage) {
   }
 }
 
+async function withClockedRepository(rows, verify) {
+  const originalFetch = globalThis.fetch;
+  const originalNow = Date.now;
+  const originalMode = process.env.TIMLEY_USE_DEMO_JOBS;
+  const originalVercelEnvironment = process.env.VERCEL_ENV;
+  const clock = { now: Date.parse("2026-09-05T17:14:00.000Z") };
+  const transfers = [];
+  process.env.TIMLEY_USE_DEMO_JOBS = "false";
+  delete process.env.VERCEL_ENV;
+  Date.now = () => clock.now;
+  const repository = currentRepositoryFetch(rows);
+  globalThis.fetch = async (input, init) => {
+    const response = await repository(input, init);
+    const url = new URL(String(input));
+    transfers.push({ url, rows: (await response.clone().json()).length });
+    return response;
+  };
+  try {
+    await verify(await loadFreshLiveModule(), { clock, transfers });
+  } finally {
+    globalThis.fetch = originalFetch;
+    Date.now = originalNow;
+    if (originalMode === undefined) delete process.env.TIMLEY_USE_DEMO_JOBS;
+    else process.env.TIMLEY_USE_DEMO_JOBS = originalMode;
+    if (originalVercelEnvironment === undefined) delete process.env.VERCEL_ENV;
+    else process.env.VERCEL_ENV = originalVercelEnvironment;
+  }
+}
+
+function manyLiveRows(count, updatedAt = "2026-09-05T06:20:00.000Z") {
+  return Array.from({ length: count }, (_, index) => liveRow({
+    id: `steady-${String(index).padStart(4, "0")}`,
+    primary_apply_url: `https://jobs.lever.co/acme/steady-${index}`,
+    first_seen_at: "2026-09-01T06:15:00.000Z",
+    last_seen_at: updatedAt,
+    updated_at: updatedAt,
+  }));
+}
+
+test("a warm instance transfers only rows changed since its last sync", async () => {
+  const rows = manyLiveRows(1_500);
+  await withClockedRepository(rows, async (freshLive, { clock, transfers }) => {
+    const first = await freshLive.getPublicJobsSnapshot();
+    assert.equal(first.asOf, "2026-09-05T17:10:00.000Z");
+    assert.equal(transfers.reduce((sum, transfer) => sum + transfer.rows, 0), 1_500);
+    assert.equal(freshLive.getPublicJobsFeedHealth().lastSyncMode, "full");
+
+    // Five minutes later one listing changes and one is newly discovered.
+    rows[7].title = "Platform Engineer Intern";
+    rows[7].updated_at = "2026-09-05T17:16:00.000Z";
+    rows.push(liveRow({
+      id: "new-discovery",
+      primary_apply_url: "https://jobs.lever.co/acme/new-discovery",
+      first_seen_at: "2026-09-05T17:13:00.000Z",
+      last_seen_at: "2026-09-05T17:13:00.000Z",
+      updated_at: "2026-09-05T17:13:00.000Z",
+    }));
+    clock.now = Date.parse("2026-09-05T17:19:00.000Z");
+    transfers.length = 0;
+    const second = await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+
+    assert.equal(second.asOf, "2026-09-05T17:15:00.000Z");
+    assert.equal(transfers.length, 1, `one small page, not a full re-read: ${transfers.map((t) => `${t.url.search} (${t.rows})`).join(" | ")}`);
+    assert.deepEqual(transfers[0].url.searchParams.getAll("updated_at"), [
+      "gt.2026-08-31T22:15:17.000Z",
+      "gt.2026-09-05T16:59:00.000Z",
+    ]);
+    assert.equal(transfers[0].rows, 2);
+    assert.equal(health.lastSyncMode, "incremental");
+    assert.equal(health.lastSyncFetchedRows, 2);
+    assert.equal(health.deltaRows, 1_501);
+    assert.ok(second.jobs.some((job) => job.title === "Platform Engineer Intern"));
+    assert.ok(second.jobs.some((job) => job.sourceRecordIds.includes("new-discovery")));
+    assert.equal(second.jobs.filter((job) => job.active).length, first.jobs.length + 1);
+  });
+});
+
+test("incremental syncs apply closures and late commits inside the overlap", async () => {
+  const rows = manyLiveRows(20);
+  await withClockedRepository(rows, async (freshLive, { clock }) => {
+    await freshLive.getPublicJobsSnapshot();
+    // A tombstone, plus a row whose transaction began before a newer row it
+    // committed after: its updated_at is older than the store's high-water mark.
+    rows[0].is_active = false;
+    rows[0].updated_at = "2026-09-05T17:17:00.000Z";
+    rows[1].title = "Late Commit Intern";
+    rows[1].updated_at = "2026-09-05T17:12:30.000Z";
+    clock.now = Date.parse("2026-09-05T17:21:00.000Z");
+    const snapshot = await freshLive.getPublicJobsSnapshot();
+    assert.equal(snapshot.jobs.find((job) => job.sourceRecordIds.includes(rows[0].id)).active, false);
+    assert.equal(snapshot.jobs.find((job) => job.sourceRecordIds.includes(rows[1].id)).title, "Late Commit Intern");
+  });
+});
+
+test("a warm store still serves exact historical cursor snapshots", async () => {
+  const rows = manyLiveRows(3);
+  await withClockedRepository(rows, async (freshLive, { clock }) => {
+    const first = await freshLive.getPublicJobsSnapshot();
+    rows.push(liveRow({
+      id: "discovered-after-first-bucket",
+      primary_apply_url: "https://jobs.lever.co/acme/after-first-bucket",
+      first_seen_at: "2026-09-05T17:12:00.000Z",
+      last_seen_at: "2026-09-05T17:12:00.000Z",
+      updated_at: "2026-09-05T17:12:00.000Z",
+    }));
+    clock.now = Date.parse("2026-09-05T17:16:00.000Z");
+    const latest = await freshLive.getPublicJobsSnapshot();
+    assert.ok(latest.jobs.some((job) => job.sourceRecordIds.includes("discovered-after-first-bucket")));
+
+    // Another instance rebuilding the first bucket from the same warm store
+    // must not admit the later discovery.
+    const rebuilt = await (await loadFreshLiveModule()).getPublicJobsSnapshot(first.asOf);
+    assert.equal(rebuilt.jobs.some((job) => job.sourceRecordIds.includes("discovered-after-first-bucket")), false);
+    assert.equal(await freshLive.getPublicJobsSnapshot(first.asOf), first);
+  });
+});
+
+test("the store fully resynchronizes after six hours", async () => {
+  const rows = manyLiveRows(5);
+  await withClockedRepository(rows, async (freshLive, { clock, transfers }) => {
+    await freshLive.getPublicJobsSnapshot();
+    clock.now += 6 * 60 * 60_000 + 60_000;
+    transfers.length = 0;
+    await freshLive.getPublicJobsSnapshot();
+    assert.deepEqual(transfers[0].url.searchParams.getAll("updated_at"), ["gt.2026-08-31T22:15:17.000Z"]);
+    assert.equal(freshLive.getPublicJobsFeedHealth().lastSyncMode, "full");
+    assert.equal(transfers[0].rows, 5);
+  });
+});
+
+test("a failed incremental sync keeps the last good store and reports why", async () => {
+  const rows = manyLiveRows(12);
+  await withClockedRepository(rows, async (freshLive, { clock }) => {
+    const first = await freshLive.getPublicJobsSnapshot();
+    const workingFetch = globalThis.fetch;
+    globalThis.fetch = async () => new Response("quota exceeded", { status: 402 });
+    clock.now = Date.parse("2026-09-05T17:19:00.000Z");
+    const degraded = await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+    assert.equal(health.mode, "verified-fallback");
+    assert.equal(health.lastFailureCode, "upstream_http_402");
+    assert.equal(degraded.jobs.length, first.jobs.length, "the last live snapshot stays visible");
+
+    globalThis.fetch = workingFetch;
+    rows[3].title = "Recovered Intern";
+    rows[3].updated_at = "2026-09-05T17:40:00.000Z";
+    clock.now = Date.parse("2026-09-05T17:44:00.000Z");
+    const recovered = await freshLive.getPublicJobsSnapshot();
+    assert.equal(freshLive.getPublicJobsFeedHealth().lastSyncMode, "incremental");
+    assert.equal(freshLive.getPublicJobsFeedHealth().lastFailureCode, null);
+    assert.ok(recovered.jobs.some((job) => job.title === "Recovered Intern"));
+  });
+});
+
 test("refreshes inside a discovery bucket retain current jobs and apply closure tombstones", async () => {
   const rows = [
     { ...fallbackFixture, is_active: false, updated_at: "2026-09-05T17:10:06.000Z" },

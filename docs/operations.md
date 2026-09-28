@@ -26,6 +26,16 @@ The importer uses custom authorization against the existing Vault credential. Ke
 
 The employer evidence worker reads bounded public ATS responses. An inaccessible or unsupported source remains unknown; one failed request does not close a listing. Evidence is tied to the application URL and expires after 14 days for displayed confirmations. A database trigger protects verified title, pay and sponsorship facts from weaker imported values while the receipt is valid.
 
+## Supabase egress and quota restrictions
+
+The organization is on the Supabase free plan. When it exceeds a plan quota, Supabase answers every API request with HTTP 402, which also stops the scheduled imports. The website then serves the bundled snapshot. `/api/health/jobs` reports the cause as `lastFailureCode` (for example `upstream_http_402`), and the `Public feed health` workflow prints it. Check Supabase billing and usage first when you see it.
+
+In September 2026 the website itself caused this. Each import rewrites `updated_at` on every listing it sees, so "rows changed since the bundle" is effectively the whole table: about 9,600 rows, 13 MB of JSON and roughly 2 MB compressed. Every warm serverless instance re-read all of it every five minutes, about 17 GB a month per instance against the free plan's 5 GB. Requests have returned 402 since mid-September, and the last database update was September 12.
+
+The reader now keeps each instance's delta rows in memory. After one full read, a warm instance only requests rows whose `updated_at` is later than its previous read minus a 15-minute overlap, then merges them by ID. The overlap covers transactions that commit after a later read, because Postgres stamps `now()` at transaction start. A complete re-read every six hours guards against anything missed. Between imports an incremental read is usually empty or a few employer-evidence rows. `sync.mode` and `sync.fetchedRows` in the health response show which path ran.
+
+Cold starts still read everything, about 2 MB each. If usage stays near the limit, publish one precomputed snapshot per import, or add a column that changes only when public listing content changes, so readers stop depending on the per-sighting `updated_at`.
+
 ## Recovery
 
 The original local checkout is preserved. The isolated repair branch contains the replacement code. The preceding website deployment is `dpl_HR59L5MbyuiHQLeVR7a9D9koSjNC`; preserve it until the replacement passes live verification. A website rollback must remain compatible with additive database fields. Do not delete reports, observations or evidence to undo a presentation change.

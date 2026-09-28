@@ -303,6 +303,14 @@ test("pages allow only nonce-bearing inline scripts", async () => {
 
   const api = await render("/api/jobs");
   assert.doesNotMatch(api.headers.get("content-security-policy") ?? "", /nonce-/, "API routes are not page renders");
+
+  // Vercel builds a root middleware.* file as a separate Edge function in this
+  // framework-less project, which cannot resolve app imports and fails the
+  // deployment. The nonce must stay in proxy.ts, which vinext bundles.
+  for (const name of ["middleware.ts", "middleware.js", "middleware.mjs"]) {
+    await assert.rejects(readFile(new URL(`../${name}`, import.meta.url)), `${name} must not exist`);
+  }
+  await readFile(new URL("../proxy.ts", import.meta.url));
 });
 
 test("the web app manifest is served with installable icons", async () => {

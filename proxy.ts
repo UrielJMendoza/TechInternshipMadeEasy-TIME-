@@ -5,8 +5,13 @@ import { createNonce, pageContentSecurityPolicy } from "@/lib/http/content-secur
  * Give every page render its own script nonce. The framework reads the nonce
  * from this Content-Security-Policy header and stamps it on the inline
  * scripts it emits, so the policy can drop 'unsafe-inline' for scripts.
+ *
+ * This is the Next.js 16 `proxy.ts` convention on purpose: Vercel treats a
+ * root `middleware.ts` in this framework-less project as a separate Edge
+ * Routing Middleware, which cannot resolve these imports and fails the
+ * deployment. vinext runs `proxy.ts` inside the application bundle instead.
  */
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const policy = pageContentSecurityPolicy(createNonce(), {
     secure: request.nextUrl.protocol === "https:",
   });

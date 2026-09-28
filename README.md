@@ -10,7 +10,7 @@ An account-free internship and new-graduate job feed at [timley.dev](https://tim
 - The `ingest` Edge Function refreshes six community lists and three configured employer boards. `enrich-employer-evidence` checks bounded public employer data using a private queue.
 - The browser receives public job data only. Ingestion and enrichment use server-side custom authorization; privileged keys never belong in client environment variables. `lib/supabase/public-config.ts` refuses secret and service-role keys even if one is misconfigured.
 - Production builds bundle a fresh 90-day snapshot of the feed, and a scheduled deploy hook rebuilds after each import. The site only reads rows changed since then, within a per-sync budget, so Supabase egress stays far inside the free plan. See [operations](docs/operations.md#supabase-egress-and-quota-restrictions) for the one-time deploy hook setup.
-- `middleware.ts` issues a per-request CSP nonce for pages; `vercel.json` sets HSTS and related response headers. State-changing API routes reject cross-site requests and require a JSON body.
+- `proxy.ts` issues a per-request CSP nonce for pages (not `middleware.ts`, which Vercel would build as a separate Edge function); `vercel.json` sets HSTS and related response headers. State-changing API routes reject cross-site requests and require a JSON body.
 - Pages publish canonical URLs, share cards, a web app manifest and escaped JSON-LD (`lib/seo/structured-data.ts`). `JobPosting` markup is emitted only when the page shows a verified employer description and an unambiguous US location; other listings get breadcrumbs only, so the site never publishes job markup that search-engine policies would reject.
 
 ## Development and verification

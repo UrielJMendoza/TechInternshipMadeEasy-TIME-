@@ -28,7 +28,7 @@ The employer evidence worker reads bounded public ATS responses. An inaccessible
 
 ## Supabase egress and quota restrictions
 
-The organization is on the Supabase free plan. When it exceeds a plan quota, Supabase answers every API request with HTTP 402, which also stops the scheduled imports. The website then serves the bundled snapshot. `/api/health/jobs` reports the cause as `lastFailureCode` (for example `upstream_http_402`), and the `Public feed health` workflow prints it. Check Supabase billing and usage first when you see it.
+The organization moved from the free plan to Supabase Pro on September 28, 2026. Pro includes far more egress, but usage is still metered. When an organization exceeds a plan quota, Supabase answers every API request with HTTP 402, which also stops the scheduled imports. The website then serves the bundled snapshot. `/api/health/jobs` reports the cause as `lastFailureCode` (for example `upstream_http_402`), and the `Public feed health` workflow prints it. Check Supabase billing and usage first when you see it.
 
 In September 2026 the website itself caused this. Each import rewrites `updated_at` on every listing it sees, so "rows changed since the bundle" is effectively the whole table: about 9,600 rows, 13 MB of JSON and roughly 2 MB compressed. Every warm serverless instance re-read all of it every five minutes, about 17 GB a month per instance against the free plan's 5 GB. Requests have returned 402 since mid-September, and the last database update was September 12.
 

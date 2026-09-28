@@ -55,7 +55,7 @@ jobs:
           deno-version: v2.9.6
 
       - name: Verify ingestion authorization, failures and employer evidence
-        run: deno test --allow-env --allow-read --config supabase/functions/ingest/deno.json --node-modules-dir=none supabase/functions/ingest/ingest.test.ts supabase/functions/ingest/evidence.test.ts
+        run: deno test --allow-env --allow-read --config supabase/functions/ingest/deno.json --node-modules-dir=none supabase/functions/ingest/ingest.test.ts supabase/functions/ingest/evidence.test.ts supabase/functions/ingest/simplify.test.ts
 
       - name: Check dependency advisories
         run: npm audit --audit-level=high

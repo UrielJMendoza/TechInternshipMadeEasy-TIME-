@@ -20,7 +20,7 @@ Use Node 22.16 or a compatible supported Node release, then `npm ci` and `npm ru
 - `npm run typecheck` and `npm run lint`
 - `npm test`: build the demo artifact and run domain, live-reader, rendered-page, request-bound and health-monitor checks
 - `TIMLEY_USE_DEMO_JOBS=true npm run build:vercel`, then `NODE_ENV=test TIMLEY_USE_DEMO_JOBS=true TIMLEY_TEST_ARTIFACT=vercel node --test tests/rendered-html.test.mjs`
-- `deno test --allow-env --allow-read --config supabase/functions/ingest/deno.json --node-modules-dir=none supabase/functions/ingest/ingest.test.ts supabase/functions/ingest/evidence.test.ts`
+- `deno test --allow-env --allow-read --config supabase/functions/ingest/deno.json --node-modules-dir=none supabase/functions/ingest/ingest.test.ts supabase/functions/ingest/evidence.test.ts supabase/functions/ingest/simplify.test.ts`
 - `npm audit --audit-level=high`
 
 CI runs these checks on pushes and pull requests. Production ignores the demo-data flag. Public health must confirm both the live feed and all configured source updates; cached fallback listings are explicitly degraded.

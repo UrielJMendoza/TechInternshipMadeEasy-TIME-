@@ -121,21 +121,32 @@ function locationType(normalized: string): LocationType {
   return "onsite";
 }
 
+/** Whole-word, whitespace-tolerant alias patterns, compiled once per isolate. */
+function aliasPatterns(
+  entries: Iterable<readonly [string, string]>,
+): ReadonlyArray<readonly [RegExp, string]> {
+  return [...entries].map(([alias, code]) => [
+    new RegExp(`(?:^|\\s)${alias.replace(/ /g, "\\s+")}(?:$|\\s)`),
+    code,
+  ] as const);
+}
+
+// Building these per call recompiled hundreds of patterns for every location
+// and pushed large imports past the Edge runtime's CPU limit.
+const COUNTRY_ALIAS_PATTERNS = aliasPatterns(COUNTRY_ALIASES);
+const TERRITORY_PATTERNS = aliasPatterns(Object.entries(TERRITORIES));
+
 function explicitForeignCountry(normalized: string): string | null {
   // Strong US evidence wins the "IN"/"CA"-style token collisions below.
   if (US_MARKER.test(normalized)) return null;
-  for (const [alias, code] of COUNTRY_ALIASES) {
-    const pattern = new RegExp(`(?:^|\\s)${alias.replace(/ /g, "\\s+")}(?:$|\\s)`);
+  for (const [pattern, code] of COUNTRY_ALIAS_PATTERNS) {
     if (pattern.test(normalized)) return code;
   }
   return null;
 }
 
 function territoryCode(normalized: string): string | null {
-  for (const [alias, code] of Object.entries(TERRITORIES)) {
-    const pattern = new RegExp(
-      `(?:^|\\s)${alias.replace(/ /g, "\\s+")}(?:$|\\s)`,
-    );
+  for (const [pattern, code] of TERRITORY_PATTERNS) {
     if (pattern.test(normalized)) return code;
   }
   return null;

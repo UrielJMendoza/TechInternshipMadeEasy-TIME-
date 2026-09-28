@@ -20,6 +20,18 @@ interface FacetCount {
 
 const TERM_KEY_PATTERN = /^(winter|spring|summer|fall)-(20\d{2})$/;
 const SEASON_PATTERN = "winter|spring|summer|fall|autumn";
+// Compiled once per isolate. matchAll clones a global pattern before
+// iterating, so sharing these never leaks lastIndex between calls.
+const SHARED_YEAR_PATTERN = new RegExp(
+  `\\b((?:${SEASON_PATTERN})(?:\\s*(?:/|&|and)\\s*(?:${SEASON_PATTERN}))+)[ ]+(20\\d{2})\\b`,
+  "gi",
+);
+const SEASON_WORD_PATTERN = new RegExp(`\\b(${SEASON_PATTERN})\\b`, "gi");
+const SEASON_THEN_YEAR_PATTERN = new RegExp(
+  `\\b(${SEASON_PATTERN})[ ]+(?:(?:intern(?:ship)?|co[ ]*op|term|semester)[ ]+)?(20\\d{2})\\b`,
+  "gi",
+);
+const YEAR_THEN_SEASON_PATTERN = new RegExp(`\\b(20\\d{2})[ ]+(${SEASON_PATTERN})\\b`, "gi");
 const SEASON_ORDER: Record<InternshipTermSeason, number> = {
   winter: 0,
   spring: 1,
@@ -96,15 +108,9 @@ export function termKeysFromValues(
 
     // A shared year applies to every explicitly named term in forms such as
     // "Summer/Fall 2026" or "Fall and Winter 2027".
-    const sharedYearPattern = new RegExp(
-      `\\b((?:${SEASON_PATTERN})(?:\\s*(?:/|&|and)\\s*(?:${SEASON_PATTERN}))+)[ ]+(20\\d{2})\\b`,
-      "gi",
-    );
-    for (const match of value.matchAll(sharedYearPattern)) {
+    for (const match of value.matchAll(SHARED_YEAR_PATTERN)) {
       const year = match[2];
-      for (const season of match[1].matchAll(
-        new RegExp(`\\b(${SEASON_PATTERN})\\b`, "gi"),
-      )) {
+      for (const season of match[1].matchAll(SEASON_WORD_PATTERN)) {
         keys.push(termKey(season[1], year));
       }
     }
@@ -112,20 +118,12 @@ export function termKeysFromValues(
     // Explicit season then year, optionally separated by a term word. This
     // accepts "Summer Intern 2027" without treating a bare "Intern 2027" as
     // evidence for Summer.
-    const seasonThenYearPattern = new RegExp(
-      `\\b(${SEASON_PATTERN})[ ]+(?:(?:intern(?:ship)?|co[ ]*op|term|semester)[ ]+)?(20\\d{2})\\b`,
-      "gi",
-    );
-    for (const match of value.matchAll(seasonThenYearPattern)) {
+    for (const match of value.matchAll(SEASON_THEN_YEAR_PATTERN)) {
       keys.push(termKey(match[1], match[2]));
     }
 
     // Explicit inverse form, for example "2026 Fall".
-    const yearThenSeasonPattern = new RegExp(
-      `\\b(20\\d{2})[ ]+(${SEASON_PATTERN})\\b`,
-      "gi",
-    );
-    for (const match of value.matchAll(yearThenSeasonPattern)) {
+    for (const match of value.matchAll(YEAR_THEN_SEASON_PATTERN)) {
       keys.push(termKey(match[2], match[1]));
     }
   }

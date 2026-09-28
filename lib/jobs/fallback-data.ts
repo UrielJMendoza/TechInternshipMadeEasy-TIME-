@@ -9,8 +9,11 @@ import fallbackJobs07 from "@/data/fallback/jobs-07.json";
 import fallbackJobs08 from "@/data/fallback/jobs-08.json";
 import fallbackJobs09 from "@/data/fallback/jobs-09.json";
 import fallbackJobs10 from "@/data/fallback/jobs-10.json";
+import fallbackCapture from "@/data/fallback/captured-at.json";
 
-export const BUNDLED_FALLBACK_CAPTURED_AT = "2026-08-31T22:15:17.000Z";
+// Production builds rewrite these files with a fresh export
+// (scripts/export-feed-snapshot.mjs); the committed copy is the last resort.
+export const BUNDLED_FALLBACK_CAPTURED_AT: string = fallbackCapture.capturedAt;
 
 export const BUNDLED_FALLBACK_ROWS: readonly unknown[] = Object.freeze([
   ...fallbackJobs00,

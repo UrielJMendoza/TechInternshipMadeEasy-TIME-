@@ -126,9 +126,12 @@ test("the live reader requests only rows changed since the verified snapshot", a
   try {
     const snapshot = await freshLive.getPublicJobsSnapshot();
     const health = freshLive.getPublicJobsFeedHealth();
-    const requestUrl = new URL(requests[0]);
+    const pages = requests.filter((request) => !isCountProbe(request));
+    const requestUrl = new URL(pages[0]);
 
-    assert.equal(requests.length, 1);
+    assert.equal(pages.length, 1);
+    assert.equal(requests.filter(isCountProbe).length, 1);
+    assert.equal(new URL(requests.find(isCountProbe)).searchParams.get("limit"), "1");
     assert.deepEqual(requestUrl.searchParams.getAll("updated_at"), [
       "gt.2026-08-31T22:15:17.000Z",
     ]);
@@ -148,6 +151,11 @@ test("the live reader requests only rows changed since the verified snapshot", a
     else process.env.VERCEL_ENV = originalVercelEnvironment;
   }
 });
+
+// The live reader counts pending rows with a one-ID probe before reading pages.
+function isCountProbe(url) {
+  return new URL(String(url)).searchParams.get("select") === "id";
+}
 
 // Model the current-row filtering and ordering performed by PostgREST. Updating
 // a row replaces its prior version; an updated_at cutoff cannot recover it.
@@ -202,6 +210,7 @@ async function withClockedRepository(rows, verify) {
   const originalVercelEnvironment = process.env.VERCEL_ENV;
   const clock = { now: Date.parse("2026-09-05T17:14:00.000Z") };
   const transfers = [];
+  const probes = [];
   process.env.TIMLEY_USE_DEMO_JOBS = "false";
   delete process.env.VERCEL_ENV;
   Date.now = () => clock.now;
@@ -209,11 +218,16 @@ async function withClockedRepository(rows, verify) {
   globalThis.fetch = async (input, init) => {
     const response = await repository(input, init);
     const url = new URL(String(input));
-    transfers.push({ url, rows: (await response.clone().json()).length });
+    if (isCountProbe(url)) {
+      assert.ok((await response.clone().json()).length <= 1, "a count probe transfers at most one ID");
+      probes.push(url);
+    } else {
+      transfers.push({ url, rows: (await response.clone().json()).length });
+    }
     return response;
   };
   try {
-    await verify(await loadFreshLiveModule(), { clock, transfers });
+    await verify(await loadFreshLiveModule(), { clock, transfers, probes });
   } finally {
     globalThis.fetch = originalFetch;
     Date.now = originalNow;
@@ -350,6 +364,74 @@ test("a failed incremental sync keeps the last good store and reports why", asyn
   });
 });
 
+test("a cold start over the change budget transfers no rows and serves the bundle", async () => {
+  const rows = manyLiveRows(liveModule.MAX_ROWS_PER_SYNC + 1);
+  await withClockedRepository(rows, async (freshLive, { clock, transfers, probes }) => {
+    // Within a day of the bundle's capture, deferring is healthy.
+    clock.now = Date.parse("2026-09-01T10:00:00.000Z");
+    const snapshot = await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+    assert.equal(transfers.length, 0, "no row pages over budget");
+    assert.equal(probes.length, 1);
+    assert.equal(health.mode, "deferred");
+    assert.equal(health.status, "healthy");
+    assert.equal(health.lastFailureCode, "sync_budget_exceeded");
+    assert.equal(health.pendingRows, liveModule.MAX_ROWS_PER_SYNC + 1);
+    assert.equal(health.consecutiveFailures, 0, "a deferral is not a failure");
+    assert.equal(snapshot.fallbackCapturedAt, "2026-08-31T22:15:17.000Z");
+    assert.equal(snapshot.jobs.length, 1);
+  });
+  await withClockedRepository(rows, async (freshLive) => {
+    // Five days after capture the deferred bundle is too old to call healthy.
+    await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+    assert.equal(health.mode, "deferred");
+    assert.equal(health.status, "degraded");
+  });
+});
+
+test("a warm instance keeps its live snapshot while an import burst exceeds the budget", async () => {
+  const rows = manyLiveRows(liveModule.MAX_ROWS_PER_SYNC + 100);
+  for (const row of rows.slice(10)) row.first_seen_at = "2026-09-05T17:30:00.000Z";
+  await withClockedRepository(rows, async (freshLive, { clock, transfers }) => {
+    const first = await freshLive.getPublicJobsSnapshot();
+    assert.equal(first.jobs.filter((job) => job.active).length, 11);
+
+    // An import touches every row and admits the new discoveries.
+    for (const row of rows) row.updated_at = "2026-09-05T17:31:00.000Z";
+    clock.now = Date.parse("2026-09-05T17:36:00.000Z");
+    transfers.length = 0;
+    const during = await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+    assert.equal(transfers.length, 0);
+    assert.equal(health.mode, "deferred");
+    assert.equal(health.status, "healthy");
+    assert.equal(during.fallbackCapturedAt, first.asOf, "the previous live snapshot stays in service");
+    assert.deepEqual(during.jobs.map((job) => job.id), first.jobs.map((job) => job.id));
+  });
+});
+
+test("listings older than the retention window leave the public feed", async () => {
+  const rows = [
+    liveRow({ id: "old-discovery", primary_apply_url: "https://jobs.lever.co/acme/old", first_seen_at: "2026-05-01T06:15:00.000Z", posted_date: null, updated_at: "2026-09-05T06:20:00.000Z" }),
+    liveRow({ id: "old-posting", primary_apply_url: "https://jobs.lever.co/acme/old-posting", first_seen_at: "2026-08-01T06:15:00.000Z", posted_date: "2026-05-20", updated_at: "2026-09-05T06:20:00.000Z" }),
+    liveRow({ id: "recent-posting", primary_apply_url: "https://jobs.lever.co/acme/recent", first_seen_at: "2026-08-01T06:15:00.000Z", posted_date: "2026-07-30", updated_at: "2026-09-05T06:20:00.000Z" }),
+  ];
+  await withClockedRepository(rows, async (freshLive) => {
+    const snapshot = await freshLive.getPublicJobsSnapshot();
+    const health = freshLive.getPublicJobsFeedHealth();
+    const sourceIds = snapshot.jobs.flatMap((job) => job.sourceRecordIds);
+    assert.ok(sourceIds.includes("recent-posting"));
+    assert.ok(!sourceIds.includes("old-discovery"));
+    assert.ok(!sourceIds.includes("old-posting"));
+    assert.equal(health.expiredRows, 2);
+    assert.equal(health.invalidRows, 0, "expired listings are not invalid rows");
+    assert.equal(health.mode, "live");
+  });
+  const bundled = liveModule.createBundledFallbackSnapshot("2027-06-01T00:00:00.000Z");
+  assert.equal(bundled.jobs.length, 1, "an aging bundle keeps the jobs it captured");
+});
+
 test("refreshes inside a discovery bucket retain current jobs and apply closure tombstones", async () => {
   const rows = [
     { ...fallbackFixture, is_active: false, updated_at: "2026-09-05T17:10:06.000Z" },
@@ -394,7 +476,8 @@ test("an employer refresh cannot move current rows between database pages", asyn
     assert.equal(freshLive.getPublicJobsFeedHealth().deltaRows, 1002);
     assert.equal(freshLive.getPublicJobsFeedHealth().duplicateDeltaIds, 0);
     for (const row of rows) assert.ok(sourceIds.has(row.id), `missing ${row.id}`);
-  }, () => {
+  }, (url) => {
+    if (isCountProbe(url)) return;
     pages += 1;
     if (pages === 1) rows[0].updated_at = "2026-09-05T17:09:00.000Z";
   });

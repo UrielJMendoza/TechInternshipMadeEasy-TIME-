@@ -8,6 +8,9 @@ const healthy = () => ({ ok: true, status: 'healthy', mode: 'live', counts: { ca
 test('monitor accepts a live feed with all nine fresh sources', () => {
   assert.deepEqual(validatePublicHealth(healthy(), now), { canonicalJobs: 100, activeJobs: 100, healthySources: 9 });
 });
+test('monitor accepts recent data served while an over-budget sync is deferred', () => {
+  assert.equal(validatePublicHealth({ ...healthy(), mode: 'deferred' }, now).canonicalJobs, 100);
+});
 test('monitor rejects fallback data even when cached jobs remain available', () => {
   assert.throws(() => validatePublicHealth({ ...healthy(), mode: 'fallback' }, now), /live feed/);
 });

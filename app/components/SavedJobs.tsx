@@ -36,7 +36,7 @@ export function SavedJobs() {
           });
           if (!response.ok) throw new Error("Refresh failed");
           const data = await response.json() as { mode: string; items: { requestedId: string; job: JobCardData | null }[] };
-          live &&= data.mode === "live";
+          live &&= data.mode === "live" || data.mode === "deferred";
           for (const item of data.items) updates.set(item.requestedId, item.job);
         }
         if (controller.signal.aborted) return;

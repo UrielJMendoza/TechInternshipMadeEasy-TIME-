@@ -32,6 +32,16 @@ const INCREMENTAL_OVERLAP_MS = 15 * 60_000;
 // Periodically replace the incremental store with a complete read so any
 // missed or physically deleted row cannot persist for long.
 const FULL_RESYNC_INTERVAL_MS = 6 * 60 * 60_000;
+// No single sync may transfer more rows than this. A cheap count probe runs
+// first; above the budget the instance keeps serving what it has instead of
+// downloading, so a stale bundle or an import burst cannot exhaust the
+// Supabase egress quota. Fresh bundles keep normal deltas far below it.
+export const MAX_ROWS_PER_SYNC = 2_500;
+// Serving deferred data stays healthy while it is younger than this.
+const MAX_DEFERRED_DATA_AGE_MS = 26 * 60 * 60_000;
+// Listings older than this leave the public feed. The cutoff never moves
+// past the bundle's own capture window, so an old bundle still shows its jobs.
+export const RETENTION_DAYS = 90;
 const MIN_VERIFIED_FEED_RATIO = 0.65;
 const SELECT_FIELDS = [
   "id",
@@ -68,7 +78,7 @@ type JobsPage = {
 
 export type PublicJobsFeedHealth = {
   status: "starting" | "healthy" | "degraded";
-  mode: "uninitialized" | "live" | "verified-fallback";
+  mode: "uninitialized" | "live" | "deferred" | "verified-fallback";
   snapshotAt: string | null;
   fallbackCapturedAt: string | null;
   lastAttemptAt: string | null;
@@ -90,6 +100,10 @@ export type PublicJobsFeedHealth = {
   lastSyncFetchedRows: number;
   /** Sanitized code for the last failed refresh, such as `upstream_http_402`. */
   lastFailureCode: string | null;
+  /** Changed rows waiting when a sync was deferred for exceeding the budget. */
+  pendingRows: number | null;
+  /** Rows hidden because the listing is older than the retention window. */
+  expiredRows: number;
 };
 
 /**
@@ -132,6 +146,8 @@ let feedHealth: PublicJobsFeedHealth = {
   lastSyncMode: null,
   lastSyncFetchedRows: 0,
   lastFailureCode: null,
+  pendingRows: null,
+  expiredRows: 0,
 };
 let demoGuardLogged = false;
 let deltaRowStore: DeltaRowStore | null = null;
@@ -154,6 +170,33 @@ function feedLog(
   const payload = JSON.stringify({ service: "timley-jobs", event, ...details });
   if (level === "warn") console.warn(payload);
   else console.info(payload);
+}
+
+class DeferredSyncError extends Error {
+  readonly pendingRows: number;
+
+  constructor(pendingRows: number) {
+    super("sync_budget_exceeded");
+    this.pendingRows = pendingRows;
+  }
+}
+
+function retentionCutoffMs(asOf: string): number {
+  return Math.min(Date.parse(asOf), Date.parse(BUNDLED_FALLBACK_CAPTURED_AT)) - RETENTION_DAYS * 86_400_000;
+}
+
+/**
+ * A listing stays public while both Timley's first observation and any
+ * source posting date fall inside the retention window. Rows without a
+ * usable first observation are left for the mapper to reject as invalid.
+ */
+function withinRetention(row: LiveJobRow, cutoffMs: number): boolean {
+  const firstSeenAt = timestamp(row.first_seen_at);
+  if (!firstSeenAt) return true;
+  if (Date.parse(firstSeenAt) < cutoffMs) return false;
+  const postedAt = timestamp(row.posted_date);
+  const cutoffDay = Math.floor(cutoffMs / 86_400_000) * 86_400_000;
+  return !postedAt || Date.parse(postedAt) >= cutoffDay;
 }
 
 function nextRetryDelayMs(failures: number): number {
@@ -815,7 +858,12 @@ export function createLiveSnapshotFromRows(
 
 /** Creates an honestly labelled emergency copy from the last verified public feed export. */
 export function createBundledFallbackSnapshot(asOfInput: string | Date): DemoSnapshot {
-  const snapshot = createLiveSnapshotFromRows(BUNDLED_FALLBACK_ROWS, asOfInput);
+  const asOf = new Date(asOfInput).toISOString();
+  const cutoffMs = retentionCutoffMs(asOf);
+  const retained = BUNDLED_FALLBACK_ROWS.filter((row) =>
+    typeof row !== "object" || row === null || withinRetention(row as LiveJobRow, cutoffMs)
+  );
+  const snapshot = createLiveSnapshotFromRows(retained, asOf);
   return Object.freeze({
     ...snapshot,
     fallbackCapturedAt: BUNDLED_FALLBACK_CAPTURED_AT,
@@ -827,14 +875,9 @@ function parseTotal(contentRange: string | null): number | null {
   return match ? Number(match[1]) : null;
 }
 
-async function fetchJobsDeltaPage(
-  offset: number,
-  snapshotAt: string,
-  includeCount = false,
-  changedAfter?: string,
-): Promise<JobsPage> {
+function deltaQueryUrl(select: string, snapshotAt: string, changedAfter?: string): URL {
   const url = new URL("/rest/v1/jobs", SUPABASE_URL);
-  url.searchParams.set("select", SELECT_FIELDS);
+  url.searchParams.set("select", select);
   url.searchParams.append("updated_at", `gt.${BUNDLED_FALLBACK_CAPTURED_AT}`);
   if (changedAfter) url.searchParams.append("updated_at", `gt.${changedAfter}`);
   // The repository stores current rows, not historical row versions. Filtering
@@ -844,6 +887,31 @@ async function fetchJobsDeltaPage(
   url.searchParams.set("first_seen_at", `lte.${snapshotAt}`);
   // Source and employer refreshes must not move rows between fetched pages.
   url.searchParams.set("order", "id.asc");
+  return url;
+}
+
+/** Count pending rows without transferring them (one ID at most). */
+async function countDeltaRows(snapshotAt: string, changedAfter?: string): Promise<number> {
+  const url = deltaQueryUrl("id", snapshotAt, changedAfter);
+  url.searchParams.set("limit", "1");
+  const response = await fetch(url, {
+    cache: "no-store",
+    headers: { Accept: "application/json", apikey: SUPABASE_PUBLISHABLE_KEY, Prefer: "count=exact" },
+    signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+  });
+  if (!response.ok) throw new Error(`upstream_http_${response.status}`);
+  const total = parseTotal(response.headers.get("content-range"));
+  if (total === null) throw new Error("upstream_missing_count");
+  return total;
+}
+
+async function fetchJobsDeltaPage(
+  offset: number,
+  snapshotAt: string,
+  includeCount = false,
+  changedAfter?: string,
+): Promise<JobsPage> {
+  const url = deltaQueryUrl(SELECT_FIELDS, snapshotAt, changedAfter);
   url.searchParams.set("limit", String(PAGE_SIZE));
   url.searchParams.set("offset", String(offset));
 
@@ -931,6 +999,8 @@ async function syncDeltaRows(admitThrough: string): Promise<DeltaSync> {
       )
     : undefined;
 
+  const pendingRows = await countDeltaRows(admittedThrough, changedAfter);
+  if (pendingRows > MAX_ROWS_PER_SYNC) throw new DeferredSyncError(pendingRows);
   const fetched = await fetchAllDeltaRows(admittedThrough, changedAfter);
   const rowsById = new Map(incremental ? previous.rowsById : []);
   for (const row of fetched) {
@@ -1011,9 +1081,11 @@ async function refreshPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot> {
     duplicateDeltaIds,
   };
   if (duplicateDeltaIds > 0) throw new Error("duplicate_delta_ids");
-  const rows = mergedVerifiedRows(deltaRows);
-  feedHealth = { ...feedHealth, mergedRows: rows.length };
-  if (rows.length < minimumVerifiedRowCount()) throw new Error("catastrophic_feed_shrink");
+  const mergedRows = mergedVerifiedRows(deltaRows);
+  feedHealth = { ...feedHealth, mergedRows: mergedRows.length };
+  if (mergedRows.length < minimumVerifiedRowCount()) throw new Error("catastrophic_feed_shrink");
+  const cutoffMs = retentionCutoffMs(snapshotAt);
+  const rows = mergedRows.filter((row) => withinRetention(row, cutoffMs));
 
   // Evidence belongs to the current rows just collected, even when the receipt
   // is newer than the discovery bucket. Actual future receipts remain invalid.
@@ -1045,7 +1117,7 @@ async function refreshPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot> {
     consecutiveFailures: 0,
     baselineRows: BUNDLED_FALLBACK_ROWS.length,
     deltaRows: deltaRows.length,
-    mergedRows: rows.length,
+    mergedRows: mergedRows.length,
     mappedRows: built.mappedRows,
     canonicalJobs: built.snapshot.jobs.length,
     activeJobs,
@@ -1055,6 +1127,8 @@ async function refreshPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot> {
     lastSyncMode: sync.mode,
     lastSyncFetchedRows: sync.fetchedRows,
     lastFailureCode: null,
+    pendingRows: null,
+    expiredRows: mergedRows.length - rows.length,
   };
   deltaRowStore = sync.store;
   feedLog("info", "refresh_succeeded", {
@@ -1062,7 +1136,8 @@ async function refreshPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot> {
     syncMode: sync.mode,
     fetchedRows: sync.fetchedRows,
     deltaRows: deltaRows.length,
-    mergedRows: rows.length,
+    mergedRows: mergedRows.length,
+    expiredRows: mergedRows.length - rows.length,
     canonicalJobs: built.snapshot.jobs.length,
     activeJobs,
     durationMs: feedHealth.refreshDurationMs,
@@ -1164,27 +1239,34 @@ export async function getPublicJobsSnapshot(asOf?: string): Promise<DemoSnapshot
     })
     .catch((error: unknown) => {
       const fallback = unavailableSnapshot(snapshotAt, staleSnapshot);
-      const failures = feedHealth.consecutiveFailures + 1;
-      const retryDelayMs = nextRetryDelayMs(failures);
       const failedAt = Date.now();
+      const servedCapturedAt = fallback.fallbackCapturedAt ?? BUNDLED_FALLBACK_CAPTURED_AT;
+      // Deferring an over-budget sync is expected during imports and is not
+      // a failure: keep serving recent data and probe again next boundary.
+      const deferred = error instanceof DeferredSyncError;
+      const servedDataFresh = failedAt - Date.parse(servedCapturedAt) <= MAX_DEFERRED_DATA_AGE_MS;
+      const failures = feedHealth.consecutiveFailures + (deferred ? 0 : 1);
+      const retryDelayMs = deferred ? SNAPSHOT_INTERVAL_MS : nextRetryDelayMs(failures);
       feedHealth = {
         ...feedHealth,
-        status: "degraded",
-        mode: "verified-fallback",
+        status: deferred && servedDataFresh ? "healthy" : "degraded",
+        mode: deferred ? "deferred" : "verified-fallback",
         snapshotAt,
-        fallbackCapturedAt: fallback.fallbackCapturedAt ?? BUNDLED_FALLBACK_CAPTURED_AT,
+        fallbackCapturedAt: servedCapturedAt,
         nextRetryAt: new Date(failedAt + retryDelayMs).toISOString(),
         consecutiveFailures: failures,
         lastFailureCode: safeFailureCode(error),
+        pendingRows: deferred ? error.pendingRows : null,
         canonicalJobs: fallback.jobs.length,
         activeJobs: fallback.jobs.filter((job) => job.active).length,
         refreshDurationMs: feedHealth.lastAttemptAt
           ? Math.max(0, failedAt - Date.parse(feedHealth.lastAttemptAt))
           : null,
       };
-      feedLog("warn", "refresh_failed_using_verified_fallback", {
+      feedLog("warn", deferred ? "refresh_deferred_over_budget" : "refresh_failed_using_verified_fallback", {
         snapshotAt,
         failureCode: safeFailureCode(error),
+        pendingRows: deferred ? error.pendingRows : null,
         consecutiveFailures: failures,
         retryDelayMs,
         fallbackJobs: fallback.jobs.length,

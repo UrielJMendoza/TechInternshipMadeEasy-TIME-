@@ -3,7 +3,7 @@ import { pathToFileURL } from 'node:url';
 const expectedSources = ['ashby:notion', 'gh:tenstorrentuniversity', 'lever:hermeus', 'northwesternfintech', 'simplify', 'speedyapply', 'vanshb03', 'zapplyjobs', 'zshah101'];
 
 export function validatePublicHealth(health, now = Date.now()) {
-  if (health?.ok !== true || health.status !== 'healthy' || health.mode !== 'live') throw new Error('The website is not serving a healthy live feed.');
+  if (health?.ok !== true || health.status !== 'healthy' || !['live', 'deferred'].includes(health.mode)) throw new Error('The website is not serving a healthy live feed.');
   if (health.ingestion?.healthy !== true || !Array.isArray(health.ingestion.sources)) throw new Error('Source health is unavailable or degraded.');
   for (const name of expectedSources) {
     const source = health.ingestion.sources.find(item => item.source === name);

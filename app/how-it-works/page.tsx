@@ -2,16 +2,20 @@ import type { Metadata } from "next";
 import { SOURCE_REGISTRY } from "@/supabase/functions/ingest/lib/ingest/sourceRegistry";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
+import { JsonLd } from "@/app/components/JsonLd";
+import { breadcrumbJsonLd } from "@/lib/seo/structured-data";
+import { pageMetadata } from "@/lib/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "How Timley works · Sources, dates, and ranking",
   description: "How Timley finds, verifies, deduplicates, dates, and ranks internships and new-grad jobs.",
-  alternates: { canonical: "/how-it-works" },
-};
+  path: "/how-it-works",
+});
 
 export default function HowItWorksPage() {
   return (
     <main id="main-content">
+      <JsonLd data={breadcrumbJsonLd([{ name: "Timley", path: "/" }, { name: "How it works", path: "/how-it-works" }])} />
       <SiteHeader />
       <article className="method-shell">
         <header className="method-intro">

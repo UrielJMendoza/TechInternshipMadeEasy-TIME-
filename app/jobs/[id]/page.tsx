@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { CompanyLogo } from "@/app/components/CompanyLogo";
+import { JsonLd } from "@/app/components/JsonLd";
 import { Recency } from "@/app/components/Recency";
 import { ReportListing } from "@/app/components/ReportListing";
 import { SaveButton } from "@/app/components/SaveButton";
@@ -8,6 +9,7 @@ import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
 import { getPublicJobsSnapshot, getPublicJobsByIds } from "@/lib/jobs/live";
 import { sanitizeJobReturnPath } from "@/lib/navigation/job-return-path";
+import { breadcrumbJsonLd, jobPostingJsonLd } from "@/lib/seo/structured-data";
 
 type JobDetailProps = {
   params: Promise<{ id: string }>;
@@ -18,18 +20,28 @@ export async function generateMetadata({ params }: JobDetailProps): Promise<Meta
   const [{ id }, snapshot] = await Promise.all([params, getPublicJobsSnapshot()]);
   const job = (await getPublicJobsByIds([id], snapshot)).get(id);
   const title = job ? `${job.title} at ${job.company} · Timley` : "Job not found · Timley";
-  const description = job?.summary ?? (job
-    ? `Review ${job.title} at ${job.company} and continue to the employer application for complete role details.`
-    : "This Timley job is no longer available in the current feed.");
+  const description = metaDescription(job?.summary ?? (job
+    ? `${job.roleLevel} role: ${job.title} at ${job.company} in ${job.location}. Review the listing and apply on the employer website.`
+    : "This Timley job is no longer available in the current feed."));
+  const canonical = job ? `/jobs/${encodeURIComponent(job.id)}` : undefined;
 
   return {
     title,
     description,
-    alternates: job ? { canonical: `/jobs/${encodeURIComponent(job.id)}` } : undefined,
+    alternates: canonical ? { canonical } : undefined,
     robots: job ? undefined : { index: false, follow: true },
-    openGraph: { title, description, images: [] },
+    openGraph: { type: "website", url: canonical, siteName: "Timley", locale: "en_US", title, description, images: [] },
     twitter: { card: "summary", title, description, images: [] },
   };
+}
+
+/** Keep search snippets within the length search engines display. */
+function metaDescription(value: string, maxLength = 160): string {
+  const text = value.replace(/\s+/g, " ").trim();
+  if (text.length <= maxLength) return text;
+  const cut = text.slice(0, maxLength - 1);
+  const boundary = cut.lastIndexOf(" ");
+  return `${(boundary > maxLength * 0.6 ? cut.slice(0, boundary) : cut).replace(/[\s,.;:]+$/, "")}…`;
 }
 
 function formatCheckedAt(value: string): string | null {
@@ -76,9 +88,16 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
     compensation,
     job.sponsorship === "Confirmed" ? "Visa support confirmed" : undefined,
   ].filter(Boolean) as string[];
+  const jobPosting = jobPostingJsonLd(job);
 
   return (
     <main id="main-content">
+      <JsonLd data={breadcrumbJsonLd([
+        { name: "Timley", path: "/" },
+        { name: "Jobs", path: "/jobs" },
+        { name: `${job.title} at ${job.company}`, path: `/jobs/${encodeURIComponent(job.id)}` },
+      ])} />
+      {jobPosting ? <JsonLd data={jobPosting} /> : null}
       <SiteHeader active="jobs" />
       <div className="detail-shell">
         <a className="back-link" href={returnPath}><span aria-hidden="true">←</span> Back to job results</a>
@@ -95,7 +114,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
             </div>
             <div className="detail-actions">
               <SaveButton job={job} />
-              <a className="apply" href={job.applyUrl} target="_blank" rel="noopener noreferrer" aria-label={`Apply for ${job.title} at ${job.company} on the employer website`}>
+              <a className="apply" href={job.applyUrl} target="_blank" rel="noopener noreferrer" aria-label={`Apply now for ${job.title} at ${job.company} on the employer website (opens in a new tab)`}>
                 Apply now
               </a>
             </div>

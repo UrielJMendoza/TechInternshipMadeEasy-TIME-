@@ -26,6 +26,26 @@ The importer uses custom authorization against the existing Vault credential. Ke
 
 The employer evidence worker reads bounded public ATS responses. An inaccessible or unsupported source remains unknown; one failed request does not close a listing. Evidence is tied to the application URL and expires after 14 days for displayed confirmations. A database trigger protects verified title, pay and sponsorship facts from weaker imported values while the receipt is valid.
 
+## Supabase egress and quota restrictions
+
+The organization is on the Supabase free plan. When it exceeds a plan quota, Supabase answers every API request with HTTP 402, which also stops the scheduled imports. The website then serves the bundled snapshot. `/api/health/jobs` reports the cause as `lastFailureCode` (for example `upstream_http_402`), and the `Public feed health` workflow prints it. Check Supabase billing and usage first when you see it.
+
+In September 2026 the website itself caused this. Each import rewrites `updated_at` on every listing it sees, so "rows changed since the bundle" is effectively the whole table: about 9,600 rows, 13 MB of JSON and roughly 2 MB compressed. Every warm serverless instance re-read all of it every five minutes, about 17 GB a month per instance against the free plan's 5 GB. Requests have returned 402 since mid-September, and the last database update was September 12.
+
+The reader now keeps each instance's delta rows in memory. After one full read, a warm instance only requests rows whose `updated_at` is later than its previous read minus a 15-minute overlap, then merges them by ID. The overlap covers transactions that commit after a later read, because Postgres stamps `now()` at transaction start. A complete re-read every six hours guards against anything missed. Between imports an incremental read is usually empty or a few employer-evidence rows. `sync.mode` and `sync.fetchedRows` in the health response show which path ran.
+
+### How the feed stays inside the quota
+
+1. **Snapshot built into every production deployment.** `npm run build:vercel` first runs `scripts/export-feed-snapshot.mjs`. On production builds it reads the active listings of the last 90 days once (about 6,200 rows, roughly 10 MB of JSON and 1.5 MB compressed) and writes them over `data/fallback/`. Visitors and cold starts read jobs from the deployment, so they cost Supabase nothing. A failed, incomplete or implausibly small export never fails the build: it keeps the committed snapshot and prints why. Previews and CI skip the export; set `TIMLEY_EXPORT_FEED=true` to force it, or `false` to disable it.
+2. **A rebuild after each import.** The `Refresh bundled feed` workflow calls a Vercel deploy hook at 01:05, 07:05, 13:05 and 19:05 UTC, twenty minutes after each import window. That is four exports a day, well under 1 GB of egress a month.
+3. **A per-sync budget.** Before reading rows, the site counts pending changes with a one-ID query. Above 2,500 rows (`MAX_ROWS_PER_SYNC`) it transfers nothing. It keeps serving its current data and checks again five minutes later. The health route reports this as `mode: "deferred"` with `pendingRows`. It stays healthy while the served data is under 26 hours old, which covers import windows before the rebuild lands. It turns degraded after that, which usually means the deploy hook or the export stopped working.
+4. **Incremental reads.** Warm instances fetch only rows changed since their previous read, as described above.
+5. **A 90-day window.** A listing leaves the public feed, sitemap and export once its first observation or its posting date is more than 90 days old (`RETENTION_DAYS`). Rows stay in the database; nothing is deleted.
+
+**One-time setup:** in Vercel open the project's Settings, then Git, then Deploy Hooks. Create a hook for the production branch (`claude/internship-tracker-app-05orfv`). Save its URL as the GitHub Actions secret `VERCEL_DEPLOY_HOOK_URL`. Until then the workflow only warns, and the bundle refreshes whenever production is redeployed.
+
+Budget: 4 exports a day at about 1.5 MB is roughly 0.2 GB a month. Incremental reads between rebuilds are usually a few hundred employer-evidence rows. A worst-case sync is capped at about 0.6 MB. Health checks and alias lookups are a few hundred bytes each.
+
 ## Recovery
 
 The original local checkout is preserved. The isolated repair branch contains the replacement code. The preceding website deployment is `dpl_HR59L5MbyuiHQLeVR7a9D9koSjNC`; preserve it until the replacement passes live verification. A website rollback must remain compatible with additive database fields. Do not delete reports, observations or evidence to undo a presentation change.

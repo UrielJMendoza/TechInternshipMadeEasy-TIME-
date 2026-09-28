@@ -1,9 +1,12 @@
 import { boundedJson } from "@/lib/http/bounded-json";
+import { hasJsonContentType, isCrossSiteRequest } from "@/lib/http/request-guards";
 import { getPublicJobsSnapshot, getPublicJobsFeedHealth, getPublicJobsByIds } from "@/lib/jobs/live";
 
 export async function POST(request: Request) {
-  const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) return new Response(null, { status: 403 });
+  if (isCrossSiteRequest(request)) return new Response(null, { status: 403 });
+  if (!hasJsonContentType(request)) {
+    return Response.json({ error: "Send saved listing IDs as JSON." }, { status: 415, headers: { "cache-control": "no-store" } });
+  }
   try {
     const body = await boundedJson(request, 16_384) as { ids?: unknown };
     if (!body || !Array.isArray(body.ids) || body.ids.length > 100 ||

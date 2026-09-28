@@ -1,0 +1,33 @@
+name: Refresh bundled feed
+
+# Rebuild production after each scheduled import so the deployment carries a
+# fresh snapshot. Visitors then read jobs from the deployment, and the live
+# reader only fetches the few rows changed since, keeping Supabase egress low.
+# Imports: official boards 00:45 and 12:45, community lists 06:15-06:40 and
+# 18:15-18:40 UTC.
+on:
+  schedule:
+    - cron: '5 1,7,13,19 * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: refresh-bundled-feed
+  cancel-in-progress: false
+
+jobs:
+  redeploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Request a production rebuild
+        env:
+          DEPLOY_HOOK_URL: ${{ secrets.VERCEL_DEPLOY_HOOK_URL }}
+        run: |
+          if [ -z "$DEPLOY_HOOK_URL" ]; then
+            echo "::warning::Set the VERCEL_DEPLOY_HOOK_URL secret (a Vercel deploy hook for the production branch) to refresh the bundled feed after each import."
+            exit 0
+          fi
+          curl --fail --silent --show-error --retry 3 --retry-delay 20 -X POST "$DEPLOY_HOOK_URL" > /dev/null
+          echo "Production rebuild requested; the build exports a fresh feed snapshot."

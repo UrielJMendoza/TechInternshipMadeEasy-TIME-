@@ -8,6 +8,7 @@ export function SiteFooter() {
       <nav className="footer-links" aria-label="Footer navigation">
         <a href="/jobs">All jobs</a>
         <a href="/saved">Saved</a>
+        <a href="/how-it-works">How it works</a>
       </nav>
     </footer>
   );

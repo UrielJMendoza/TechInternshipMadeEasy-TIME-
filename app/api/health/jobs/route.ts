@@ -14,7 +14,10 @@ export async function GET() {
 
   const health = getPublicJobsFeedHealth();
   const ingestion = await ingestionRequest;
-  const healthy = health.status === "healthy" && health.mode === "live" && ingestion?.healthy === true;
+  // "deferred" serves recent data while an over-budget sync waits; the feed
+  // marks it healthy only while that data is younger than a day.
+  const serving = health.mode === "live" || health.mode === "deferred";
+  const healthy = health.status === "healthy" && serving && ingestion?.healthy === true;
 
   return Response.json(
     {
@@ -28,6 +31,9 @@ export async function GET() {
       lastSuccessAt: health.lastSuccessAt,
       nextRetryAt: health.nextRetryAt,
       consecutiveFailures: health.consecutiveFailures,
+      lastFailureCode: health.lastFailureCode,
+      pendingRows: health.pendingRows,
+      sync: { mode: health.lastSyncMode, fetchedRows: health.lastSyncFetchedRows },
       counts: {
         baselineRows: health.baselineRows,
         deltaRows: health.deltaRows,
@@ -37,6 +43,7 @@ export async function GET() {
         activeJobs: health.activeJobs,
         invalidRows: health.invalidRows,
         duplicateDeltaIds: health.duplicateDeltaIds,
+        expiredRows: health.expiredRows,
       },
       refreshDurationMs: health.refreshDurationMs,
     },

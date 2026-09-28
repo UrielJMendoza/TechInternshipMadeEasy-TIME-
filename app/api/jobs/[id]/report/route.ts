@@ -1,12 +1,7 @@
 import { boundedJson } from "@/lib/http/bounded-json";
+import { hasJsonContentType, isCrossSiteRequest } from "@/lib/http/request-guards";
 import { getPublicJobsSnapshot, getPublicJobsByIds } from "@/lib/jobs/live";
-
-const SUPABASE_URL =
-  process.env.NEXT_PUBLIC_SUPABASE_URL ??
-  "https://ogkocdharscqzdrnlpnq.supabase.co";
-const SUPABASE_PUBLISHABLE_KEY =
-  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
-  "sb_publishable_ejWVjfUaEx5WAdrN72s7FQ_RwO7CDEh";
+import { SUPABASE_PUBLISHABLE_KEY, SUPABASE_URL } from "@/lib/supabase/public-config";
 
 const REPORT_KINDS = new Set([
   "closed",
@@ -24,9 +19,11 @@ type ReportRouteProps = {
 };
 
 export async function POST(request: Request, { params }: ReportRouteProps) {
-  const origin = request.headers.get("origin");
-  if (origin && origin !== new URL(request.url).origin) {
+  if (isCrossSiteRequest(request)) {
     return Response.json({ error: "Invalid report origin." }, { status: 403 });
+  }
+  if (!hasJsonContentType(request)) {
+    return Response.json({ error: "Send the report as JSON." }, { status: 415 });
   }
   const contentLength = Number(request.headers.get("content-length") ?? 0);
   if (Number.isFinite(contentLength) && contentLength > 4_096) {

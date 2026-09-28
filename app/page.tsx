@@ -1,14 +1,19 @@
 import type { Metadata } from "next";
 import { JobCard } from "@/app/components/JobCard";
+import { JsonLd } from "@/app/components/JsonLd";
 import { PopularCompanyRail } from "@/app/components/PopularCompanyRail";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
 import { getFeedStats, getNewestPostedJobs, getPopularCompanies } from "@/lib/jobs";
 import { getPublicJobsSnapshot } from "@/lib/jobs/live";
+import { siteJsonLd } from "@/lib/seo/structured-data";
+import { pageMetadata, SITE_DESCRIPTION, SITE_TITLE } from "@/lib/site";
 
-export const metadata: Metadata = {
-  alternates: { canonical: "/" },
-};
+export const metadata: Metadata = pageMetadata({
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  path: "/",
+});
 
 function count(value: number) {
   return new Intl.NumberFormat("en-US").format(value);
@@ -28,6 +33,7 @@ export default async function Home() {
 
   return (
     <main id="main-content">
+      <JsonLd data={siteJsonLd()} />
       <SiteHeader />
 
       <section className="home-intro" aria-labelledby="home-title">

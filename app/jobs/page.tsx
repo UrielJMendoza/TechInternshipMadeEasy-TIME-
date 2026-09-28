@@ -4,12 +4,13 @@ import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
 import { JOB_MAJOR_OPTIONS, parseFilters, queryJobs, serializeFilters } from "@/lib/jobs";
 import { getPublicJobsSnapshot } from "@/lib/jobs/live";
+import { pageMetadata } from "@/lib/site";
 
-export const metadata: Metadata = {
+export const metadata: Metadata = pageMetadata({
   title: "Newest jobs, grouped by company · Timley",
   description: "Browse internships and new-grad roles by major, specialization, location, and work style. No account required.",
-  alternates: { canonical: "/jobs" },
-};
+  path: "/jobs",
+});
 
 type JobsPageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;

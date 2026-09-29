@@ -15,6 +15,7 @@ Read `README.md` and `docs/operations.md` first. This file records the owner's s
 - CI passing is not enough: check the Vercel deployment state for the pushed commit.
 - `tests/live-jobs.test.mjs` loads `lib/jobs/live.ts` with `stripTypeScriptTypes`. Use only erasable TypeScript there (no parameter properties or enums), and add any new import to the test's import rewrites.
 - Supabase 402 means the organization hit a plan quota. The site keeps serving the bundled snapshot, and `/api/health/jobs` reports `lastFailureCode`.
+- Deploy the importer through the `Deploy ingest function` workflow, not by pasting files into a deploy tool: the source is about 170 KB across 24 files. Merging an importer change to production runs it automatically.
 
 ## Checks
 
@@ -23,3 +24,4 @@ Read `README.md` and `docs/operations.md` first. This file records the owner's s
 ## Pending owner setup
 
 - Vercel deploy hook for the production branch, saved as the GitHub secret `VERCEL_DEPLOY_HOOK_URL`. Until then the bundled feed only refreshes when production is redeployed.
+- Supabase personal access token, saved as the GitHub secret `SUPABASE_ACCESS_TOKEN`. Until then the importer cannot be deployed from CI, and the Simplify CPU fix (merged in #16) is not live: Simplify has not imported since 2026-09-11. Once the secret exists, run `Deploy ingest function` by hand.

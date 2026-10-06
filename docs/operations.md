@@ -46,6 +46,8 @@ The reader now keeps each instance's delta rows in memory. After one full read, 
 
 Budget: 4 exports a day at about 1.5 MB is roughly 0.2 GB a month. Incremental reads between rebuilds are usually a few hundred employer-evidence rows. A worst-case sync is capped at about 0.6 MB. Health checks and alias lookups are a few hundred bytes each.
 
+**Known gap: imports touch every row.** `public.apply_ingest_snapshot` sets `updated_at = now()` on every listing it sees, together with `last_seen_at` and `last_checked_at`, even when nothing a visitor sees has changed. One community import window marks about 3,500 rows as changed, so the pending count passes `MAX_ROWS_PER_SYNC` after the first window. From then on, new instances serve the bundled snapshot (`mode: "deferred"`, `lastFailureCode: "sync_budget_exceeded"`) until the next production build. Without the deploy hook, the public feed is only as fresh as the last deploy; in early October 2026 it was a week old with 7,700 rows pending. Until the hook exists, any production deploy refreshes it. The lasting fix is a `BEFORE UPDATE` trigger on `public.jobs` that keeps `updated_at` when only those three timestamps (and the generated `search_vector`) change. A draft is in commit `5f8e910`. It needs a rolled-back test against production and the owner's approval before it is applied.
+
 ## Recovery
 
 The original local checkout is preserved. The isolated repair branch contains the replacement code. The preceding website deployment is `dpl_HR59L5MbyuiHQLeVR7a9D9koSjNC`; preserve it until the replacement passes live verification. A website rollback must remain compatible with additive database fields. Do not delete reports, observations or evidence to undo a presentation change.

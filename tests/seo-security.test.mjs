@@ -182,3 +182,19 @@ test("the public Supabase reader refuses privileged keys and unsafe URLs", async
     assert.equal((await loadPublicConfig({ url })).SUPABASE_URL, defaults.SUPABASE_URL);
   }
 });
+
+test("analytics loads only from this origin, which the page CSP already allows", async () => {
+  const layout = await readFile(new URL("../app/layout.tsx", import.meta.url), "utf8");
+  assert.match(layout, /<SiteAnalytics \/>/, "root layout should render the analytics component");
+  const component = await readFile(new URL("../app/components/SiteAnalytics.tsx", import.meta.url), "utf8");
+  assert.match(component, /^"use client";/, "analytics must stay a client component (no server-rendered inline script)");
+  assert.match(component, /from "@vercel\/analytics\/react"/);
+
+  const bundle = await readFile(new URL("../node_modules/@vercel/analytics/dist/react/index.mjs", import.meta.url), "utf8");
+  assert.ok(bundle.includes('"/_vercel/insights/script.js"'), "production script should be same-origin");
+
+  const csp = await import(await moduleUrl("../lib/http/content-security-policy.ts"));
+  const policy = csp.pageContentSecurityPolicy("dGVzdG5vbmNldGVzdG5vbmNl");
+  assert.match(policy, /script-src 'self'/);
+  assert.match(policy, /connect-src 'self'/);
+});

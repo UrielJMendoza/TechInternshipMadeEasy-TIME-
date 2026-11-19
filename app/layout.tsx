@@ -3,6 +3,7 @@ import "@fontsource-variable/hanken-grotesk/wght.css";
 import "@fontsource/fragment-mono/400.css";
 import "./globals.css";
 import { SITE_DESCRIPTION, SITE_NAME, SITE_THEME_COLOR, SITE_TITLE, SITE_URL } from "@/lib/site";
+import { SiteAnalytics } from "./components/SiteAnalytics";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -49,6 +50,7 @@ export default function RootLayout({
       <body>
         <a className="skip-link" href="#main-content">Skip to content</a>
         {children}
+        <SiteAnalytics />
       </body>
     </html>
   );

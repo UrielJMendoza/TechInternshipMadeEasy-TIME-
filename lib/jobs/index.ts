@@ -1867,6 +1867,19 @@ export function getJobById(
   return job ? toListItem(job, now) : null;
 }
 
+/**
+ * Homepage order: newest date first. Sources often report a date without a time,
+ * so many listings share a day; among those, the one Timley found most recently
+ * comes first (not the company name, which made the section read A to Z).
+ */
+function compareNewestPosted(a: CanonicalJob, b: CanonicalJob): number {
+  const left = getJobSortTuple(a);
+  const right = getJobSortTuple(b);
+  if (left.sortAt !== right.sortAt) return left.sortAt > right.sortAt ? -1 : 1;
+  if (a.firstSeenAt !== b.firstSeenAt) return a.firstSeenAt > b.firstSeenAt ? -1 : 1;
+  return compareSortTuples(left, right);
+}
+
 /** Homepage helper: supplied dates only, with their provenance kept explicit. */
 export function getNewestPostedJobs(
   options: GetJobOptions & { limit?: number; todayOnly?: boolean } = {},
@@ -1875,13 +1888,12 @@ export function getNewestPostedJobs(
   const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
   const dayStart = utcDayStart(asDate(now, "now"));
   const limit = normalizeLimit(options.limit ?? 6);
-  return sortJobsForFeed(
-    snapshot.jobs.filter((job) => {
+  return snapshot.jobs
+    .filter((job) => {
       if (!job.active || !isPubliclyEligible(job) || !job.employerPostedAt) return false;
       return !options.todayOnly || Date.parse(job.employerPostedAt) >= dayStart;
-    }),
-    now,
-  )
+    })
+    .sort(compareNewestPosted)
     .slice(0, limit)
     .map((job) => toListItem(job, now));
 }

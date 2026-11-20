@@ -551,6 +551,47 @@ test("filters run before pagination and source filters include contributing mirr
   assert.ok(supplyChainRoles.items.every((item) => /supply chain/i.test(item.title)));
 });
 
+test("homepage newest listings break same-day ties by discovery time, not company name", () => {
+  const sameDay = "2026-08-18T00:00:00.000Z";
+  const records = [
+    ["Alpha Robotics", "REQ-201", "2026-08-19T09:00:00.000Z"],
+    ["Mid Systems", "REQ-202", "2026-08-19T13:00:00.000Z"],
+    ["Zeta Labs", "REQ-203", "2026-08-19T17:00:00.000Z"],
+  ].map(([companyName, requisitionId, firstSeenAt], index) =>
+    rawRecord({
+      sourceRecordId: `greenhouse:tie-${index}`,
+      companyName,
+      canonicalEmployerId: companyName.toLowerCase().replace(/\s+/g, "-"),
+      logoText: companyName[0],
+      applicationUrl: `https://example.com/jobs/${requisitionId.toLowerCase()}`,
+      requisitionId,
+      employerPostedAt: sameDay,
+      firstSeenAt,
+      lastSeenAt: firstSeenAt,
+    }),
+  );
+  const older = rawRecord({
+    sourceRecordId: "greenhouse:older",
+    companyName: "Aardvark Co",
+    canonicalEmployerId: "aardvark-co",
+    logoText: "A",
+    applicationUrl: "https://example.com/jobs/req-200",
+    requisitionId: "REQ-200",
+    employerPostedAt: "2026-08-17T00:00:00.000Z",
+    firstSeenAt: "2026-08-19T17:30:00.000Z",
+    lastSeenAt: "2026-08-19T17:30:00.000Z",
+  });
+  const snapshot = Object.freeze({
+    ...createDemoSnapshot(AS_OF),
+    jobs: deduplicateJobs([...records, older], { now: AS_OF }),
+  });
+  const newest = getNewestPostedJobs({ limit: 6, snapshot, now: NOW });
+  assert.deepEqual(
+    newest.map((job) => job.company),
+    ["Zeta Labs", "Mid Systems", "Alpha Robotics", "Aardvark Co"],
+  );
+});
+
 test("stats, details, and homepage newest jobs share the same snapshot semantics", () => {
   const stats = getFeedStats({ asOf: AS_OF, now: NOW });
   assert.equal(stats.activeJobs, DEMO_CANONICAL_JOB_COUNT);

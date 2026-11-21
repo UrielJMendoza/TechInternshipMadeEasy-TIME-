@@ -108,7 +108,7 @@ export function JobsExplorer({
     const params = new URLSearchParams(initialQuery);
     params.delete(key);
     if (key === "major") params.delete("niche");
-    const label = key === "sponsorship" ? "Confirmed sponsorship" : key === "remote" ? "Remote" : String(value).replace(/-/g," ");
+    const label = key === "sponsorship" ? "Confirmed sponsorship" : key === "remote" ? "Remote" : key === "fresh" ? "New in 24 h" : String(value).replace(/-/g," ");
     return [{key,label,href:params.size ? `/jobs?${params}` : "/jobs"}];
   });
   const activeAdvancedFilterCount = [
@@ -126,6 +126,7 @@ export function JobsExplorer({
     initialFilters.location ||
     initialFilters.remote ||
     initialFilters.sponsorship ||
+    initialFilters.fresh ||
     initialFilters.source ||
     initialFilters.level !== "all" ||
     initialFilters.major !== "all" ||
@@ -136,6 +137,15 @@ export function JobsExplorer({
     const params = new URLSearchParams(initialQuery);
     if (level === "all") params.delete("level");
     else params.set("level", level);
+    params.delete("cursor");
+    const query = params.toString();
+    return query ? `/jobs?${query}` : "/jobs";
+  }
+
+  function freshHref() {
+    const params = new URLSearchParams(initialQuery);
+    if (initialFilters.fresh) params.delete("fresh");
+    else params.set("fresh", "true");
     params.delete("cursor");
     const query = params.toString();
     return query ? `/jobs?${query}` : "/jobs";
@@ -238,12 +248,21 @@ export function JobsExplorer({
           <a className={initialFilters.level === "all" ? "selected" : undefined} href={levelHref("all")} aria-current={initialFilters.level === "all" ? "page" : undefined}>All</a>
           <a className={initialFilters.level === "internship" ? "selected" : undefined} href={levelHref("internship")} aria-current={initialFilters.level === "internship" ? "page" : undefined}>Internships</a>
           <a className={initialFilters.level === "new-grad" ? "selected" : undefined} href={levelHref("new-grad")} aria-current={initialFilters.level === "new-grad" ? "page" : undefined}>New grad</a>
+          <a
+            className={`fresh-toggle${initialFilters.fresh ? " selected" : ""}`}
+            href={freshHref()}
+            aria-current={initialFilters.fresh ? "true" : undefined}
+            title="Listings Timley found in the last 24 hours"
+          >
+            New in 24 h
+          </a>
         </div>
 
         <form className="filter-form" action="/jobs" method="get" onSubmit={cleanSubmission}>
           {initialFilters.level !== "all" && <input type="hidden" name="level" value={initialFilters.level} />}
           {initialFilters.company && <input type="hidden" name="company" value={initialFilters.company} />}
           {initialFilters.source && <input type="hidden" name="source" value={initialFilters.source} />}
+          {initialFilters.fresh && <input type="hidden" name="fresh" value="true" />}
           <label className="filter-field search-field">
             <span className="field-label">Search</span>
             <input name="q" defaultValue={initialFilters.q} placeholder="Title, company, location, or keyword" autoComplete="off" />

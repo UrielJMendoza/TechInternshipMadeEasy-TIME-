@@ -875,6 +875,30 @@ a.company-rail-item:hover {
   background: var(--blue);
 }
 
+.level-tabs a.fresh-toggle {
+  margin-left: auto;
+}
+
+.level-tabs a.fresh-toggle.selected::after {
+  background: #67d391;
+}
+
+.new-badge {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 6px;
+  border: 1px solid #67d391;
+  border-radius: 4px;
+  color: #67d391;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  line-height: 1.5;
+  text-transform: uppercase;
+  vertical-align: 0.15em;
+}
+
 .filter-form {
   display: grid;
   grid-template-columns: minmax(220px, 1.35fr) minmax(170px, 0.82fr) minmax(145px, 0.68fr) minmax(165px, 0.78fr) auto auto auto;
@@ -2116,6 +2140,10 @@ a.company-rail-item:hover {
     min-height: 56px;
     padding: 0 4px;
     font-size: 14px;
+  }
+
+  .level-tabs a.fresh-toggle {
+    margin-left: 0;
   }
 
   .filter-form {

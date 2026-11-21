@@ -216,6 +216,8 @@ export type JobFilters = {
   location: string;
   remote: boolean;
   sponsorship: boolean;
+  /** Only listings Timley first found in the last 24 hours. */
+  fresh: boolean;
   source: string;
 };
 
@@ -228,6 +230,7 @@ export const DEFAULT_FILTERS: Readonly<JobFilters> = Object.freeze({
   location: "",
   remote: false,
   sponsorship: false,
+  fresh: false,
   source: "",
 });
 
@@ -340,6 +343,8 @@ export type JobListItem = {
   firstSeenAt?: string;
   lastSeenAt?: string;
   lastCheckedAt?: string;
+  /** Timley first found this listing within 24 hours of the page's evaluation time. */
+  isNew?: boolean;
 };
 
 export type PopularCompany = {
@@ -915,6 +920,7 @@ export function parseFilters(input: FilterInput = undefined): JobFilters {
     location,
     remote: inputBoolean(inputValue(input, "remote")),
     sponsorship: inputBoolean(inputValue(input, "sponsorship")),
+    fresh: inputBoolean(inputValue(input, "fresh")),
     source: isSourceId(sourceValue) ? sourceValue : "",
   };
 }
@@ -931,6 +937,7 @@ export function serializeFilters(filtersInput: FilterInput = undefined): string 
   if (filters.location) params.set("location", filters.location);
   if (filters.remote) params.set("remote", "true");
   if (filters.sponsorship) params.set("sponsorship", "true");
+  if (filters.fresh) params.set("fresh", "true");
   if (filters.source) params.set("source", filters.source);
   return params.toString();
 }
@@ -1587,7 +1594,18 @@ function matchesNiche(job: CanonicalJob, niche: string): boolean {
   }
 }
 
-function matchesFilters(job: CanonicalJob, filters: JobFilters): boolean {
+/** Window for the "New" badge and the `fresh` filter. */
+export const NEW_LISTING_WINDOW_MS = DAY_MS;
+
+function isNewListing(job: CanonicalJob, now: string | Date): boolean {
+  const found = Date.parse(job.firstSeenAt);
+  const reference = typeof now === "string" ? Date.parse(now) : now.getTime();
+  return Number.isFinite(found) && Number.isFinite(reference) &&
+    found <= reference && reference - found < NEW_LISTING_WINDOW_MS;
+}
+
+function matchesFilters(job: CanonicalJob, filters: JobFilters, evaluatedAt: string): boolean {
+  if (filters.fresh && !isNewListing(job, evaluatedAt)) return false;
   if (
     filters.company &&
     normalizeEmployer(job.companyName) !== normalizeEmployer(filters.company)
@@ -1689,6 +1707,7 @@ function toListItem(job: CanonicalJob, now: string | Date): JobListItem {
     firstSeenAt: job.firstSeenAt,
     lastSeenAt: job.lastSeenAt,
     lastCheckedAt: job.lastCheckedAt,
+    isNew: isNewListing(job, now),
   };
 }
 
@@ -1751,7 +1770,7 @@ export function queryJobs(
         job.active &&
         job.firstSeenAt <= asOf &&
         isPubliclyEligible(job) &&
-        matchesFilters(job, filters),
+        matchesFilters(job, filters, evaluatedAt),
     ),
     evaluatedAt,
   );

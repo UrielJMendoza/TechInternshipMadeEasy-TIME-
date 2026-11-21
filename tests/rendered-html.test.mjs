@@ -137,6 +137,22 @@ test("jobs HTML contains one 36-job server page and stays below the payload ceil
   t.diagnostic(`jobs payload: ${rawBytes} B raw · ${gzipBytes} B gzip · ${brotliBytes} B Brotli`);
 });
 
+test("the New in 24 h toggle server-renders, keeps other filters, and badges new listings", async () => {
+  const all = await htmlFor("/jobs?level=internship");
+  assert.match(all, /<a class="fresh-toggle" href="\/jobs\?level=internship&amp;fresh=true"[^>]*>New in 24 h<\/a>/);
+
+  const fresh = await htmlFor("/jobs?level=internship&fresh=true");
+  assert.match(fresh, /Filtered jobs/);
+  assert.match(fresh, /<a class="fresh-toggle selected" href="\/jobs\?level=internship"[^>]*aria-current="true"/);
+  assert.match(fresh, /<input type="hidden" name="fresh" value="true"\/>/);
+  assert.match(fresh, /aria-label="Remove New in 24 h filter"/);
+  assert.doesNotMatch(fresh, /cursor=/);
+  const cards = (fresh.match(/class="job-card"/g) ?? []).length;
+  const badges = (fresh.match(/class="new-badge"/g) ?? []).length;
+  assert.ok(cards > 0, "the demo feed has listings found in the last 24 hours");
+  assert.equal(badges, cards, "every listing in the 24-hour view carries the New badge");
+});
+
 test("shareable filters server-render their active state without a cursor", async () => {
   const html = await htmlFor("/jobs?level=internship&q=software&major=computer-science&niche=software-engineering&remote=true");
 

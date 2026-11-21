@@ -315,6 +315,7 @@ test("filters parse defensively and serialize to one canonical copied URL", () =
   params.set("location", "  New   York ");
   params.set("remote", "true");
   params.set("sponsorship", "1");
+  params.set("fresh", "true");
   params.set("source", "lever");
   params.set("cursor", "must-not-be-copied");
 
@@ -328,22 +329,53 @@ test("filters parse defensively and serialize to one canonical copied URL", () =
     location: "New York",
     remote: true,
     sponsorship: true,
+    fresh: true,
     source: "lever",
   });
   assert.equal(
     serializeFilters(filters),
-    "level=new-grad&q=Data+science&company=Acme%2C+Inc.&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&source=lever",
+    "level=new-grad&q=Data+science&company=Acme%2C+Inc.&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&fresh=true&source=lever",
   );
   assert.equal(
     buildJobsUrl(filters),
-    "/jobs?level=new-grad&q=Data+science&company=Acme%2C+Inc.&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&source=lever",
+    "/jobs?level=new-grad&q=Data+science&company=Acme%2C+Inc.&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&fresh=true&source=lever",
   );
 
   assert.deepEqual(
     parseFilters({ level: "not-a-level", major: "invalid", niche: "finance", source: "unknown", remote: "false" }),
-    { q: "", company: "", level: "all", major: "all", niche: "all", location: "", remote: false, sponsorship: false, source: "" },
+    { q: "", company: "", level: "all", major: "all", niche: "all", location: "", remote: false, sponsorship: false, fresh: false, source: "" },
   );
   assert.equal(parseFilters({ major: "business", niche: "security" }).niche, "all");
+});
+
+test("the 24-hour filter and New badge use Timley's first-seen time at the page's clock", () => {
+  const hoursBefore = (hours) => new Date(Date.parse(NOW) - hours * 3_600_000).toISOString();
+  const jobs = deduplicateJobs([
+    rawRecord({ sourceRecordId: "greenhouse:new-1", requisitionId: "REQ-201", applicationUrl: "https://example.com/jobs/req-201", firstSeenAt: hoursBefore(3), lastSeenAt: hoursBefore(1) }),
+    rawRecord({ sourceRecordId: "greenhouse:new-2", requisitionId: "REQ-202", applicationUrl: "https://example.com/jobs/req-202", firstSeenAt: hoursBefore(23.5), lastSeenAt: hoursBefore(1) }),
+    rawRecord({ sourceRecordId: "greenhouse:old-1", requisitionId: "REQ-203", applicationUrl: "https://example.com/jobs/req-203", firstSeenAt: hoursBefore(25), lastSeenAt: hoursBefore(1) }),
+    rawRecord({ sourceRecordId: "greenhouse:old-2", requisitionId: "REQ-204", applicationUrl: "https://example.com/jobs/req-204", firstSeenAt: hoursBefore(24 * 5), lastSeenAt: hoursBefore(1) }),
+  ], { now: NOW });
+  const snapshot = { asOf: NOW, rawRecords: [], jobs };
+
+  const all = queryJobs(parseFilters(), { snapshot, now: NOW });
+  assert.equal(all.total, 4);
+  assert.equal(all.items.filter((job) => job.isNew).length, 2);
+
+  const fresh = queryJobs(parseFilters({ fresh: "true" }), { snapshot, now: NOW });
+  assert.equal(fresh.total, 2);
+  assert.ok(fresh.items.every((job) => job.isNew));
+  assert.equal(buildJobsUrl(fresh.filters), "/jobs?fresh=true");
+
+  // The cursor's clock keeps the window fixed while paging, even a day later.
+  const first = queryJobs(parseFilters({ fresh: "true" }), { snapshot, now: NOW, limit: 1 });
+  assert.ok(first.nextCursor);
+  const second = queryJobs(parseFilters({ fresh: "true" }), {
+    snapshot, now: hoursBefore(-30), limit: 1, cursor: first.nextCursor,
+  });
+  assert.equal(second.items.length, 1);
+  assert.equal(second.items[0].isNew, true);
+  assert.notEqual(second.items[0].id, first.items[0].id);
 });
 
 test("the company filter is exact, normalized, and shareable", () => {

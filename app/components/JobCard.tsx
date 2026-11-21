@@ -23,13 +23,18 @@ export function JobCard({ job, liveRecency = false, returnTo = "/jobs" }: JobCar
         ? "No visa support"
         : undefined;
   const compensationAndSponsorship = [compensation, sponsorship].filter(Boolean).join(" · ");
+  // Saved jobs keep the flag from when they were saved, so only fresh feeds show it.
+  const showNewBadge = Boolean(job.isNew) && !liveRecency;
 
   return (
     <article className="job-card" id={cardId} aria-labelledby={titleId}>
       <CompanyLogo company={job.company} domain={job.companyDomain} />
       <div className="job-primary">
         <a className="job-card-link" href={jobDetailHref(job.id, `${returnTo}#${cardId}`)}>
-          <h3 id={titleId}>{job.title}</h3>
+          <h3 id={titleId}>
+            {showNewBadge ? <span className="new-badge">New<span className="sr-only">, found in the last 24 hours:</span></span> : null}
+            {job.title}
+          </h3>
         </a>
         {job.titleIncomplete ? (
           <span className="job-title-note">Source title appears shortened</span>

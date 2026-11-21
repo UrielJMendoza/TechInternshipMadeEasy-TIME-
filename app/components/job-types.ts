@@ -32,6 +32,7 @@ export type JobCardData = {
   firstSeenAt?: string;
   lastSeenAt?: string;
   lastCheckedAt?: string;
+  isNew?: boolean;
 };
 
 export type JobFilters = {
@@ -43,5 +44,6 @@ export type JobFilters = {
   location: string;
   remote: boolean;
   sponsorship: boolean;
+  fresh: boolean;
   source: string;
 };

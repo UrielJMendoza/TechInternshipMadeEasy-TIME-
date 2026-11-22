@@ -1556,6 +1556,17 @@ a.company-rail-item:hover {
   font-size: 12px;
 }
 
+.detail-title .job-meta .company-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--line);
+  text-underline-offset: 3px;
+}
+
+.detail-title .job-meta .company-link:hover {
+  color: var(--paper);
+}
+
 .detail-title .job-meta strong {
   color: var(--paper);
   font-family: var(--mono);

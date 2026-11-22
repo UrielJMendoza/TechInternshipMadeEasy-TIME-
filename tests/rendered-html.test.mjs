@@ -236,6 +236,7 @@ test("crawl metadata stays canonical and missing routes return a real 404", asyn
   assert.match(sitemap, /<loc>https:\/\/timley\.dev\/jobs<\/loc>/);
   assert.doesNotMatch(sitemap, /\/saved<\/loc>/);
   assert.match(sitemap, /<loc>https:\/\/timley\.dev\/how-it-works<\/loc>/);
+  assert.match(sitemap, /<loc>https:\/\/timley\.dev\/internships\/[a-z0-9-]+<\/loc>\s*<lastmod>/);
   assert.match(sitemap, /<loc>https:\/\/timley\.dev\/jobs\/job_[a-f0-9]{16}<\/loc>\s*<lastmod>/);
 
   for (const response of [missingJob, missingPage]) {
@@ -243,6 +244,31 @@ test("crawl metadata stays canonical and missing routes return a real 404", asyn
     const html = await response.text();
     assert.match(html, /We couldn’t find that page/);
     assert.match(html, /<meta name="robots" content="noindex"\/>/);
+  }
+});
+
+test("company pages list that employer's roles and are linked from each listing", async () => {
+  const jobsHtml = await htmlFor("/jobs");
+  const jobId = jobsHtml.match(/\/jobs\/(job_[a-f0-9]+)/)?.[1];
+  assert.ok(jobId, "the feed should expose a detail route");
+  const detail = await htmlFor(`/jobs/${jobId}`);
+  const [, slug, company] = detail.match(/<a class="company-link" href="\/internships\/([a-z0-9-]+)">([^<]+)<\/a>/) ?? [];
+  assert.ok(slug && company, "job details link to the company page");
+  assert.match(detail, new RegExp(`href="/internships/${slug}">See every open role at `));
+
+  const html = await htmlFor(`/internships/${slug}`);
+  assert.match(html, new RegExp(`<title>${company} internships and new-grad jobs · Timley</title>`));
+  assert.match(html, new RegExp(`<link rel="canonical" href="https://timley\\.dev/internships/${slug}"/?>`));
+  assert.match(html, new RegExp(`<h1>${company} internships and new-grad jobs</h1>`));
+  assert.match(html, /"@type":"BreadcrumbList"/);
+  const companies = [...html.matchAll(/<h3 id="company-group-\d+-heading">([^<]+)<\/h3>/g)].map((match) => match[1]);
+  assert.ok(companies.length > 0, "the company page lists roles");
+  assert.ok(companies.every((name) => name === company), "only that company's roles are listed");
+
+  for (const missing of ["/internships/no-such-company", "/internships/Not%20A%20Slug"]) {
+    const response = await render(missing);
+    assert.equal(response.status, 404, missing);
+    assert.match(await response.text(), /<meta name="robots" content="noindex"\/>/);
   }
 });
 

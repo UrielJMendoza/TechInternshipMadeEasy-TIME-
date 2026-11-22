@@ -26,11 +26,14 @@ const {
   SOURCE_CATALOG,
   buildAtsDedupeKey,
   buildJobsUrl,
+  companySlug,
   createDemoSnapshot,
   decodeJobCursor,
   deduplicateJobs,
+  findCompanyPage,
   getFeedStats,
   getFreshness,
+  getCompanyPages,
   getJobById,
   getNewestPostedJobs,
   getPopularCompanies,
@@ -404,6 +407,30 @@ test("the company filter is exact, normalized, and shareable", () => {
   assert.equal(page.total, 2);
   assert.ok(page.items.every((job) => normalizeEmployer(job.company) === "acme"));
   assert.ok(page.items.every((job) => normalizeEmployer(job.company) !== "acme labs"));
+});
+
+test("company pages use stable slugs and list only employers with active public roles", () => {
+  assert.equal(companySlug("Acme, Inc."), "acme");
+  assert.equal(companySlug("Jane Street & Co."), "jane-street-and");
+  assert.equal(companySlug("D. E. Shaw"), "d-e-shaw");
+  assert.equal(companySlug("  "), null);
+
+  const jobs = deduplicateJobs([
+    rawRecord({ sourceRecordId: "greenhouse:acme-1", requisitionId: "ACME-1", applicationUrl: "https://example.com/jobs/acme-1" }),
+    rawRecord({ sourceRecordId: "greenhouse:acme-2", companyName: "ACME", requisitionId: "ACME-2", applicationUrl: "https://example.com/jobs/acme-2" }),
+    rawRecord({ sourceRecordId: "greenhouse:beta", companyName: "Beta Labs", canonicalEmployerId: "beta-labs", requisitionId: "BETA-1", applicationUrl: "https://example.com/jobs/beta-1" }),
+  ], { now: NOW });
+  const snapshot = { asOf: AS_OF, rawRecords: [], jobs };
+  const pages = getCompanyPages({ snapshot, now: NOW });
+
+  assert.deepEqual(pages.map(({ slug, activeJobs }) => [slug, activeJobs]), [["acme", 2], ["beta-labs", 1]]);
+  assert.equal(findCompanyPage("beta-labs", { snapshot, now: NOW })?.name, "Beta Labs");
+  for (const slug of ["missing", "Beta-Labs", "beta--labs", "../acme", ""]) {
+    assert.equal(findCompanyPage(slug, { snapshot, now: NOW }), null, slug);
+  }
+
+  const inactive = { asOf: AS_OF, rawRecords: [], jobs: jobs.map((job) => ({ ...job, active: false })) };
+  assert.deepEqual(getCompanyPages({ snapshot: inactive, now: NOW }), []);
 });
 
 test("the homepage company rail is ranked from recent public discoveries", () => {

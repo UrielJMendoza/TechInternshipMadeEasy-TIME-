@@ -1979,3 +1979,54 @@ export function getPopularCompanies(
       recentPostings: company.recentPostings,
     }));
 }
+
+/** URL segment for a company page: the normalized employer name, hyphenated. */
+export function companySlug(name: string | null | undefined): string | null {
+  const key = normalizeEmployer(name);
+  return key ? key.replace(/ /g, "-") : null;
+}
+
+export type CompanyPageEntry = {
+  slug: string;
+  name: string;
+  domain?: string;
+  activeJobs: number;
+  lastSeenAt?: string;
+};
+
+/**
+ * Every employer with at least one public, active listing, for company pages
+ * and the sitemap. Uses the same eligibility rules as the feed.
+ */
+export function getCompanyPages(options: GetJobOptions = {}): CompanyPageEntry[] {
+  const now = canonicalTimestamp(options.now ?? new Date(), "now");
+  const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
+  const companies = new Map<string, CompanyPageEntry>();
+  for (const job of snapshot.jobs) {
+    if (!job.active || !isPubliclyEligible(job)) continue;
+    const slug = companySlug(job.companyName);
+    if (!slug) continue;
+    const seenAt = job.evidenceCheckedAt ?? job.lastSeenAt;
+    const current = companies.get(slug);
+    if (current) {
+      current.activeJobs += 1;
+      if (!current.domain && job.companyDomain) current.domain = job.companyDomain;
+      if (seenAt && (!current.lastSeenAt || seenAt > current.lastSeenAt)) current.lastSeenAt = seenAt;
+      continue;
+    }
+    companies.set(slug, {
+      slug,
+      name: job.companyName,
+      domain: job.companyDomain,
+      activeJobs: 1,
+      lastSeenAt: seenAt,
+    });
+  }
+  return [...companies.values()].sort((a, b) => a.slug.localeCompare(b.slug, "en-US"));
+}
+
+/** The company page entry for a URL segment, or null when it has no active roles. */
+export function findCompanyPage(slug: string, options: GetJobOptions = {}): CompanyPageEntry | null {
+  if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug) || slug.length > 160) return null;
+  return getCompanyPages(options).find((company) => company.slug === slug) ?? null;
+}

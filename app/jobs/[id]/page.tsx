@@ -7,6 +7,7 @@ import { ReportListing } from "@/app/components/ReportListing";
 import { SaveButton } from "@/app/components/SaveButton";
 import { SiteFooter } from "@/app/components/SiteFooter";
 import { SiteHeader } from "@/app/components/SiteHeader";
+import { companySlug } from "@/lib/jobs";
 import { getPublicJobsSnapshot, getPublicJobsByIds } from "@/lib/jobs/live";
 import { sanitizeJobReturnPath } from "@/lib/navigation/job-return-path";
 import { breadcrumbJsonLd, jobPostingJsonLd } from "@/lib/seo/structured-data";
@@ -89,6 +90,8 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
     job.sponsorship === "Confirmed" ? "Visa support confirmed" : undefined,
   ].filter(Boolean) as string[];
   const jobPosting = jobPostingJsonLd(job);
+  const slug = companySlug(job.company);
+  const companyPath = slug ? `/internships/${slug}` : null;
 
   return (
     <main id="main-content">
@@ -106,7 +109,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
             <CompanyLogo company={job.company} domain={job.companyDomain} size="detail" priority />
             <div className="detail-title">
               <div className="job-meta">
-                <span>{job.company}</span>
+                {companyPath ? <a className="company-link" href={companyPath}>{job.company}</a> : <span>{job.company}</span>}
                 <Recency kind={job.freshnessKind} label={job.freshnessLabel} timestamp={job.postedAt ?? job.firstSeenAt} precision={job.postedAtPrecision} />
               </div>
               <h1>{job.title}</h1>
@@ -165,6 +168,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
                 <p className="direct-note">The source-reported date is newer than Timley’s first observation. It may reflect a repost or a source update.</p>
               ) : null}
               <p className="direct-note">Apply opens the employer’s website in a new tab.</p>
+              {companyPath ? <p className="direct-note"><a href={companyPath}>See every open role at {job.company}</a>.</p> : null}
               <ReportListing jobId={job.id} />
             </aside>
           </div>

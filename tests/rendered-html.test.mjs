@@ -44,7 +44,7 @@ test("homepage renders the focused account-free product and bespoke sharing meta
   assert.match(html, /Newest listings/);
   const homeCards = (html.match(/class="job-card"/g) ?? []).length;
   assert.ok(homeCards > 0, "Newest listings renders cards");
-  assert.doesNotMatch(html, /may be closed/, "Newest listings leaves out postings 60+ days old");
+  assert.doesNotMatch(html, /may be closed/, "with current postings available, Newest listings shows none 60+ days old");
   assert.match(html, /4,416/);
   assert.match(html, /https:\/\/timley\.dev\/og\.png/);
   assert.match(html, /<link rel="canonical" href="https:\/\/timley\.dev"\/>/);

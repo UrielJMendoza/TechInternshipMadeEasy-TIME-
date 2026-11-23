@@ -1929,10 +1929,12 @@ export function getNewestPostedJobs(
   return snapshot.jobs
     .filter((job) => {
       if (!job.active || !isPubliclyEligible(job) || !job.employerPostedAt) return false;
-      if (isPossiblyClosed(job, now)) return false;
       return !options.todayOnly || Date.parse(job.employerPostedAt) >= dayStart;
     })
     .sort(compareNewestPosted)
+    // Postings that may be closed only fill the list after every current one, so
+    // a stale bundled snapshot still shows (tagged) cards instead of an empty section.
+    .sort((a, b) => Number(isPossiblyClosed(a, now)) - Number(isPossiblyClosed(b, now)))
     .slice(0, limit)
     .map((job) => toListItem(job, now));
 }

@@ -38,6 +38,8 @@ const {
   getNewestPostedJobs,
   getPopularCompanies,
   isNewThisWeek,
+  isPossiblyClosed,
+  STALE_LISTING_DAYS,
   normalizeAtsHostname,
   normalizeEmployer,
   normalizeRequisitionId,
@@ -379,6 +381,48 @@ test("the 24-hour filter and New badge use Timley's first-seen time at the page'
   assert.equal(second.items.length, 1);
   assert.equal(second.items[0].isNew, true);
   assert.notEqual(second.items[0].id, first.items[0].id);
+});
+
+test("listings posted 60+ days ago are tagged may-be-closed and kept out of New in 24 h and behind current Newest listings", () => {
+  const daysBefore = (days) => new Date(Date.parse(NOW) - days * 86_400_000).toISOString();
+  assert.equal(STALE_LISTING_DAYS, 60);
+  const jobs = deduplicateJobs([
+    rawRecord({ sourceRecordId: "greenhouse:recent", requisitionId: "REQ-301", applicationUrl: "https://example.com/jobs/req-301", employerPostedAt: daysBefore(3), firstSeenAt: daysBefore(2), lastSeenAt: NOW }),
+    rawRecord({ sourceRecordId: "greenhouse:edge", requisitionId: "REQ-302", applicationUrl: "https://example.com/jobs/req-302", employerPostedAt: daysBefore(59.9), firstSeenAt: daysBefore(59), lastSeenAt: NOW }),
+    // Found by Timley an hour ago, but the source says it was posted 75 days ago.
+    rawRecord({ sourceRecordId: "greenhouse:stale", requisitionId: "REQ-303", applicationUrl: "https://example.com/jobs/req-303", employerPostedAt: daysBefore(75), firstSeenAt: daysBefore(1 / 24), lastSeenAt: NOW }),
+    rawRecord({ sourceRecordId: "greenhouse:undated", requisitionId: "REQ-304", applicationUrl: "https://example.com/jobs/req-304", employerPostedAt: null, firstSeenAt: daysBefore(80), lastSeenAt: NOW }),
+  ], { now: NOW });
+  const snapshot = { asOf: NOW, rawRecords: [], jobs };
+  const byRequisition = (items, id) => items.find((job) => job.applyUrl.endsWith(id));
+
+  const all = queryJobs(parseFilters(), { snapshot, now: NOW });
+  assert.equal(all.total, 4, "stale listings stay in the feed; the tag is display-only");
+  assert.equal(byRequisition(all.items, "req-303").possiblyClosed, true);
+  assert.equal(byRequisition(all.items, "req-301").possiblyClosed, false);
+  assert.equal(byRequisition(all.items, "req-302").possiblyClosed, false);
+  // No posting date means no claim about its age.
+  assert.equal(byRequisition(all.items, "req-304").possiblyClosed, false);
+  assert.equal(jobs.filter((job) => isPossiblyClosed(job, NOW)).length, 1);
+
+  const fresh = queryJobs(parseFilters({ fresh: "true" }), { snapshot, now: NOW });
+  assert.equal(fresh.total, 0, "a newly found but long-posted role is not 'new'");
+
+  const newest = getNewestPostedJobs({ limit: 2, snapshot, now: NOW });
+  assert.deepEqual(newest.map((job) => job.applyUrl).sort(), [
+    "https://example.com/jobs/req-301",
+    "https://example.com/jobs/req-302",
+  ]);
+  assert.ok(newest.every((job) => !job.possiblyClosed));
+
+  // With too few current postings (e.g. an old bundled snapshot), stale ones
+  // fill in last and keep their tag instead of leaving the section empty.
+  const filled = getNewestPostedJobs({ limit: 10, snapshot, now: NOW });
+  assert.equal(filled.length, 3);
+  assert.equal(filled.at(-1).applyUrl, "https://example.com/jobs/req-303");
+  assert.equal(filled.at(-1).possiblyClosed, true);
+  const onlyStale = { ...snapshot, jobs: jobs.filter((job) => isPossiblyClosed(job, NOW)) };
+  assert.equal(getNewestPostedJobs({ limit: 6, snapshot: onlyStale, now: NOW }).length, 1);
 });
 
 test("the company filter is exact, normalized, and shareable", () => {

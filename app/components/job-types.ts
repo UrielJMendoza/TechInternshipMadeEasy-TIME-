@@ -33,6 +33,7 @@ export type JobCardData = {
   lastSeenAt?: string;
   lastCheckedAt?: string;
   isNew?: boolean;
+  possiblyClosed?: boolean;
 };
 
 export type JobFilters = {

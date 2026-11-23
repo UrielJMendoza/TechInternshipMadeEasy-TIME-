@@ -148,6 +148,9 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
               <h2>Listing details</h2>
               <div className="detail-fact"><span>Recency</span><Recency kind={job.freshnessKind} label={job.freshnessLabel} timestamp={job.postedAt ?? job.firstSeenAt} precision={job.postedAtPrecision} /></div>
               <div className="detail-fact"><span>Date source</span><strong>{dateSource}</strong></div>
+              {job.possiblyClosed ? (
+                <div className="detail-fact"><span>Status</span><strong className="stale-note">Posted 60+ days ago, may be closed</strong></div>
+              ) : null}
               {job.titleIncomplete ? (
                 <div className="detail-fact"><span>Title</span><strong>Source title is shortened</strong></div>
               ) : null}

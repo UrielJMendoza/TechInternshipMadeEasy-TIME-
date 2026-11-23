@@ -40,6 +40,7 @@ export function JobCard({ job, liveRecency = false, returnTo = "/jobs" }: JobCar
           <span className="job-title-note">Source title appears shortened</span>
         ) : null}
         {job.eligibilityNeedsReview ? <span className="job-title-note">Check graduate eligibility with employer</span> : null}
+        {job.possiblyClosed ? <span className="job-title-note stale-note">Posted 60+ days ago, may be closed</span> : null}
         <p className="job-company">
           <span>{job.company}</span>
           <span aria-hidden="true">/</span>

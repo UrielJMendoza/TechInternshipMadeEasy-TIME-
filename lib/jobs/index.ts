@@ -345,6 +345,8 @@ export type JobListItem = {
   lastCheckedAt?: string;
   /** Timley first found this listing within 24 hours of the page's evaluation time. */
   isNew?: boolean;
+  /** The source posting date is at least STALE_LISTING_DAYS old, so the role may be closed. */
+  possiblyClosed?: boolean;
 };
 
 export type PopularCompany = {
@@ -1604,8 +1606,24 @@ function isNewListing(job: CanonicalJob, now: string | Date): boolean {
     found <= reference && reference - found < NEW_LISTING_WINDOW_MS;
 }
 
+/**
+ * Posting age, in days, after which a listing is tagged "may be closed".
+ * The public feed already hides postings older than 90 days (RETENTION_DAYS),
+ * so this flags the oldest third of what visitors can still see.
+ */
+export const STALE_LISTING_DAYS = 60;
+
+/** Display-only: true when the source's posting date is STALE_LISTING_DAYS or more old. */
+export function isPossiblyClosed(job: CanonicalJob, now: string | Date): boolean {
+  if (!job.employerPostedAt) return false;
+  const posted = Date.parse(job.employerPostedAt);
+  const reference = typeof now === "string" ? Date.parse(now) : now.getTime();
+  return Number.isFinite(posted) && Number.isFinite(reference) &&
+    reference - posted >= STALE_LISTING_DAYS * DAY_MS;
+}
+
 function matchesFilters(job: CanonicalJob, filters: JobFilters, evaluatedAt: string): boolean {
-  if (filters.fresh && !isNewListing(job, evaluatedAt)) return false;
+  if (filters.fresh && (!isNewListing(job, evaluatedAt) || isPossiblyClosed(job, evaluatedAt))) return false;
   if (
     filters.company &&
     normalizeEmployer(job.companyName) !== normalizeEmployer(filters.company)
@@ -1708,6 +1726,7 @@ function toListItem(job: CanonicalJob, now: string | Date): JobListItem {
     lastSeenAt: job.lastSeenAt,
     lastCheckedAt: job.lastCheckedAt,
     isNew: isNewListing(job, now),
+    possiblyClosed: isPossiblyClosed(job, now),
   };
 }
 
@@ -1913,6 +1932,9 @@ export function getNewestPostedJobs(
       return !options.todayOnly || Date.parse(job.employerPostedAt) >= dayStart;
     })
     .sort(compareNewestPosted)
+    // Postings that may be closed only fill the list after every current one, so
+    // a stale bundled snapshot still shows (tagged) cards instead of an empty section.
+    .sort((a, b) => Number(isPossiblyClosed(a, now)) - Number(isPossiblyClosed(b, now)))
     .slice(0, limit)
     .map((job) => toListItem(job, now));
 }

@@ -42,6 +42,9 @@ test("homepage renders the focused account-free product and bespoke sharing meta
   assert.match(html, /<input(?=[^>]*name="q")(?=[^>]*type="search")(?=[^>]*placeholder="Search title, company, location, or keyword")[^>]*>/);
   assert.match(html, /Browse all jobs/);
   assert.match(html, /Newest listings/);
+  const homeCards = (html.match(/class="job-card"/g) ?? []).length;
+  assert.ok(homeCards > 0, "Newest listings renders cards");
+  assert.doesNotMatch(html, /may be closed/, "Newest listings leaves out postings 60+ days old");
   assert.match(html, /4,416/);
   assert.match(html, /https:\/\/timley\.dev\/og\.png/);
   assert.match(html, /<link rel="canonical" href="https:\/\/timley\.dev"\/>/);
@@ -151,6 +154,7 @@ test("the New in 24 h toggle server-renders, keeps other filters, and badges new
   const badges = (fresh.match(/class="new-badge"/g) ?? []).length;
   assert.ok(cards > 0, "the demo feed has listings found in the last 24 hours");
   assert.equal(badges, cards, "every listing in the 24-hour view carries the New badge");
+  assert.doesNotMatch(fresh, /may be closed/, "the 24-hour view leaves out postings 60+ days old");
 });
 
 test("shareable filters server-render their active state without a cursor", async () => {

@@ -261,6 +261,7 @@ test("crawl metadata stays canonical and missing routes return a real 404", asyn
   assert.doesNotMatch(sitemap, /\/saved<\/loc>/);
   assert.match(sitemap, /<loc>https:\/\/timley\.dev\/how-it-works<\/loc>/);
   assert.match(sitemap, /<loc>https:\/\/timley\.dev\/internships\/[a-z0-9-]+<\/loc>\s*<lastmod>/);
+  assert.match(sitemap, /<loc>https:\/\/timley\.dev\/internships\/in\/[a-z-]+<\/loc>\s*<lastmod>/);
   assert.match(sitemap, /<loc>https:\/\/timley\.dev\/jobs\/job_[a-f0-9]{16}<\/loc>\s*<lastmod>/);
 
   for (const response of [missingJob, missingPage]) {
@@ -290,6 +291,27 @@ test("company pages list that employer's roles and are linked from each listing"
   assert.ok(companies.every((name) => name === company), "only that company's roles are listed");
 
   for (const missing of ["/internships/no-such-company", "/internships/Not%20A%20Slug"]) {
+    const response = await render(missing);
+    assert.equal(response.status, 404, missing);
+    assert.match(await response.text(), /<meta name="robots" content="noindex"\/>/);
+  }
+});
+
+test("state pages list that state's roles and appear in the sitemap", async () => {
+  const sitemap = await (await render("/sitemap.xml")).text();
+  const slug = sitemap.match(/<loc>https:\/\/timley\.dev\/internships\/in\/([a-z-]+)<\/loc>\s*<lastmod>/)?.[1];
+  assert.ok(slug, "the sitemap lists at least one state page");
+  const name = slug.split("-").map((word) => word === "of" ? word : word[0].toUpperCase() + word.slice(1)).join(" ");
+
+  const html = await htmlFor(`/internships/in/${slug}`);
+  assert.match(html, new RegExp(`<title>Internships and new-grad jobs in ${name} · Timley</title>`));
+  assert.match(html, new RegExp(`<link rel="canonical" href="https://timley\\.dev/internships/in/${slug}"/?>`));
+  assert.match(html, new RegExp(`<h1>Internships and new-grad jobs in ${name}</h1>`));
+  assert.match(html, /"@type":"BreadcrumbList"/);
+  const total = Number(html.match(/<p>(\d+) open roles? in /)?.[1]);
+  assert.ok(total > 0, "the state page lists roles");
+
+  for (const missing of ["/internships/in/atlantis", "/internships/in/CO", "/internships/in/co"]) {
     const response = await render(missing);
     assert.equal(response.status, 404, missing);
     assert.match(await response.text(), /<meta name="robots" content="noindex"\/>/);

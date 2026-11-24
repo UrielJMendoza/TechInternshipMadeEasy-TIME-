@@ -31,9 +31,11 @@ const {
   decodeJobCursor,
   deduplicateJobs,
   findCompanyPage,
+  findStatePage,
   getFeedStats,
   getFreshness,
   getCompanyPages,
+  getStatePages,
   getJobById,
   getNewestPostedJobs,
   getPopularCompanies,
@@ -475,6 +477,32 @@ test("company pages use stable slugs and list only employers with active public 
 
   const inactive = { asOf: AS_OF, rawRecords: [], jobs: jobs.map((job) => ({ ...job, active: false })) };
   assert.deepEqual(getCompanyPages({ snapshot: inactive, now: NOW }), []);
+});
+
+test("state pages list states with active roles and match the location filter", () => {
+  const jobs = deduplicateJobs([
+    rawRecord({ sourceRecordId: "greenhouse:co-1", requisitionId: "CO-1", applicationUrl: "https://example.com/jobs/co-1", location: "Denver, CO" }),
+    rawRecord({ sourceRecordId: "greenhouse:co-2", requisitionId: "CO-2", applicationUrl: "https://example.com/jobs/co-2", location: "Boulder, Colorado" }),
+    rawRecord({ sourceRecordId: "greenhouse:ny", requisitionId: "NY-1", applicationUrl: "https://example.com/jobs/ny-1", location: "New York, NY" }),
+    rawRecord({ sourceRecordId: "greenhouse:dc", requisitionId: "DC-1", applicationUrl: "https://example.com/jobs/dc-1", location: "Washington, DC" }),
+    rawRecord({ sourceRecordId: "greenhouse:co-3", requisitionId: "CO-3", applicationUrl: "https://example.com/jobs/co-3", location: "Colorado or Remote" }),
+    rawRecord({ sourceRecordId: "greenhouse:wa", requisitionId: "WA-1", applicationUrl: "https://example.com/jobs/wa-1", location: "Seattle, Washington" }),
+    rawRecord({ sourceRecordId: "greenhouse:closed", requisitionId: "TX-1", applicationUrl: "https://example.com/jobs/tx-1", location: "Austin, TX", active: false }),
+  ], { now: NOW });
+  const snapshot = { asOf: AS_OF, rawRecords: [], jobs };
+  const pages = getStatePages({ snapshot, now: NOW });
+
+  assert.deepEqual(pages.map(({ slug, name, code, activeJobs }) => [slug, name, code, activeJobs]), [
+    ["colorado", "Colorado", "CO", 3],
+    ["district-of-columbia", "District of Columbia", "DC", 1],
+    ["new-york", "New York", "NY", 1],
+    ["washington", "Washington", "WA", 1],
+  ]);
+  const colorado = findStatePage("colorado", { snapshot, now: NOW });
+  assert.equal(queryJobs(parseFilters({ location: colorado.code }), { snapshot, now: NOW }).total, colorado.activeJobs);
+  for (const slug of ["texas", "Colorado", "co", "new--york", "../colorado", ""]) {
+    assert.equal(findStatePage(slug, { snapshot, now: NOW }), null, slug);
+  }
 });
 
 test("the homepage company rail is ranked from recent public discoveries", () => {

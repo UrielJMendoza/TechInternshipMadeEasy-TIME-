@@ -1,5 +1,5 @@
 import type { MetadataRoute } from "next";
-import { getCompanyPages } from "@/lib/jobs";
+import { getCompanyPages, getStatePages } from "@/lib/jobs";
 import { getPublicJobsSnapshot } from "@/lib/jobs/live";
 import { SITE_URL } from "@/lib/site";
 
@@ -31,6 +31,12 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     ...getCompanyPages({ snapshot }).map(company => ({
       url: `${SITE_URL}/internships/${company.slug}`,
       lastModified: company.lastSeenAt,
+      changeFrequency: "daily" as const,
+      priority: 0.8,
+    })),
+    ...getStatePages({ snapshot }).map(state => ({
+      url: `${SITE_URL}/internships/in/${state.slug}`,
+      lastModified: state.lastSeenAt,
       changeFrequency: "daily" as const,
       priority: 0.8,
     })),

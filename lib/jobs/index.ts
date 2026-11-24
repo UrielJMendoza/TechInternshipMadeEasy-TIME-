@@ -1509,7 +1509,9 @@ function locationTermsMatch(query: string, location: string): boolean {
   return normalizeForSearch(query).split(" ").filter(Boolean).every((term) => {
     const stateName = US_STATE_NAME_BY_ABBREVIATION.get(term);
     if (stateName) {
-      const hasFullStateName = new RegExp(`(?:^| )${stateName}(?: |$)`).test(original);
+      // A state name directly followed by another state's code is a city ("Washington, DC").
+      const hasFullStateName = [...original.matchAll(new RegExp(`(?:^| )${stateName}(?= |$)( [a-z]{2}(?= |$))?`, "g"))]
+        .some((match) => !match[1] || match[1].trim() === term || !postalCodes.has(match[1].trim()));
       return postalCodes.has(term) || hasFullStateName;
     }
     return available.some((word) => term.length <= 2 ? word === term : word.startsWith(term));
@@ -2045,6 +2047,51 @@ export function getCompanyPages(options: GetJobOptions = {}): CompanyPageEntry[]
     });
   }
   return [...companies.values()].sort((a, b) => a.slug.localeCompare(b.slug, "en-US"));
+}
+
+export type StatePageEntry = {
+  slug: string;
+  name: string;
+  /** Two-letter postal code, which the location filter matches exactly. */
+  code: string;
+  activeJobs: number;
+  lastSeenAt?: string;
+};
+
+function titleCaseStateName(name: string): string {
+  return name.split(" ").map((word) => word === "of" ? word : word[0].toUpperCase() + word.slice(1)).join(" ");
+}
+
+/**
+ * Every US state (and DC) with at least one public, active listing, for the
+ * `/internships/in/<state>` pages and the sitemap. Matching uses the same
+ * location filter as `/jobs?location=CO`, so the counts agree with the page.
+ */
+export function getStatePages(options: GetJobOptions = {}): StatePageEntry[] {
+  const now = canonicalTimestamp(options.now ?? new Date(), "now");
+  const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
+  const jobs = snapshot.jobs.filter((job) => job.active && isPubliclyEligible(job));
+  const states: StatePageEntry[] = [];
+  for (const [name, code] of US_STATE_ALIASES) {
+    let activeJobs = 0;
+    let lastSeenAt: string | undefined;
+    for (const job of jobs) {
+      if (!locationTermsMatch(code, job.location)) continue;
+      activeJobs += 1;
+      const seenAt = job.evidenceCheckedAt ?? job.lastSeenAt;
+      if (seenAt && (!lastSeenAt || seenAt > lastSeenAt)) lastSeenAt = seenAt;
+    }
+    if (activeJobs > 0) {
+      states.push({ slug: name.replace(/ /g, "-"), name: titleCaseStateName(name), code: code.toUpperCase(), activeJobs, lastSeenAt });
+    }
+  }
+  return states.sort((a, b) => a.slug.localeCompare(b.slug, "en-US"));
+}
+
+/** The state page entry for a URL segment such as `colorado`, or null when it has no active roles. */
+export function findStatePage(slug: string, options: GetJobOptions = {}): StatePageEntry | null {
+  if (!/^[a-z]+(?:-[a-z]+)*$/.test(slug) || slug.length > 40) return null;
+  return getStatePages(options).find((state) => state.slug === slug) ?? null;
 }
 
 /** The company page entry for a URL segment, or null when it has no active roles. */

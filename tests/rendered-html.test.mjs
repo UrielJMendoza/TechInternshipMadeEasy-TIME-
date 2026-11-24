@@ -26,6 +26,26 @@ async function htmlFor(pathname) {
   return response.text();
 }
 
+test("RSS feed renders bounded current listings and respects shareable filters", async () => {
+  const response = await render("/feed.xml?fresh=true&category=software");
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type") ?? "", /application\/rss\+xml/);
+  const xml = await response.text();
+  assert.match(xml, /^<\?xml version="1.0" encoding="UTF-8"\?>/);
+  assert.match(xml, /<rss version="2.0">/);
+  assert.match(xml, /<channel>/);
+  assert.match(xml, /<link>https:\/\/timley\.dev\/jobs\?major=computer-science&amp;niche=software-engineering&amp;fresh=true<\/link>/);
+  assert.match(xml, /<item>/);
+  assert.match(xml, /<guid isPermaLink="true">https:\/\/timley\.dev\/jobs\//);
+  assert.ok((xml.match(/<item>/g) ?? []).length <= 60);
+  assert.doesNotMatch(xml, /<script|&(?!(?:amp|lt|gt|quot|apos);|#\d+;)/i);
+  const all = await render("/feed.xml");
+  assert.equal(all.status, 200);
+  assert.ok((await all.text()).includes("<item>"));
+  const home = await htmlFor("/");
+  assert.match(home, /href="\/feed\.xml">RSS feed<\/a>/);
+});
+
 test("homepage renders the focused account-free product and bespoke sharing metadata", async () => {
   const html = await htmlFor("/");
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");

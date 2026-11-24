@@ -9,6 +9,7 @@ export function SiteFooter() {
         <a href="/jobs">All jobs</a>
         <a href="/saved">Saved</a>
         <a href="/how-it-works">How it works</a>
+        <a href="/feed.xml">RSS feed</a>
       </nav>
     </footer>
   );

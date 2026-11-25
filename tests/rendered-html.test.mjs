@@ -262,6 +262,7 @@ test("crawl metadata stays canonical and missing routes return a real 404", asyn
   assert.match(sitemap, /<loc>https:\/\/timley\.dev\/how-it-works<\/loc>/);
   assert.match(sitemap, /<loc>https:\/\/timley\.dev\/internships\/[a-z0-9-]+<\/loc>\s*<lastmod>/);
   assert.match(sitemap, /<loc>https:\/\/timley\.dev\/internships\/in\/[a-z-]+<\/loc>\s*<lastmod>/);
+  assert.match(sitemap, /<loc>https:\/\/timley\.dev\/internships\/category\/software-engineering<\/loc>\s*<lastmod>/);
   assert.match(sitemap, /<loc>https:\/\/timley\.dev\/jobs\/job_[a-f0-9]{16}<\/loc>\s*<lastmod>/);
 
   for (const response of [missingJob, missingPage]) {
@@ -312,6 +313,22 @@ test("state pages list that state's roles and appear in the sitemap", async () =
   assert.ok(total > 0, "the state page lists roles");
 
   for (const missing of ["/internships/in/atlantis", "/internships/in/CO", "/internships/in/co"]) {
+    const response = await render(missing);
+    assert.equal(response.status, 404, missing);
+    assert.match(await response.text(), /<meta name="robots" content="noindex"\/>/);
+  }
+});
+
+test("category pages list that specialization's roles and appear in the sitemap", async () => {
+  const html = await htmlFor("/internships/category/software-engineering");
+  assert.match(html, /<title>Software Engineering internships and new-grad jobs · Timley<\/title>/);
+  assert.match(html, /<link rel="canonical" href="https:\/\/timley\.dev\/internships\/category\/software-engineering"\/?>/);
+  assert.match(html, /<h1>Software Engineering internships and new-grad jobs<\/h1>/);
+  assert.match(html, /"@type":"BreadcrumbList"/);
+  const total = Number(html.match(/<p>(\d+) open roles? in Software Engineering/)?.[1]);
+  assert.ok(total > 0, "the category page lists roles");
+
+  for (const missing of ["/internships/category/basket-weaving", "/internships/category/all", "/internships/category/Software-Engineering"]) {
     const response = await render(missing);
     assert.equal(response.status, 404, missing);
     assert.match(await response.text(), /<meta name="robots" content="noindex"\/>/);

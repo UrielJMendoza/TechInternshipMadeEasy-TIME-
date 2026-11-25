@@ -2088,6 +2088,53 @@ export function getStatePages(options: GetJobOptions = {}): StatePageEntry[] {
   return states.sort((a, b) => a.slug.localeCompare(b.slug, "en-US"));
 }
 
+export type CategoryPageEntry = {
+  /** URL segment: the jobs-page specialization id, e.g. `software-engineering`. */
+  slug: string;
+  label: string;
+  major: JobMajorFilter;
+  niche: string;
+  activeJobs: number;
+  lastSeenAt?: string;
+};
+
+/**
+ * Every jobs-page specialization (major + niche, e.g. Software Engineering or
+ * Data / ML) with at least one public, active listing, for the
+ * `/internships/category/<slug>` pages and the sitemap. Matching uses the same
+ * major/niche filter as `/jobs`, so the counts agree with the page.
+ */
+export function getCategoryPages(options: GetJobOptions = {}): CategoryPageEntry[] {
+  const now = canonicalTimestamp(options.now ?? new Date(), "now");
+  const snapshot = options.snapshot ?? resolveSnapshot(options.asOf, now);
+  const jobs = snapshot.jobs.filter((job) => job.active && isPubliclyEligible(job));
+  const categories: CategoryPageEntry[] = [];
+  for (const major of JOB_MAJOR_OPTIONS) {
+    if (major.id === "all") continue;
+    for (const niche of major.niches) {
+      if (niche.id === "all") continue;
+      let activeJobs = 0;
+      let lastSeenAt: string | undefined;
+      for (const job of jobs) {
+        if (!matchesMajor(job, major.id) || !matchesNiche(job, niche.id)) continue;
+        activeJobs += 1;
+        const seenAt = job.evidenceCheckedAt ?? job.lastSeenAt;
+        if (seenAt && (!lastSeenAt || seenAt > lastSeenAt)) lastSeenAt = seenAt;
+      }
+      if (activeJobs > 0) {
+        categories.push({ slug: niche.id, label: niche.label, major: major.id, niche: niche.id, activeJobs, lastSeenAt });
+      }
+    }
+  }
+  return categories.sort((a, b) => a.slug.localeCompare(b.slug, "en-US"));
+}
+
+/** The category page entry for a URL segment such as `data-ml`, or null when it has no active roles. */
+export function findCategoryPage(slug: string, options: GetJobOptions = {}): CategoryPageEntry | null {
+  if (!/^[a-z]+(?:-[a-z]+)*$/.test(slug) || slug.length > 40) return null;
+  return getCategoryPages(options).find((category) => category.slug === slug) ?? null;
+}
+
 /** The state page entry for a URL segment such as `colorado`, or null when it has no active roles. */
 export function findStatePage(slug: string, options: GetJobOptions = {}): StatePageEntry | null {
   if (!/^[a-z]+(?:-[a-z]+)*$/.test(slug) || slug.length > 40) return null;

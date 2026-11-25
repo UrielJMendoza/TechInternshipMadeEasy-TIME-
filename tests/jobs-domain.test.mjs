@@ -30,10 +30,12 @@ const {
   createDemoSnapshot,
   decodeJobCursor,
   deduplicateJobs,
+  findCategoryPage,
   findCompanyPage,
   findStatePage,
   getFeedStats,
   getFreshness,
+  getCategoryPages,
   getCompanyPages,
   getStatePages,
   getJobById,
@@ -502,6 +504,34 @@ test("state pages list states with active roles and match the location filter", 
   assert.equal(queryJobs(parseFilters({ location: colorado.code }), { snapshot, now: NOW }).total, colorado.activeJobs);
   for (const slug of ["texas", "Colorado", "co", "new--york", "../colorado", ""]) {
     assert.equal(findStatePage(slug, { snapshot, now: NOW }), null, slug);
+  }
+});
+
+test("category pages list specializations with active roles and match the jobs filter", () => {
+  const jobs = deduplicateJobs([
+    rawRecord({ sourceRecordId: "greenhouse:swe-1", requisitionId: "SWE-1", applicationUrl: "https://example.com/jobs/swe-1", title: "Software Engineer Intern", category: "Engineering" }),
+    rawRecord({ sourceRecordId: "greenhouse:swe-2", requisitionId: "SWE-2", applicationUrl: "https://example.com/jobs/swe-2", title: "Software Engineering Intern, Data Platform", category: "Engineering" }),
+    rawRecord({ sourceRecordId: "greenhouse:fw", requisitionId: "FW-1", applicationUrl: "https://example.com/jobs/fw-1", title: "Firmware Engineer Intern", category: "Engineering" }),
+    rawRecord({ sourceRecordId: "greenhouse:pm", requisitionId: "PM-1", applicationUrl: "https://example.com/jobs/pm-1", title: "Product Analyst Intern", category: "Product" }),
+    rawRecord({ sourceRecordId: "greenhouse:closed", requisitionId: "SEC-1", applicationUrl: "https://example.com/jobs/sec-1", title: "Security Engineer Intern", category: "Security", active: false }),
+  ], { now: NOW });
+  const snapshot = { asOf: AS_OF, rawRecords: [], jobs };
+  const pages = getCategoryPages({ snapshot, now: NOW });
+
+  assert.deepEqual(pages.map(({ slug, label, major, activeJobs }) => [slug, label, major, activeJobs]), [
+    // A role can sit in more than one specialization, exactly as on /jobs.
+    ["cloud-infra", "Cloud / Infra", "computer-science", 1],
+    ["data-ml", "Data / ML", "computer-science", 1],
+    ["hardware-firmware", "Hardware / Firmware", "engineering", 1],
+    ["product", "Product", "business", 1],
+    ["software-engineering", "Software Engineering", "computer-science", 2],
+  ]);
+  for (const page of pages) {
+    const found = findCategoryPage(page.slug, { snapshot, now: NOW });
+    assert.equal(queryJobs(parseFilters({ major: found.major, niche: found.niche }), { snapshot, now: NOW }).total, found.activeJobs, page.slug);
+  }
+  for (const slug of ["security", "all", "Software-Engineering", "software--engineering", "../data-ml", ""]) {
+    assert.equal(findCategoryPage(slug, { snapshot, now: NOW }), null, slug);
   }
 });
 

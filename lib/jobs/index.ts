@@ -1858,6 +1858,9 @@ export function getNewestFoundJobs(
         ? (a.firstSeenAt > b.firstSeenAt ? -1 : 1)
         : lexicalCompare(a.id, b.id),
     )
+    // Like Newest listings: roles posted 60+ days ago (e.g. a backfill Timley just
+    // found) come after every current one instead of crowding out new postings.
+    .sort((a, b) => Number(isPossiblyClosed(a, now)) - Number(isPossiblyClosed(b, now)))
     .slice(0, normalizeLimit(options.limit))
     .map((job) => toListItem(job, now));
   return { items, asOf };

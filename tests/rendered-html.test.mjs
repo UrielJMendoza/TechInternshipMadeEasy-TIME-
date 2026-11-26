@@ -41,7 +41,12 @@ test("RSS feed renders bounded current listings and respects shareable filters",
   assert.doesNotMatch(xml, /<script|&(?!(?:amp|lt|gt|quot|apos);|#\d+;)/i);
   const all = await render("/feed.xml");
   assert.equal(all.status, 200);
-  assert.ok((await all.text()).includes("<item>"));
+  const allXml = await all.text();
+  assert.ok(allXml.includes("<item>"));
+  // Newest first by first-seen time, so a capped feed never skips late-alphabet companies.
+  const pubDates = [...allXml.matchAll(/<pubDate>([^<]+)<\/pubDate>/g)].map((match) => Date.parse(match[1]));
+  assert.ok(pubDates.length > 1);
+  assert.ok(pubDates.every((at, index) => index === 0 || at <= pubDates[index - 1]), "feed items are newest first");
   const home = await htmlFor("/");
   assert.match(home, /href="\/feed\.xml">RSS feed<\/a>/);
 });

@@ -1828,6 +1828,44 @@ export function queryJobs(
   };
 }
 
+/**
+ * RSS order: the jobs Timley found most recently come first, with the same
+ * filters and visibility rules as `queryJobs`. The `/jobs` order groups each
+ * day by company A to Z, so with a capped feed, employers late in the alphabet
+ * could miss a busy day's new roles entirely.
+ */
+export function getNewestFoundJobs(
+  filtersInput: FilterInput = undefined,
+  options: { limit?: number; now?: string | Date; snapshot?: DemoSnapshot } = {},
+): { items: JobListItem[]; asOf: string } {
+  const filters = parseFilters(filtersInput);
+  const now = canonicalTimestamp(options.now ?? new Date(), "now");
+  const asOf = canonicalTimestamp(
+    options.snapshot?.asOf ?? getDemoSnapshotAt(now),
+    "asOf",
+  );
+  const snapshot = options.snapshot ?? resolveSnapshot(asOf, now);
+  const items = snapshot.jobs
+    .filter(
+      (job) =>
+        job.active &&
+        job.firstSeenAt <= asOf &&
+        isPubliclyEligible(job) &&
+        matchesFilters(job, filters, now),
+    )
+    .sort((a, b) =>
+      a.firstSeenAt !== b.firstSeenAt
+        ? (a.firstSeenAt > b.firstSeenAt ? -1 : 1)
+        : lexicalCompare(a.id, b.id),
+    )
+    // Like Newest listings: roles posted 60+ days ago (e.g. a backfill Timley just
+    // found) come after every current one instead of crowding out new postings.
+    .sort((a, b) => Number(isPossiblyClosed(a, now)) - Number(isPossiblyClosed(b, now)))
+    .slice(0, normalizeLimit(options.limit))
+    .map((job) => toListItem(job, now));
+  return { items, asOf };
+}
+
 export type FeedStatsOptions = {
   asOf?: string | Date;
   now?: string | Date;

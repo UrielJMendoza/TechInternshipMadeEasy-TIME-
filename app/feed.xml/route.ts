@@ -1,4 +1,4 @@
-import { JOB_MAJOR_OPTIONS, buildJobsUrl, parseFilters, queryJobs } from "@/lib/jobs";
+import { JOB_MAJOR_OPTIONS, buildJobsUrl, getNewestFoundJobs, parseFilters } from "@/lib/jobs";
 import { getPublicJobsSnapshot } from "@/lib/jobs/live";
 import { SITE_URL } from "@/lib/site";
 
@@ -37,7 +37,8 @@ export async function GET(request: Request) {
 
   try {
     const snapshot = await getPublicJobsSnapshot();
-    const page = queryJobs(filters, { limit: 60, snapshot });
+    // Newest first by Timley's first-seen time, so every new role reaches feed readers.
+    const page = getNewestFoundJobs(filters, { limit: 60, snapshot });
     const jobsUrl = new URL(buildJobsUrl(filters), SITE_URL).toString();
     const items = page.items.map((job) => {
       const link = `${SITE_URL}/jobs/${encodeURIComponent(job.id)}`;

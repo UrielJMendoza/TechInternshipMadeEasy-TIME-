@@ -39,6 +39,7 @@ const {
   getCompanyPages,
   getStatePages,
   getJobById,
+  getNewestFoundJobs,
   getNewestPostedJobs,
   getPopularCompanies,
   isNewThisWeek,
@@ -427,6 +428,30 @@ test("listings posted 60+ days ago are tagged may-be-closed and kept out of New 
   assert.equal(filled.at(-1).possiblyClosed, true);
   const onlyStale = { ...snapshot, jobs: jobs.filter((job) => isPossiblyClosed(job, NOW)) };
   assert.equal(getNewestPostedJobs({ limit: 6, snapshot: onlyStale, now: NOW }).length, 1);
+});
+
+test("the RSS order puts the most recently found jobs first, whatever the company name", () => {
+  const hoursBefore = (hours) => new Date(Date.parse(NOW) - hours * 3_600_000).toISOString();
+  const jobs = deduplicateJobs([
+    rawRecord({ sourceRecordId: "greenhouse:aaa", companyName: "Aardvark Labs", canonicalEmployerId: "aardvark", requisitionId: "REQ-401", applicationUrl: "https://example.com/jobs/req-401", employerPostedAt: hoursBefore(46), firstSeenAt: hoursBefore(40), lastSeenAt: NOW }),
+    rawRecord({ sourceRecordId: "greenhouse:zzz", companyName: "Zephyr Robotics", canonicalEmployerId: "zephyr", requisitionId: "REQ-402", applicationUrl: "https://example.com/jobs/req-402", employerPostedAt: hoursBefore(30), firstSeenAt: hoursBefore(26), lastSeenAt: NOW }),
+    // Found most recently, but posted 75 days ago: it goes after the current roles.
+    rawRecord({ sourceRecordId: "greenhouse:old", companyName: "Backfill Corp", canonicalEmployerId: "backfill", requisitionId: "REQ-404", applicationUrl: "https://example.com/jobs/req-404", employerPostedAt: hoursBefore(75 * 24), firstSeenAt: hoursBefore(2), lastSeenAt: NOW }),
+    rawRecord({ sourceRecordId: "greenhouse:mmm", companyName: "Mosaic Data", canonicalEmployerId: "mosaic", requisitionId: "REQ-403", applicationUrl: "https://example.com/jobs/req-403", employerPostedAt: hoursBefore(36), firstSeenAt: hoursBefore(30), lastSeenAt: NOW }),
+  ], { now: NOW });
+  const snapshot = { asOf: NOW, rawRecords: [], jobs };
+
+  const feed = getNewestFoundJobs(parseFilters(), { snapshot, now: NOW });
+  assert.equal(feed.asOf, NOW);
+  assert.deepEqual(feed.items.map((job) => job.company), ["Zephyr Robotics", "Mosaic Data", "Aardvark Labs", "Backfill Corp"]);
+  assert.equal(feed.items.at(-1).possiblyClosed, true);
+  // The /jobs order groups roles from the same day by company, so Aardvark leads there.
+  assert.equal(queryJobs(parseFilters(), { snapshot, now: NOW }).items[0].company, "Aardvark Labs");
+
+  const capped = getNewestFoundJobs(parseFilters(), { limit: 2, snapshot, now: NOW });
+  assert.deepEqual(capped.items.map((job) => job.company), ["Zephyr Robotics", "Mosaic Data"]);
+  const filtered = getNewestFoundJobs(parseFilters({ company: "Aardvark Labs" }), { snapshot, now: NOW });
+  assert.deepEqual(filtered.items.map((job) => job.company), ["Aardvark Labs"]);
 });
 
 test("the company filter is exact, normalized, and shareable", () => {

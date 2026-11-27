@@ -20,7 +20,13 @@ export const PUBLIC_JOB_FIELDS = [
 // Must match RETENTION_DAYS in lib/jobs/live.ts (a test enforces this).
 export const RETENTION_DAYS = 90;
 export const SHARD_COUNT = 11;
-const PAGE_SIZE = 1000;
+// Small pages keep each query well under Postgres's statement timeout. A
+// 1,000-row page timed out on 2026-11-25 and shipped a months-old snapshot.
+export const PAGE_SIZE = 250;
+// Each page gets this many attempts. Waits double from RETRY_BASE_DELAY_MS
+// (2 s, 4 s, 8 s), so one bad Supabase minute delays the build, not the data.
+export const MAX_ATTEMPTS = 4;
+const RETRY_BASE_DELAY_MS = 2_000;
 // Rows changed during this window are re-read by the live reader, covering
 // transactions that began before the export and committed after it.
 const CAPTURE_OVERLAP_MS = 15 * 60_000;
@@ -65,10 +71,30 @@ function totalFrom(contentRange) {
   return match ? Number(match[1]) : null;
 }
 
-export async function fetchPublicRows({ url, key, now = Date.now(), fetchImpl = fetch }) {
+/** Statement timeouts, overload and network blips are worth retrying; quota (402) and auth errors are not. */
+export function isRetryable(error) {
+  const status = Number(/^upstream_http_(\d{3})$/.exec(error instanceof Error ? error.message : '')?.[1]);
+  if (Number.isFinite(status)) return status >= 500 || status === 408 || status === 429;
+  return !(error instanceof Error && /^upstream_(invalid_json_shape|missing_count)$/.test(error.message));
+}
+
+const wait = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+export async function withRetries(attempt, { sleep = wait, maxAttempts = MAX_ATTEMPTS } = {}) {
+  for (let tries = 1; ; tries += 1) {
+    try {
+      return await attempt();
+    } catch (error) {
+      if (tries >= maxAttempts || !isRetryable(error)) throw error;
+      await sleep(RETRY_BASE_DELAY_MS * 2 ** (tries - 1));
+    }
+  }
+}
+
+export async function fetchPublicRows({ url, key, now = Date.now(), fetchImpl = fetch, sleep = wait }) {
   const startedAt = now;
   const cutoff = new Date(startedAt - RETENTION_DAYS * 86_400_000);
-  const request = async (offset, count) => {
+  const request = (offset, count) => withRetries(async () => {
     const response = await fetchImpl(exportPageUrl(url, cutoff, offset), {
       headers: { Accept: 'application/json', apikey: key, ...(count ? { Prefer: 'count=exact' } : {}) },
       signal: AbortSignal.timeout(30_000),
@@ -77,7 +103,7 @@ export async function fetchPublicRows({ url, key, now = Date.now(), fetchImpl = 
     const rows = await response.json();
     if (!Array.isArray(rows)) throw new Error('upstream_invalid_json_shape');
     return { rows, total: count ? totalFrom(response.headers.get('content-range')) : null };
-  };
+  }, { sleep });
   const first = await request(0, true);
   if (first.total === null) throw new Error('upstream_missing_count');
   const rows = [...first.rows];
@@ -126,10 +152,10 @@ export async function writeSnapshot({ rows, capturedAt }, dataDir = DATA_DIR) {
 }
 
 /** Returns what happened; never throws, so a build is never blocked. */
-export async function runExport({ env = process.env, dataDir = DATA_DIR, fetchImpl = fetch, now = Date.now() } = {}) {
+export async function runExport({ env = process.env, dataDir = DATA_DIR, fetchImpl = fetch, now = Date.now(), sleep = wait } = {}) {
   if (!shouldExport(env)) return { status: 'skipped' };
   try {
-    const exported = await fetchPublicRows({ ...supabaseTarget(env), now, fetchImpl });
+    const exported = await fetchPublicRows({ ...supabaseTarget(env), now, fetchImpl, sleep });
     // Seasons shrink the market, so only an implausibly small feed is refused.
     const minimumRows = Math.max(500, Math.floor((await committedRowCount(dataDir)) * 0.3));
     validateRows(exported.rows, { minimumRows });

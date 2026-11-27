@@ -7,6 +7,9 @@ import test from "node:test";
 import {
   exportPageUrl,
   fetchPublicRows,
+  isRetryable,
+  MAX_ATTEMPTS,
+  PAGE_SIZE,
   PUBLIC_JOB_FIELDS,
   RETENTION_DAYS,
   runExport,
@@ -31,7 +34,7 @@ function row(index, overrides = {}) {
 }
 
 /** A PostgREST stand-in that pages a fixed table and reports its size. */
-function repository(rows, { status = 200 } = {}) {
+function repository(rows, { status = 200, failures = [] } = {}) {
   const requests = [];
   return {
     requests,
@@ -39,6 +42,10 @@ function repository(rows, { status = 200 } = {}) {
       const url = new URL(String(input));
       requests.push(url);
       if (status !== 200) return new Response("restricted", { status });
+      // `failures` lists, per request in order, a status to answer with instead (or "network").
+      const failure = failures[requests.length - 1];
+      if (failure === "network") throw new TypeError("fetch failed");
+      if (failure) return new Response("canceling statement due to statement timeout", { status: failure });
       const offset = Number(url.searchParams.get("offset"));
       const page = rows.slice(offset, offset + Number(url.searchParams.get("limit")));
       return Response.json(page, { headers: { "content-range": `${offset}-${offset + page.length - 1}/${rows.length}` } });
@@ -90,6 +97,8 @@ test("exports request active listings inside the retention window", () => {
   assert.equal(url.searchParams.get("or"), "(posted_date.is.null,posted_date.gte.2026-06-30)");
   assert.equal(url.searchParams.get("order"), "id.asc");
   assert.equal(url.searchParams.get("offset"), "2000");
+  assert.equal(url.searchParams.get("limit"), String(PAGE_SIZE));
+  assert.ok(PAGE_SIZE <= 250, "pages stay small enough to finish inside the statement timeout");
   assert.equal(url.searchParams.get("select"), PUBLIC_JOB_FIELDS.join(","));
 });
 
@@ -105,8 +114,57 @@ test("pages are read completely and captured before the export began", async () 
   const { fetchImpl, requests } = repository(rows);
   const exported = await fetchPublicRows({ url: "https://project.supabase.co", key: "sb_publishable_x", now: NOW, fetchImpl });
   assert.equal(exported.rows.length, 2345);
-  assert.equal(requests.length, 3);
+  assert.equal(requests.length, Math.ceil(2345 / PAGE_SIZE));
   assert.equal(exported.capturedAt, "2026-09-28T06:50:00.000Z");
+});
+
+test("a statement timeout or network blip is retried with backoff instead of falling back", async () => {
+  const rows = Array.from({ length: 600 }, (_, index) => row(index));
+  // First page: 500 (statement timeout) then 503; second page: one network error.
+  const { fetchImpl, requests } = repository(rows, { failures: [500, 503, undefined, "network"] });
+  const delays = [];
+  const exported = await fetchPublicRows({
+    url: "https://project.supabase.co", key: "sb_publishable_x", now: NOW, fetchImpl,
+    sleep: async (ms) => { delays.push(ms); },
+  });
+  assert.equal(exported.rows.length, 600);
+  assert.deepEqual(exported.rows, rows);
+  assert.equal(requests.length, Math.ceil(600 / PAGE_SIZE) + 3);
+  assert.deepEqual(delays, [2000, 4000, 2000]);
+});
+
+test("only transient failures are retried", () => {
+  for (const code of ["upstream_http_500", "upstream_http_503", "upstream_http_408", "upstream_http_429"]) {
+    assert.equal(isRetryable(new Error(code)), true, code);
+  }
+  for (const code of ["upstream_http_402", "upstream_http_401", "upstream_http_400", "upstream_invalid_json_shape", "upstream_missing_count"]) {
+    assert.equal(isRetryable(new Error(code)), false, code);
+  }
+  assert.equal(isRetryable(new TypeError("fetch failed")), true);
+});
+
+test("a persistent outage gives up after the last attempt and keeps the committed snapshot", async () => {
+  const dataDir = await committedCopy(5000);
+  const before = await readSnapshot(dataDir);
+  const { fetchImpl, requests } = repository([], { failures: Array(10).fill(500) });
+  const delays = [];
+  const result = await runExport({
+    env: { VERCEL_ENV: "production" }, dataDir, fetchImpl, now: NOW,
+    sleep: async (ms) => { delays.push(ms); },
+  });
+  assert.deepEqual(result, { status: "kept-committed", reason: "upstream_http_500" });
+  assert.equal(requests.length, MAX_ATTEMPTS);
+  assert.deepEqual(delays, [2000, 4000, 8000]);
+  assert.deepEqual(await readSnapshot(dataDir), before);
+});
+
+test("a quota restriction is not retried", async () => {
+  const { fetchImpl, requests } = repository([], { status: 402 });
+  await assert.rejects(
+    fetchPublicRows({ url: "https://project.supabase.co", key: "sb_publishable_x", now: NOW, fetchImpl, sleep: () => assert.fail("402 must not wait") }),
+    /upstream_http_402/,
+  );
+  assert.equal(requests.length, 1);
 });
 
 test("implausible exports are refused", () => {

@@ -216,6 +216,8 @@ export type JobFilters = {
   location: string;
   remote: boolean;
   sponsorship: boolean;
+  /** Leave out roles a source lists as no sponsorship or US citizens only. */
+  unrestricted: boolean;
   /** Only listings Timley first found in the last 24 hours. */
   fresh: boolean;
   source: string;
@@ -230,9 +232,30 @@ export const DEFAULT_FILTERS: Readonly<JobFilters> = Object.freeze({
   location: "",
   remote: false,
   sponsorship: false,
+  unrestricted: false,
   fresh: false,
   source: "",
 });
+
+/** A sponsorship limit reported by a community list, not checked with the employer. */
+export type ListedRestriction = "No sponsorship" | "US citizens only";
+
+/** Maps a stored community sponsorship code to a listed restriction. */
+export function listedRestrictionFrom(value: unknown): ListedRestriction | undefined {
+  if (typeof value !== "string") return undefined;
+  if (value === "us-citizenship" || value === "citizens-only") return "US citizens only";
+  if (value === "no-sponsorship") return "No sponsorship";
+  return undefined;
+}
+
+/** Merged duplicates keep the strictest limit any source lists. */
+export function strongestListedRestriction(
+  values: readonly (ListedRestriction | undefined)[],
+): ListedRestriction | undefined {
+  if (values.includes("US citizens only")) return "US citizens only";
+  if (values.includes("No sponsorship")) return "No sponsorship";
+  return undefined;
+}
 
 export type RawJobRecord = {
   sourceRecordId: string;
@@ -248,6 +271,7 @@ export type RawJobRecord = {
   summary?: string;
   compensation?: string;
   sponsorship?: "Confirmed" | "Not offered";
+  listedRestriction?: ListedRestriction;
   logoText: string;
   logoTone: string;
   applicationUrl: string;
@@ -288,6 +312,7 @@ export type CanonicalJob = {
   summary?: string;
   compensation?: string;
   sponsorship?: "Confirmed" | "Not offered";
+  listedRestriction?: ListedRestriction;
   logoText: string;
   logoTone: string;
   companyDomain?: string;
@@ -328,6 +353,7 @@ export type JobListItem = {
   workplace: "Remote" | "Hybrid" | "On-site" | "Not confirmed";
   compensation?: string;
   sponsorship?: "Confirmed" | "Not offered";
+  listedRestriction?: ListedRestriction;
   logoText: string;
   logoTone: string;
   companyDomain?: string;
@@ -691,6 +717,9 @@ export function deduplicateJobs(
       summary: primary.summary,
       compensation: primary.compensation,
       sponsorship: primary.sponsorship,
+      listedRestriction: primary.sponsorship === "Confirmed"
+        ? undefined
+        : strongestListedRestriction(group.map((record) => record.listedRestriction)),
       logoText: primary.logoText,
       logoTone: primary.logoTone,
       applicationUrl: primary.applicationUrl,
@@ -922,6 +951,7 @@ export function parseFilters(input: FilterInput = undefined): JobFilters {
     location,
     remote: inputBoolean(inputValue(input, "remote")),
     sponsorship: inputBoolean(inputValue(input, "sponsorship")),
+    unrestricted: inputBoolean(inputValue(input, "unrestricted")),
     fresh: inputBoolean(inputValue(input, "fresh")),
     source: isSourceId(sourceValue) ? sourceValue : "",
   };
@@ -939,6 +969,7 @@ export function serializeFilters(filtersInput: FilterInput = undefined): string 
   if (filters.location) params.set("location", filters.location);
   if (filters.remote) params.set("remote", "true");
   if (filters.sponsorship) params.set("sponsorship", "true");
+  if (filters.unrestricted) params.set("unrestricted", "true");
   if (filters.fresh) params.set("fresh", "true");
   if (filters.source) params.set("source", filters.source);
   return params.toString();
@@ -1255,6 +1286,9 @@ function demoRawRecord(index: number, asOf: string): RawJobRecord {
     summary: `Join ${company.name} in an early-career ${category.toLowerCase()} role. This representative demo listing links out to an employer-style application page.`,
     compensation,
     sponsorship: index % 11 === 0 ? "Confirmed" : index % 7 === 0 ? "Not offered" : undefined,
+    listedRestriction: index % 11 === 0 || index % 7 === 0
+      ? undefined
+      : index % 13 === 3 ? "US citizens only" : index % 13 === 6 ? "No sponsorship" : undefined,
     logoText: company.logoText,
     logoTone: company.logoTone,
     // example.com is intentionally used for this demo; its root is a stable
@@ -1644,6 +1678,12 @@ function matchesFilters(job: CanonicalJob, filters: JobFilters, evaluatedAt: str
   if (filters.remote && job.workplace !== "Remote") return false;
   if (filters.sponsorship && job.sponsorship !== "Confirmed") return false;
   if (
+    filters.unrestricted &&
+    (job.listedRestriction || job.sponsorship === "Not offered")
+  ) {
+    return false;
+  }
+  if (
     filters.source &&
     !job.contributingSourceIds.includes(filters.source as SourceId)
   ) {
@@ -1705,6 +1745,7 @@ function toListItem(job: CanonicalJob, now: string | Date): JobListItem {
     workplace: job.workplace,
     compensation: job.compensation,
     sponsorship: job.sponsorship,
+    listedRestriction: job.sponsorship ? undefined : job.listedRestriction,
     logoText: job.logoText,
     logoTone: job.logoTone,
     companyDomain: job.companyDomain,

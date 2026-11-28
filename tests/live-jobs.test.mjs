@@ -1380,6 +1380,34 @@ test("numeric and multipart Workday identities preserve distinct requisitions an
   assert.equal(providerIdentityFromUrl(`${base}/external/job/%XX`,'HP'),null);
 });
 
+test("community sponsorship limits are shown as listed, never as confirmed", () => {
+  const asOf = "2026-08-21T22:00:00.000Z";
+  const snapshot = createLiveSnapshotFromRows([
+    liveRow({ id: "no-visa", primary_apply_url: "https://jobs.lever.co/notion/no-visa", sponsorship: "no-sponsorship" }),
+    liveRow({ id: "citizens", primary_apply_url: "https://jobs.lever.co/notion/citizens", sponsorship: "us-citizenship" }),
+    liveRow({ id: "citizens-alt", primary_apply_url: "https://jobs.lever.co/notion/citizens-alt", sponsorship: "citizens-only" }),
+    liveRow({ id: "offers", primary_apply_url: "https://jobs.lever.co/notion/offers", sponsorship: "offers-sponsorship" }),
+    liveRow({ id: "dup-a", primary_apply_url: "https://jobs.lever.co/notion/dup", sponsorship: "no-sponsorship" }),
+    liveRow({ id: "dup-b", primary_apply_url: "https://jobs.lever.co/notion/dup", sponsorship: "citizens-only" }),
+  ], asOf);
+  const find = (id) => snapshot.jobs.find((job) => job.sourceRecordIds.includes(id));
+  assert.equal(find("no-visa").listedRestriction, "No sponsorship");
+  assert.equal(find("citizens").listedRestriction, "US citizens only");
+  assert.equal(find("citizens-alt").listedRestriction, "US citizens only");
+  assert.equal(find("offers").listedRestriction, undefined);
+  assert.equal(find("dup-a"), find("dup-b"), "duplicate rows merge");
+  assert.equal(find("dup-a").listedRestriction, "US citizens only", "merged duplicates keep the strictest limit");
+  for (const job of snapshot.jobs) assert.equal(job.sponsorship, undefined);
+
+  const url = "https://jobs.lever.co/notion/confirmed";
+  const confirmed = createLiveSnapshotFromRows([liveRow({
+    id: "confirmed", primary_apply_url: url, sponsorship: "no-sponsorship",
+    employer_evidence: { status: "verified", checkedAt: "2026-08-21T20:00:00.000Z", sourceUrl: url, contentHash: "b".repeat(64), sponsorship: "Confirmed" },
+  })], asOf).jobs[0];
+  assert.equal(confirmed.sponsorship, "Confirmed");
+  assert.equal(confirmed.listedRestriction, undefined, "employer-confirmed sponsorship overrides a community limit");
+});
+
 test("sponsorship requires fresh matching employer evidence and preserves explicit restrictions", () => {
   const asOf='2026-08-31T22:15:17.000Z';
   const url='https://abb.wd3.myworkdayjobs.com/jobs/job/Tennessee/Intern_JR00045260';

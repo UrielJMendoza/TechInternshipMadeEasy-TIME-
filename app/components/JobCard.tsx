@@ -21,7 +21,9 @@ export function JobCard({ job, liveRecency = false, returnTo = "/jobs" }: JobCar
       ? "Visa support confirmed"
       : job.sponsorship === "Not offered"
         ? "No visa support"
-        : undefined;
+        : job.listedRestriction
+          ? `Listed as ${job.listedRestriction === "US citizens only" ? "US citizens only" : "no sponsorship"}`
+          : undefined;
   const compensationAndSponsorship = [compensation, sponsorship].filter(Boolean).join(" · ");
   // Saved jobs keep the flag from when they were saved, so only fresh feeds show it.
   const showNewBadge = Boolean(job.isNew) && !liveRecency;

@@ -17,6 +17,8 @@ export type JobCardData = {
   workplace: "Remote" | "Hybrid" | "On-site" | "Not confirmed";
   compensation?: string;
   sponsorship?: "Confirmed" | "Not offered";
+  /** Reported by a community list, not checked with the employer. */
+  listedRestriction?: "No sponsorship" | "US citizens only";
   logoText: string;
   logoTone: string;
   companyDomain?: string;
@@ -45,6 +47,7 @@ export type JobFilters = {
   location: string;
   remote: boolean;
   sponsorship: boolean;
+  unrestricted: boolean;
   fresh: boolean;
   source: string;
 };

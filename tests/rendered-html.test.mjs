@@ -159,6 +159,8 @@ test("jobs HTML contains one 36-job server page and stays below the payload ceil
   assert.match(html, /data-company-domain="(?:stripe\.com|figma\.com|notion\.so|linear\.app)"/);
   assert.doesNotMatch(html, /company-emoji|class="company-mark|tone-(?:lilac|mint|ink|sand|sky|rose)/);
   assert.doesNotMatch(html, /Sponsorship unknown|estimated salary/i);
+  assert.match(html, /Listed as (?:no sponsorship|US citizens only)/, "community sponsorship limits show on cards");
+  assert.match(html, /name="unrestricted" value="true"/, "the jobs page offers the sponsorship-limit filter");
   assert.doesNotMatch(html, /Compensation not listed/);
   assert.ok(brotliBytes < 150 * 1024, `Brotli payload is ${brotliBytes} bytes`);
 

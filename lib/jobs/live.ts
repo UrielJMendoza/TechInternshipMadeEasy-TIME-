@@ -5,10 +5,12 @@ import {
   getJobById,
   InvalidCursorError,
   isTruncatedJobTitle,
+  listedRestrictionFrom,
   normalizeAtsHostname,
   normalizeEmployer,
   sanitizeEmployerPostedAt,
   sortJobsNewestFirst,
+  strongestListedRestriction,
   type CanonicalJob,
   type DemoSnapshot,
   type SourceId,
@@ -442,6 +444,8 @@ function rowToCanonicalJob(row: LiveJobRow, asOf: string, evidenceAsOf = asOf): 
     summary: optionalText(evidence.summary) ?? undefined,
     compensation: optionalText(evidence.compensation) ?? optionalText(row.salary_raw) ?? undefined,
     sponsorship: evidence.sponsorship === "Confirmed" || evidence.sponsorship === "Not offered" ? evidence.sponsorship : undefined,
+    // Community lists flag restrictions; employer-confirmed sponsorship overrides them.
+    listedRestriction: evidence.sponsorship === "Confirmed" ? undefined : listedRestrictionFrom(row.sponsorship),
     evidenceUrl: optionalText(evidence.sourceUrl) ?? undefined,
     evidenceCheckedAt: optionalText(evidence.checkedAt) ?? undefined,
     deadline: optionalText(evidence.deadline) ?? undefined,
@@ -729,6 +733,9 @@ function mergeDuplicateJobs(group: CanonicalJob[]): CanonicalJob {
     id: stableJobId(publicIdentity),
     title: titleRecord.title,
     sponsorship: evidenceRecord?.sponsorship,
+    listedRestriction: evidenceRecord?.sponsorship === "Confirmed"
+      ? undefined
+      : strongestListedRestriction(group.map((job) => job.listedRestriction)),
     evidenceUrl: evidenceRecord?.evidenceUrl,
     evidenceCheckedAt: evidenceRecord?.evidenceCheckedAt,
     deadline: evidenceRecord?.deadline,

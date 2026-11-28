@@ -154,7 +154,7 @@ export default async function JobDetailPage({ params, searchParams }: JobDetailP
               {job.titleIncomplete ? (
                 <div className="detail-fact"><span>Title</span><strong>Source title is shortened</strong></div>
               ) : null}
-              <div className="detail-fact"><span>Visa sponsorship</span><strong>{job.sponsorship ?? "Not confirmed"}</strong></div>
+              <div className="detail-fact"><span>Visa sponsorship</span><strong>{job.sponsorship ?? (job.listedRestriction ? `${job.listedRestriction} (listed by source, not confirmed)` : "Not confirmed")}</strong></div>
               {job.deadline ? <div className="detail-fact"><span>Apply by</span><strong><time dateTime={job.deadline}>{new Intl.DateTimeFormat("en-US",{dateStyle:"medium",timeZone:"UTC"}).format(new Date(job.deadline))}</time></strong></div> : null}
               {job.degrees?.length ? <div className="detail-fact"><span>Degrees mentioned</span><strong>{job.degrees.join(", ")}</strong></div> : null}
               {job.evidenceUrl && job.evidenceCheckedAt ? <p className="direct-note">Employer details checked {formatCheckedAt(job.evidenceCheckedAt)}. <a href={job.evidenceUrl} target="_blank" rel="noopener noreferrer">Review the employer source</a>.</p> : null}

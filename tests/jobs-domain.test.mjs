@@ -325,6 +325,7 @@ test("filters parse defensively and serialize to one canonical copied URL", () =
   params.set("location", "  New   York ");
   params.set("remote", "true");
   params.set("sponsorship", "1");
+  params.set("unrestricted", "true");
   params.set("fresh", "true");
   params.set("source", "lever");
   params.set("cursor", "must-not-be-copied");
@@ -339,21 +340,22 @@ test("filters parse defensively and serialize to one canonical copied URL", () =
     location: "New York",
     remote: true,
     sponsorship: true,
+    unrestricted: true,
     fresh: true,
     source: "lever",
   });
   assert.equal(
     serializeFilters(filters),
-    "level=new-grad&q=Data+science&company=Acme%2C+Inc.&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&fresh=true&source=lever",
+    "level=new-grad&q=Data+science&company=Acme%2C+Inc.&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&unrestricted=true&fresh=true&source=lever",
   );
   assert.equal(
     buildJobsUrl(filters),
-    "/jobs?level=new-grad&q=Data+science&company=Acme%2C+Inc.&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&fresh=true&source=lever",
+    "/jobs?level=new-grad&q=Data+science&company=Acme%2C+Inc.&major=computer-science&niche=data-ml&location=New+York&remote=true&sponsorship=true&unrestricted=true&fresh=true&source=lever",
   );
 
   assert.deepEqual(
     parseFilters({ level: "not-a-level", major: "invalid", niche: "finance", source: "unknown", remote: "false" }),
-    { q: "", company: "", level: "all", major: "all", niche: "all", location: "", remote: false, sponsorship: false, fresh: false, source: "" },
+    { q: "", company: "", level: "all", major: "all", niche: "all", location: "", remote: false, sponsorship: false, unrestricted: false, fresh: false, source: "" },
   );
   assert.equal(parseFilters({ major: "business", niche: "security" }).niche, "all");
 });
@@ -721,6 +723,15 @@ test("filters run before pagination and source filters include contributing mirr
   assert.ok(remoteInternships.items.every((item) => item.roleLevel === "Internship"));
   assert.ok(remoteInternships.items.every((item) => item.workplace === "Remote"));
   assert.ok(remoteInternships.items.every((item) => item.sponsorship === "Confirmed"));
+
+  const everything = queryJobs(parseFilters({}), { limit: 60, asOf: AS_OF, now: NOW });
+  const unrestricted = queryJobs(parseFilters({ unrestricted: "true" }), { limit: 60, asOf: AS_OF, now: NOW });
+  assert.ok(unrestricted.total > 0);
+  assert.ok(unrestricted.total < everything.total, "listed restrictions are filtered out");
+  assert.ok(unrestricted.items.every((item) => !item.listedRestriction && item.sponsorship !== "Not offered"));
+  assert.ok(everything.items.some((item) => item.listedRestriction), "the demo feed carries listed restrictions");
+  assert.ok(everything.items.every((item) => !(item.listedRestriction && item.sponsorship)),
+    "an employer-checked sponsorship fact replaces the listed one");
 
   const softwareRoles = queryJobs(
     parseFilters({ major: "computer-science", niche: "software-engineering" }),

@@ -108,7 +108,7 @@ export function JobsExplorer({
     const params = new URLSearchParams(initialQuery);
     params.delete(key);
     if (key === "major") params.delete("niche");
-    const label = key === "sponsorship" ? "Confirmed sponsorship" : key === "remote" ? "Remote" : key === "fresh" ? "New in 24 h" : String(value).replace(/-/g," ");
+    const label = key === "sponsorship" ? "Confirmed sponsorship" : key === "unrestricted" ? "Hide sponsorship limits" : key === "remote" ? "Remote" : key === "fresh" ? "New in 24 h" : String(value).replace(/-/g," ");
     return [{key,label,href:params.size ? `/jobs?${params}` : "/jobs"}];
   });
   const activeAdvancedFilterCount = [
@@ -117,6 +117,7 @@ export function JobsExplorer({
     initialFilters.niche !== "all",
     initialFilters.remote,
     initialFilters.sponsorship,
+    initialFilters.unrestricted,
     Boolean(initialFilters.company),
     Boolean(initialFilters.source),
   ].filter(Boolean).length;
@@ -126,6 +127,7 @@ export function JobsExplorer({
     initialFilters.location ||
     initialFilters.remote ||
     initialFilters.sponsorship ||
+    initialFilters.unrestricted ||
     initialFilters.fresh ||
     initialFilters.source ||
     initialFilters.level !== "all" ||
@@ -334,6 +336,13 @@ export function JobsExplorer({
                   <span>
                     <strong>Confirmed sponsorship</strong>
                     <small>Only roles that explicitly confirm it</small>
+                  </span>
+                </label>
+                <label className="menu-check" htmlFor="unrestricted-filter" aria-label="Hide sponsorship limits">
+                  <input id="unrestricted-filter" type="checkbox" name="unrestricted" value="true" defaultChecked={initialFilters.unrestricted} />
+                  <span>
+                    <strong>Hide sponsorship limits</strong>
+                    <small>Skip roles listed as no sponsorship or US citizens only</small>
                   </span>
                 </label>
                 <div className="menu-actions">
